@@ -1,56 +1,66 @@
-"""Scripted fake driver: replays a canned RuntimeEvent sequence, no CLI needed."""
+"""Scripted fake driver: replays canned RuntimeEvent sequences, no CLI needed.
+
+Commands in the message pick the scenario: "/tool" runs a fake tool call, "/slow" streams for a long time,
+"/error" fails the turn, "/md" replies with Markdown. Anything else is echoed back.
+"""
 from __future__ import annotations
 
 import asyncio
-import uuid
-from datetime import datetime, timezone
 
-from ..events import RuntimeEvent
-from .base import Capabilities, Listener, SendTurnInput
+from .base import Capabilities, Emitter, SendTurnInput, new_turn_id
 
-
-def _ts() -> str:
-    return datetime.now(timezone.utc).isoformat()
+MD_REPLY = (
+    "# Heading\n\nSome **bold**, *italic* and `inline code`.\n\n- one\n- two\n\n"
+    "| a | b |\n|---|---|\n| 1 | 2 |\n\n```python\nprint('hello')\n```\n\nInline math $e^{i\\pi}+1=0$."
+)
 
 
-class EchoDriver:
+class EchoDriver(Emitter):
     provider = "echo"
-    capabilities = Capabilities()
+    capabilities = Capabilities(queueing=False)
 
     def __init__(self, delay: float = 0.03) -> None:
-        self._listeners: list[Listener] = []
+        super().__init__()
         self._tasks: dict[str, asyncio.Task] = {}
         self.delay = delay
 
-    def on_event(self, listener: Listener):
-        self._listeners.append(listener)
-        return lambda: self._listeners.remove(listener)
-
-    def _emit(self, type_: str, thread_id: str, turn_id: str, **data) -> None:
-        ev = RuntimeEvent(
-            type=type_, eventId=uuid.uuid4().hex, provider=self.provider, threadId=thread_id,
-            createdAt=_ts(), turnId=turn_id, data=data,
-        )
-        for fn in list(self._listeners):
-            fn(ev)
-
     async def send_turn(self, inp: SendTurnInput) -> str:
-        turn_id = "turn_" + uuid.uuid4().hex[:10]
+        turn_id = new_turn_id()
         self._tasks[inp.thread_id] = asyncio.create_task(self._run(inp, turn_id))
         return turn_id
 
+    async def _stream(self, t: str, turn_id: str, text: str, pause: float | None = None) -> None:
+        for word in text.split(" "):
+            self.emit("content.delta", t, turn_id, streamKind="assistant_text", delta=word + " ")
+            await asyncio.sleep(self.delay if pause is None else pause)
+
     async def _run(self, inp: SendTurnInput, turn_id: str) -> None:
-        t = inp.thread_id
+        t, text = inp.thread_id, inp.text
         try:
-            self._emit("turn.started", t, turn_id)
-            reply = f"You said: {inp.text}"
-            for word in reply.split(" "):
-                self._emit("content.delta", t, turn_id, streamKind="assistant_text", delta=word + " ")
-                await asyncio.sleep(self.delay)
-            self._emit("item.completed", t, turn_id, itemType="assistant_text", text=reply)
-            self._emit("turn.completed", t, turn_id, ok=True)
+            self.emit("session.started", t, turn_id, sessionId=f"echo-{t}")
+            self.emit("turn.started", t, turn_id)
+            if text.startswith("/error"):
+                self.emit("runtime.error", t, turn_id, message="Simulated failure", terminal=True)
+                self.emit("turn.completed", t, turn_id, ok=False)
+                return
+            if text.startswith("/tool"):
+                self.emit("item.started", t, turn_id, itemType="tool", itemId="tool1", title="Bash",
+                          summary="ls -la", input="{'command': 'ls -la'}")
+                await asyncio.sleep(self.delay * 5)
+                self.emit("item.completed", t, turn_id, itemType="tool", itemId="tool1", ok=True, output="total 0")
+            if text.startswith("/slow"):
+                await self._stream(t, turn_id, "streaming " * 200, pause=0.05)
+            elif text.startswith("/md"):
+                await self._stream(t, turn_id, MD_REPLY.replace("\n", " \n"))
+                text_out = MD_REPLY
+                self.emit("item.completed", t, turn_id, itemType="assistant_text", text=text_out)
+            else:
+                reply = f"You said: {text}"
+                await self._stream(t, turn_id, reply)
+                self.emit("item.completed", t, turn_id, itemType="assistant_text", text=reply)
+            self.emit("turn.completed", t, turn_id, ok=True, usage={"input": len(text), "output": 10})
         except asyncio.CancelledError:
-            self._emit("turn.completed", t, turn_id, ok=False, stopReason="interrupted")
+            self.emit("turn.completed", t, turn_id, ok=False, stopReason="interrupted")
             raise
 
     async def interrupt_turn(self, thread_id: str) -> None:

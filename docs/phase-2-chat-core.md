@@ -102,3 +102,30 @@ Theo `ModelPicker.tsx` và `model-picker.png`:
 - **Model picker:** làm `SimpleModelMenu` trước (viên thuốc `h-8` ở header; "Thinking" gập thành một dòng như "Auto"); `ModelPicker` hai cột có dải provider là Advanced, làm ở phase 5.
 - **Tool chip / dòng tiến độ:** Simple dùng `ToolActivity`, `NowCard`, `TurnPresence`; xem `ActivityRun.tsx` cho phần Advanced.
 - Phần driver, registry, ánh xạ `RuntimeEvent` không đổi.
+
+
+## Trạng thái thực hiện (2026-11-10)
+
+**Kết quả kiểm chứng:** pytest 28 test xanh, Vitest 12 test xanh, `tsc` sạch. Chạy thật trên trình duyệt: Codex GPT-6-Luna trả lời stream, lượt thứ hai nhớ ngữ cảnh (resume đúng), tool chip, markdown/bảng/code/toán, model menu, tạo task. **Claude CLI trên máy này chưa đăng nhập** (`claude auth status` báo `loggedIn: false`), nên driver Claude chỉ được kiểm bằng CLI giả (`server/tests/fake_claude.py`) và định dạng khung theo parser gốc; chưa chạy lượt Claude thật.
+
+### Đã làm theo kế hoạch
+- **Mục 1 Registry:** `registry.py` (Claude, Codex, openai-compat, echo), dò CLI bằng `shutil.which`, đọc phiên bản, trạng thái đăng nhập (`claude auth status` JSON, `codex login status`), model catalog (Codex đọc `~/.codex/models_cache.json`), engine hỏng thành `unavailable` kèm lý do. Route `GET/POST /api/instances`, `PATCH /api/instances/{id}`, `POST …/check`; khoá endpoint tự thêm lưu trong `config.json`, không bao giờ trả về.
+- **Mục 2 Driver:** `drivers/claude.py` (tiến trình `claude -p` stream-json theo thread, `--resume`, steer qua stdin, ngắt bằng kill cây tiến trình, dùng lại tiến trình giữa các lượt, khởi động lại khi đổi model/persona), `drivers/codex.py`, `drivers/openai_compat.py` (SSE stream, phát lại transcript), `drivers/echo.py` (kịch bản `/tool` `/slow` `/error` `/md`). `capabilities` mỗi driver; `turn.retrying` thử lại tối đa 2 lần (1s, 3s) khi tiến trình chết trước khi có đầu ra.
+- **Mục 3 Điều phối:** `turns.py` với một đường ống sự kiện tuần tự; gộp thành tin `text`/`activity`/`error`/`stopped`; trạng thái bot (`busy`, `threadBusy`, `statusLine`, `turnStartedAt`); log NDJSON theo thread (không ghi `content.delta`); usage cộng theo `turn.completed`; steer rồi mới xếp hàng; Stop xoá hàng đợi; `GET /api/threads/{id}/events`.
+- **Mục 4 Giao diện:** stream có con trỏ, dòng trạng thái lượt (`TurnPresence`, bộ đếm giây), tool chip ba trạng thái bấm mở xem input/output, markdown (gfm, math/KaTeX, shiki hai bảng màu theo skin, mermaid tải lười, bảng dạng thẻ, nút chép), cuộn bám đáy + nút "xuống cuối" + tải trang cũ khi chạm đỉnh + vạch "New" chưa đọc, hành động trên tin (chép, thử lại, sửa → nhánh, chuyển nhánh `‹ 1/2 ›`), nút Dừng/Gửi, tin xếp hàng mờ có nút gỡ, banner lỗi (setup có nút kiểm tra lại engine, hết hạn mức kèm giờ đặt lại), dải cảnh báo khi chưa có engine nào dùng được.
+- **Mục 5 Model picker:** dạng Simple (`ModelMenu`): popover nhóm theo engine, nhãn `default`, dấu ✓, lý do khi engine không dùng được, hàng "Thinking" khi driver khai báo `effortLevels`. Đổi model giữa chừng qua `PATCH /api/bots/{id}`; Claude tự mở phiên mới (giữ `--resume`).
+- **Mục 6 Task/thread:** bảng `threads`, `POST/GET/PATCH/DELETE /api/bots/{id}/tasks…`, `TaskMenu` mở từ pill ở header (không có nút `+ Task` vì là chế độ Simple): đổi chỗ, tạo, ghim, đổi tên, đóng, xoá; mỗi thread chạy độc lập, tự đặt tên từ tin đầu.
+- **Nhánh:** `messages.parent_id` + `threads.leaf_id`, truy vấn nhánh hiện hành bằng CTE đệ quy, `PUT /api/threads/{id}/leaf`.
+
+### Khác với kế hoạch (có chủ đích)
+- **Codex dùng `codex exec --json` mỗi lượt** (+ `exec resume <thread_id>`), không dùng JSON-RPC của app-server. Không có steer và không có duyệt quyền theo từng lệnh; sandbox cố định `read-only` cho đến phase 3.
+- **Claude chạy `--permission-mode default` không có công cụ duyệt**, nên lệnh cần quyền bị từ chối cho tới phase 3 (broker). Không dùng `--setting-sources project` vì làm mất cấu hình đăng nhập của người dùng.
+- **Ảo hoá danh sách:** dùng `content-visibility: auto` cho các hàng cũ thay vì `@tanstack/react-virtual` (hàng cao thay đổi khi stream).
+- **Không có ChatLoading/NoEngines toàn màn hình;** thay bằng dải cảnh báo phía trên.
+- **Cổng** 5299/8899 (xem README).
+
+### Chưa đạt / chưa kiểm
+- **Lượt Claude thật** và test tay trên macOS (máy này Windows, Claude chưa đăng nhập).
+- **So ảnh Playwright** với bản gốc (tiêu chí 6) chưa có hạ tầng; mới so bằng mắt.
+- **Khôi phục sau khởi động lại giữa lượt:** tiến trình CLI bị giết cùng server; lượt đang chạy không tự chạy lại (runtime phase 4 sẽ xử lý). Transcript và `resume cursor` vẫn giữ nguyên.
+- **Mục 7 kịch bản "CLI chết giữa chừng / steer bị từ chối"** đã có test với CLI giả; kịch bản bản ghi khung thật của Claude chưa có.

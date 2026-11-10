@@ -1364,3 +1364,23 @@
   body { background: var(--color-app); color: var(--color-ink); font-family: var(--font-sans); }
 }
 
+
+/* Shiki emits both palettes as variables; the skin's scheme picks one. */
+.shiki, .shiki span { color: var(--shiki-light); background: transparent !important; }
+:is([data-skin="midnight"], [data-skin="foundry"], [data-skin="graphite"], [data-skin="dusk"], [data-skin="halloween"], [data-skin="diwali"], [data-skin="aurora"]) :is(.shiki, .shiki span) {
+  color: var(--shiki-dark);
+}
+.shiki { margin: 0; }
+.chat-md ul, .chat-md ol { list-style-position: outside; }
+.chat-md .katex-display { overflow-x: auto; overflow-y: hidden; }
+
+/* A running turn's status text: a soft light sweeping across the letters. */
+.thinking-shimmer {
+  background: linear-gradient(90deg, var(--color-ink-secondary) 40%, var(--color-ink) 50%, var(--color-ink-secondary) 60%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.2s linear infinite;
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .thinking-shimmer { animation: none; color: var(--color-ink-secondary); background: none; } }

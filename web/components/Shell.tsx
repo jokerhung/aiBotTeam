@@ -8,11 +8,17 @@ import { Sidebar } from "./Sidebar";
 export function Shell() {
   const { state, dispatch } = useStore();
   const bot = state.bots.find((b) => b.id === state.selectedId);
+  const noRealEngine = !state.instances.some((i) => i.driver !== "echo" && i.snapshot.state === "available" && i.snapshot.signedIn !== false);
   return (
     <div className="flex h-full flex-col">
       {!state.connected && (
         <div role="status" className="shrink-0 bg-warning/15 px-4 py-1.5 text-center text-[13px] text-warning">
           Connection lost — reconnecting…
+        </div>
+      )}
+      {state.hydrated && noRealEngine && (
+        <div role="status" className="shrink-0 bg-warning/15 px-4 py-1.5 text-center text-[13px] text-warning">
+          No AI engine is ready. Install and sign in to the Claude Code or Codex CLI, or add an OpenAI-compatible endpoint.
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">

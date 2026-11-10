@@ -22,18 +22,18 @@ export function Composer({ bot }: { bot: Bot }) {
 
   const send = async () => {
     const t = text.trim();
-    if (!t || bot.busy) return;
+    if (!t) return;
     const sendId = crypto.randomUUID();
     setText("");
     dispatch({
       type: "optimistic",
-      botId: bot.id,
+      threadId: bot.threadId,
       message: { id: `pending-${sendId}`, sendId, role: "user", kind: "text", text: t, at: Date.now(), pending: true },
     });
     try {
-      await api(`/api/bots/${bot.id}/messages`, { method: "POST", body: JSON.stringify({ text: t, sendId }) });
+      await api(`/api/bots/${bot.id}/messages`, { method: "POST", body: JSON.stringify({ text: t, sendId, threadId: bot.threadId }) });
     } catch {
-      dispatch({ type: "optimisticFailed", botId: bot.id, sendId });
+      dispatch({ type: "optimisticFailed", threadId: bot.threadId, sendId });
       setText(t);
     }
   };
@@ -78,8 +78,8 @@ export function Composer({ bot }: { bot: Bot }) {
                     className="block max-h-[9rem] min-h-7 w-full resize-none overflow-y-auto bg-transparent px-0.5 py-1 text-[14px] leading-5 text-ink outline-none placeholder:text-ink-tertiary"
                   />
                 </div>
-                {bot.busy ? (
-                  <button type="button" title="Stop" aria-label="Stop" onClick={() => api(`/api/bots/${bot.id}/interrupt`, { method: "POST" })} className={cn(round, "bg-ink text-app")}>
+                {bot.threadBusy && !text.trim() ? (
+                  <button type="button" title="Stop" aria-label="Stop" onClick={() => api(`/api/bots/${bot.id}/interrupt?thread=${bot.threadId}`, { method: "POST" })} className={cn(round, "bg-ink text-app")}>
                     <Square size={11} fill="currentColor" />
                   </button>
                 ) : text.trim() ? (
