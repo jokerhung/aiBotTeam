@@ -127,7 +127,7 @@ botteam/
 4. **Thông số bố cục đo từ mã gốc:** sidebar 280px (Simple) / 320px (Advanced) / 80px (thu thành icon), kéo đổi rộng qua `--sidebar-width`; cột chat tối đa `60rem`; bong bóng tối đa `35rem` / 80%; chữ chat 15px, `line-height: 1.75`; phông Geist Variable + Geist Mono.
 5. **Component shadcn dùng làm nền** (ghi đè class cho khớp, không đổi cấu trúc trực quan): `dialog`, `sheet`, `popover`, `dropdown-menu`, `context-menu`, `command`, `tooltip`, `tabs`, `toggle-group`, `switch`, `select`, `input`, `textarea`, `button`, `scroll-area`, `sonner`.
 6. **Chép các phần vẽ tay:** mascot (`CursorAvatar.tsx`, `lib/mascot.ts`, `shared/mascot-bodies.ts`), `ProviderIcons.tsx`, `ChatMarkdown.tsx`, `CodeBlock.tsx`.
-7. **So ảnh tự động.** Chạy bản gốc (`pnpm dev` + `pnpm dev:server`, cổng 5299) cạnh bản mới với cùng dữ liệu mẫu; Playwright chụp từng màn hình ở 1440×900 và 390×844, so bằng `pixelmatch`, ngưỡng sai khác ≤ 0,5% mỗi màn. Ảnh trong `_reference/OpenMausBot/docs/screenshots/` là mốc đối chiếu bằng mắt.
+7. **So ảnh tự động.** Chạy bản gốc (`pnpm dev` + `pnpm dev:server`, cổng 5299) cạnh bản mới với cùng dữ liệu mẫu; Playwright chụp từng màn hình ở 1440×900 và 390×844, so bằng `pixelmatch`, ngưỡng sai khác ≤ 0,5% mỗi màn. Mốc đối chiếu là **app đang chạy** (Simple mode, xem §7); ảnh trong `docs/screenshots/` là bản Advanced cũ.
 
 Mỗi phase có danh sách màn hình phải đạt ngưỡng so ảnh trước khi coi là xong.
 
@@ -148,3 +148,32 @@ Mỗi phase có danh sách màn hình phải đạt ngưỡng so ảnh trước 
 | Luồng duyệt quyền phụ thuộc MCP (`--permission-prompt-tool`) | Làm sớm một spike ở đầu phase 3 trước khi dựng UI |
 | Trôi phạm vi do bản gốc quá nhiều tính năng | Bám danh sách "ngoài phạm vi" ở mục 2; mỗi phase có tiêu chí hoàn thành cố định |
 | Lệch pixel do khác primitive (Radix của shadcn so với menu tự viết) | So ảnh tự động mỗi phase; nơi lệch thì chép component gốc thay vì dùng shadcn |
+
+## 7. Đối chiếu với mã nguồn gốc (2026-11-10)
+
+Đối chiếu `D:\jokerhung\work\investigation\OpenMausBot` với bản đã clone: **cùng commit `9d6678a` (v0.1.151), cây làm việc sạch** — không có sai khác về mã. Sai khác nằm ở chỗ kế hoạch ban đầu dựa vào README và ảnh `docs/screenshots/` (bản cũ), còn app đang chạy ở `:5199` là bản mới. Các điều chỉnh bên dưới đã áp vào từng phase.
+
+### 7.1 Hai chế độ giao diện
+
+Mã có công tắc `omb-advanced-mode` (`src/lib/interface-mode.ts`, `SIMPLE_ONLY = false`):
+
+| | Simple (mặc định cài mới) | Advanced (máy từng dùng: `hasPriorRun`) |
+|---|---|---|
+| Khi nào | Khóa trống/`0`; cài mới | `omb-advanced-mode = 1` |
+| Skin | `system`: Daylight (sáng) / Midnight (tối) theo hệ điều hành (`DEFAULT_SKIN_CHOICE`) | Chọn được 13 skin, phông, độ rộng chat |
+| Sidebar | Nút tròn Search + New, hàng Inbox, tile Chief **MausBot**, hàng bot 54px, chân: avatar người dùng + viên thuốc **Connect apps** | Ô Search, Automations, Plugins, hàng người dùng + bánh răng (ảnh README) |
+| Header | **ChatHeadPill**: avatar + tên bot + `›`, bấm mở *bot panel*; bên phải viên thuốc model + nút màn hình | `+ Task`, nút model có dải provider, icon gọi, icon máy tính |
+| Model | `SimpleModelMenu` (mục "Thinking" gập thành một dòng, ví dụ "Auto") | `ModelPicker` hai cột có dải provider |
+| Cài đặt bot | `bot-panel/` (PanelShell, tab Details · Computer · Library, trang Memory, Settings, Conversations, Backup AIs) | `BotSettingsDialog` + accordion |
+| Composer | Dock nhỏ: nút `+` (ComposerPlusMenu), ô nhập 14px, nút gọi tròn màu bot | Có khiên duyệt, nút dạy task, ô cao hơn |
+| Tùy chọn chỉ Advanced | — (bị xóa khi chuyển: `ADVANCED_ONLY_PREFS`) | phông, độ rộng chat, hiện thread, thẻ chạy, web panel |
+
+**Quyết định:** mục tiêu "giống hệt" là **Simple** (đã chốt với người dùng). Advanced được xếp thành phần việc riêng ở phase 5 để không làm lệch ba phase đầu.
+
+### 7.2 Các điều chỉnh khác
+
+- **Bot đầu tiên là Chief of Staff "MausBot"** (onboarding `MausBotWelcome`, `useChiefStepOpen`, tile ở đầu sidebar kèm huy hiệu vàng); bot thường nằm bên dưới. Cần có trong phase 1–3 ở mức tile + trang chào, logic Chief đầy đủ ở phase 4.
+- **Cổng:** web 5299 / API 8899 (không đụng 5199 / 8799 của app gốc đang chạy cùng máy).
+- **Màu nền:** không tự đặt ground riêng; dùng đúng `--color-app` / `--color-panel` của skin (Midnight app `#121212`, panel `#0e0e0e`; Daylight app `#fcfcfc`, panel `#f5f5f5`).
+- **Token không có utility:** `--color-bubble-user-ink`, `--color-accent-ink`, `--color-danger-ink` nằm trong `:root`, không trong `@theme`; phải dùng `text-[var(--...)]`.
+- **Công cụ:** máy này Python 3.10, không `uv`/`pnpm`; dùng `venv` + `pip`, `npm`. Next.js 16 (có thay đổi API; đọc `node_modules/next/dist/docs/` trước khi dùng API mới) và SSE qua rewrite cần `compress: false`.

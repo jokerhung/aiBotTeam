@@ -100,3 +100,9 @@ Cấu trúc `Shell` theo `App.tsx`:
 3. Gửi tin → driver giả trả lời theo dòng chảy từng đoạn.
 4. Tắt backend → hiện dải "mất kết nối"; bật lại → tự nối, trạng thái đúng.
 5. `typecheck` và toàn bộ test xanh trên Windows.
+
+## Cập nhật sau đối chiếu (2026-11-10)
+
+- **Đã làm:** khung theo **Simple** (xem README §7.1): nút tròn Search/New, Inbox, hàng bot 54px, ChatHeadPill, viên thuốc model, composer dock, bong bóng 15/22px, kéo đổi rộng + thu icon, skin theo hệ điều hành, mascot lấy path gốc.
+- **Sửa lại các mục ở trên:** mục "Sidebar" và "ChatView" mô tả bản README (Advanced) — chỉ là tham khảo; bản chuẩn là Simple. Ảnh đối chiếu: chụp từ app đang chạy, không dùng `hero.png`.
+- **Còn thiếu:** tile Chief MausBot + huy hiệu, huy hiệu engine trên hàng bot, khuôn mặt mascot theo bộ biểu cảm gốc, so ảnh pixel Playwright, kiểm tra bản di động (ngăn kéo).

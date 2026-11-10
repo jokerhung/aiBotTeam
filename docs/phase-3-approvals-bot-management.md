@@ -78,3 +78,11 @@ Theo `SettingsModal.tsx` và `app-settings.png`:
 5. Đổi skin tức thì, không nháy khi tải lại trang.
 6. Gửi ảnh cho bot có model nhìn được ảnh và nhận mô tả đúng.
 7. So ảnh các màn mục 7 đạt ngưỡng.
+
+## Cập nhật sau đối chiếu (2026-11-10)
+
+- **Cài đặt bot = bot panel**, không phải `BotSettingsDialog`: `bot-panel/PanelShell`, tab Details · Computer · Library, trang Memory/Settings/Conversations/Backup AIs, nút Share tròn, menu `ChatMoreMenu` thành các hàng. Mở bằng ChatHeadPill. `BotSettingsDialog` (accordion) chỉ cho Advanced.
+- **Composer Simple:** `ComposerPlusMenu` (đính file, chip "Finish together", mức duyệt); mức duyệt hiện thành pill nhỏ chỉ khi khác mặc định, trên bot panel > Details có chọn đầy đủ (`ApprovalModeSelector` là bản Advanced).
+- **Cài đặt app:** `SettingsModal` + `SettingsSimplePages` cho Simple; khoá API chỉ-ghi giữ nguyên.
+- **Menu chuột phải hàng bot** (ảnh `context-menu.png`) vẫn đúng, nhưng hàng bot Simple dùng nút "Actions for {bot}" (`size-7`, hiện khi rê chuột/chạm) mở cùng menu.
+- Thẻ Allow/Deny và thẻ câu hỏi A/B/C: giữ như đã mô tả.

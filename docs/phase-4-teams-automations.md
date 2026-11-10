@@ -90,3 +90,9 @@ Theo `RoutineCalendarPage.tsx` và `tasks-routines.png`:
 5. `curl` tới webhook với Bearer đúng → bot bắt đầu một task; sai bí mật → 401 và có bản ghi attempt.
 6. Thẻ cần duyệt của bot bất kỳ hiện trong Inbox và trả lời được từ đó.
 7. So ảnh các màn mục 8 đạt ngưỡng.
+
+## Cập nhật sau đối chiếu (2026-11-10)
+
+- **Lối vào Automations ở Simple:** không còn hàng cố định ở chân sidebar (chỉ có avatar + Connect apps); mở từ `SidebarFooterNav`/menu hồ sơ và từ bot panel (Routines). Hàng `Automations` ở chân sidebar là bản Advanced.
+- **Chief of Staff "MausBot"** là bot mặc định của cài mới: tile đầu sidebar, `MausBotWelcome`, "Show MausBot in the sidebar" tắt được; các bot khác báo cáo cho Chief (`reportsTo`, `managedSections`). Làm tile + trang chào ở phase 1–3, quyền và ủy thác ở đây.
+- Runtime giao việc, routine, webhook: không đổi (đọc `docs/runtime-contract.md`).

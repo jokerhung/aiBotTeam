@@ -95,3 +95,10 @@ Theo `ModelPicker.tsx` và `model-picker.png`:
 4. Khởi động lại server → mở lại bot vẫn còn transcript, tin kế tiếp nối đúng phiên CLI.
 5. Hai thread của cùng một bot chạy độc lập.
 6. So ảnh các màn mục 7 đạt ngưỡng.
+
+## Cập nhật sau đối chiếu (2026-11-10)
+
+- **Header Simple không có `+ Task`.** Mở hội thoại/thread qua `ChatHeadPill` → bot panel, tab Conversations (`bot-panel/Conversations.tsx`); sidebar có `SidebarActiveThreads` khi bot có việc đang chạy.
+- **Model picker:** làm `SimpleModelMenu` trước (viên thuốc `h-8` ở header; "Thinking" gập thành một dòng như "Auto"); `ModelPicker` hai cột có dải provider là Advanced, làm ở phase 5.
+- **Tool chip / dòng tiến độ:** Simple dùng `ToolActivity`, `NowCard`, `TurnPresence`; xem `ActivityRun.tsx` cho phần Advanced.
+- Phần driver, registry, ánh xạ `RuntimeEvent` không đổi.

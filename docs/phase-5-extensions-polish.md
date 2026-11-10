@@ -98,3 +98,10 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 6. Chuyển giao diện sang tiếng Việt không còn chuỗi tiếng Anh sót ở các màn chính.
 7. `docker compose up` trên máy sạch → dùng được trong ≤ 2 phút.
 8. Toàn bộ so ảnh, E2E và rà bảo mật ở mục 10 đạt.
+
+## Cập nhật sau đối chiếu (2026-11-10)
+
+- **Thêm hạng mục: chế độ Advanced** (công tắc `omb-advanced-mode`): sidebar có Search/Automations/Plugins/hàng người dùng, header `+ Task` + `ModelPicker` hai cột + icon gọi, `BotSettingsDialog`, khiên duyệt ở composer, chọn skin/phông/độ rộng chat, các chip theo dõi (`ActivityRun`). Ảnh README là mốc đối chiếu của chế độ này.
+- **Connected apps** mở từ viên thuốc "Connect apps" ở chân sidebar (`PluginsPanel`), cả Simple lẫn Advanced.
+- **Onboarding thật:** `WelcomeGate`, `MausBotWelcome`, `GuidedTour`, `FirstConversationTour` (thay cho mô tả chung ở mục 8).
+- **13 skin:** `system` mặc định; bộ chọn skin chỉ ở Advanced.
