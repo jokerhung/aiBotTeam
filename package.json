@@ -1,0 +1,10 @@
+{
+  "name": "botteam",
+  "private": true,
+  "scripts": {
+    "dev:server": "server/.venv/Scripts/python -m uvicorn botteam.main:app --app-dir server --host 127.0.0.1 --port 8899 --reload",
+    "dev:web": "npm --prefix web run dev",
+    "test:server": "cd server && .venv/Scripts/python -m pytest -q",
+    "typecheck": "npm --prefix web exec tsc -- --noEmit"
+  }
+}

@@ -1,0 +1,8 @@
+BotTeam
+This project adapts design tokens, skins and chat typography (web/app/globals.css)
+and the product's interaction design from OpenMausBot
+(https://github.com/milind-soni/OpenMausBot), Copyright 2026 Milind Soni and
+OpenMausBot contributors, licensed under the Apache License, Version 2.0.
+Files derived from it were modified: stylesheet ranges were extracted and merged with
+shadcn/ui theme aliases. The Apache-2.0 license text is in _reference/OpenMausBot/LICENSE
+and must accompany any redistribution.
