@@ -20,7 +20,7 @@ export function Shell() {
         {bot ? (
           <ChatView key={bot.id} bot={bot} />
         ) : (
-          <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-chat text-ink-secondary">
+          <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
             {!state.hydrated ? (
               <>
                 <Loader2 className="animate-spin" size={20} />
@@ -35,7 +35,7 @@ export function Shell() {
                 <button
                   type="button"
                   onClick={() => dispatch({ type: "newBot", open: true })}
-                  className="rounded-full bg-accent px-5 py-2 text-[15px] text-accent-ink"
+                  className="rounded-full bg-accent px-5 py-2 text-[15px] text-[var(--color-accent-ink)]"
                 >
                   Create your first bot
                 </button>

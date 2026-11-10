@@ -1364,10 +1364,3 @@
   body { background: var(--color-app); color: var(--color-ink); font-family: var(--font-sans); }
 }
 
-/* Chat pane and sidebar grounds. Midnight matches the reference screenshots: a near-black chat beside a slightly lifted sidebar. */
-@theme inline {
-  --color-chat: var(--chat-bg);
-  --color-side: var(--side-bg);
-}
-:root { --chat-bg: var(--color-app); --side-bg: var(--color-panel); }
-[data-skin="midnight"] { --chat-bg: #070707; --side-bg: #111111; }
