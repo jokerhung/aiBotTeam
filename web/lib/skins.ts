@@ -14,11 +14,11 @@ export const SKINS: readonly Skin[] = [
   { id: "linen", name: "Linen", tagline: "Clean daylight with a restrained navy accent.", dark: false },
   { id: "dusk", name: "Dusk", tagline: "Muted plum after dark, calm and low-key.", dark: true },
   { id: "daylight", name: "Daylight", tagline: "Midnight in reverse. Near-white, ink-black bubbles.", dark: false },
-  { id: "meadow", name: "Meadow", tagline: "Fresh white with a calm green.", dark: false },
-  { id: "pop", name: "Pop", tagline: "Cream paper, thick ink outlines. Chunky and cheerful.", dark: false },
-  { id: "halloween", name: "Halloween", tagline: "Plum after dark, lit in pumpkin orange.", dark: true },
-  { id: "diwali", name: "Diwali", tagline: "Indigo night, lit in marigold and diya gold.", dark: true },
-  { id: "aurora", name: "Aurora", tagline: "Near-black, crossed by a band of green light.", dark: true },
+  { id: "meadow", name: "Meadow", tagline: "Fresh white with a calm green. The MausBot look.", dark: false },
+  { id: "pop", name: "Pop", tagline: "Cream paper, thick ink outlines, hard shadows. Chunky and cheerful.", dark: false },
+  { id: "halloween", name: "Halloween", tagline: "Plum after dark, lit in pumpkin orange. Bats optional.", dark: true },
+  { id: "diwali", name: "Diwali", tagline: "Indigo night, lit in marigold and diya gold. Fireworks optional.", dark: true },
+  { id: "aurora", name: "Aurora", tagline: "Near-black, crossed by a band of green light. Glass on top.", dark: true },
 ];
 
 export const SKIN_IDS = new Set(SKINS.map((s) => s.id));

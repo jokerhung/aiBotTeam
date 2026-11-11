@@ -27,7 +27,7 @@ function Row({ title, hint, children }: { title: string; hint?: string; children
   );
 }
 
-const SELECT = "h-9 rounded-lg border border-input bg-inset px-2.5 text-[14px] text-ink outline-none";
+const SELECT = "h-9 rounded-lg border-0 bg-inset px-3 text-[14px] text-ink outline-none";
 
 function useSettingsSave() {
   const { dispatch } = useStore();
@@ -105,8 +105,11 @@ function KeyRow({ id, label, purpose, configured }: { id: string; label: string;
           aria-label={`${label} key`}
           className={cn(SELECT, "min-w-0 flex-1 font-mono text-[13px]")}
         />
-        <button type="button" disabled={busy || !value.trim()} onClick={() => put(value.trim())} className="rounded-lg bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">Save</button>
-        {configured && <button type="button" disabled={busy} onClick={() => put(null)} className="rounded-lg px-3 text-[13px] font-medium text-danger hover:bg-danger/10">Clear</button>}
+        {configured && !value.trim() ? (
+          <button type="button" disabled={busy} onClick={() => put(null)} className="h-9 w-[72px] shrink-0 rounded-lg bg-control text-[14px] font-medium text-danger hover:bg-raised-hover">Clear</button>
+        ) : (
+          <button type="button" disabled={busy || !value.trim()} onClick={() => put(value.trim())} className="flex h-9 w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control text-[14px] font-medium text-ink-secondary hover:bg-raised-hover disabled:opacity-60"><Check size={14} /> Save</button>
+        )}
       </div>
       {error && <div role="alert" className="mt-1 pl-4 text-[12.5px] text-danger">{error}</div>}
     </div>
@@ -117,10 +120,11 @@ function Connections() {
   const { state } = useStore();
   const { keyCatalog, keys } = state.config;
   return (
-    <>
-      <p className="pb-2 text-[13px] text-ink-secondary">Keys are write-only: once saved they are never shown again, only replaced or cleared.</p>
+    <section className="rounded-xl bg-card p-4" data-testid="keys-card">
+      <h3 className="text-[16px] font-semibold leading-6 text-ink">Keys</h3>
+      <p className="pb-1 text-[14px] leading-5 text-ink-secondary">Shared by all bots. Saving a key reloads providers instantly; keys are stored locally and never shown again.</p>
       {keyCatalog.map((k) => <KeyRow key={k.id} id={k.id} label={k.label} purpose={k.purpose} configured={!!keys[k.id]?.configured} />)}
-    </>
+    </section>
   );
 }
 
@@ -226,21 +230,21 @@ function Engines() {
 /** One live thumbnail per skin: a tiny subtree under [data-skin] so it paints with that skin's own tokens. */
 function SkinTile({ id, name, tagline, selected, onPick }: { id: string; name: string; tagline: string; selected: boolean; onPick: () => void }) {
   return (
-    <button type="button" role="radio" aria-checked={selected} aria-label={name} title={tagline} onClick={onPick}
-      className={cn("group overflow-hidden rounded-xl text-left ring-1 ring-ink/15 transition-shadow hover:ring-ink/40", selected && "ring-2 ring-accent")}>
-      <div data-skin={id} data-skin-preview="" className="flex h-[88px] bg-app text-ink">
-        <div className="w-[26%] bg-panel p-1.5"><div className="mb-1 size-3 rounded-full bg-raised" /><div className="h-1 w-full rounded bg-raised" /></div>
-        <div className="flex flex-1 flex-col justify-end gap-1 p-2">
-          <div className="h-3 w-[60%] rounded-full bg-card" />
-          <div className="ml-auto h-3 w-[45%] rounded-full bg-bubble-user" />
-          <div className="mt-1 h-4 rounded-full bg-composer ring-1 ring-ink/10" />
-          <div className="h-1.5 w-8 rounded bg-accent" />
+    <button type="button" role="radio" aria-checked={selected} aria-label={name} onClick={onPick} data-testid="skin-tile"
+      className={cn("flex w-[140px] flex-col rounded-xl border border-hairline p-[9px] text-left transition-colors hover:bg-ink/[0.04]", selected && "border-accent bg-raised")}>
+      <div data-skin={id} data-skin-preview="" className="flex h-[78px] w-[122px] overflow-hidden rounded-md bg-app text-ink ring-1 ring-ink/10">
+        <div className="w-[34%] bg-panel p-1.5"><div className="mb-1 size-2 rounded-full bg-raised" /><div className="mb-0.5 h-[3px] w-[70%] rounded bg-raised" /><div className="h-[3px] w-[50%] rounded bg-raised" /></div>
+        <div className="flex flex-1 flex-col justify-end gap-1 p-1.5">
+          <div className="ml-auto h-3 w-[55%] rounded-full bg-bubble-user" />
+          <div className="h-3 w-[70%] rounded-md bg-card" />
+          <div className="mt-0.5 flex h-4 items-center justify-end rounded-full bg-composer px-1 ring-1 ring-ink/10"><span className="size-2.5 rounded-full bg-accent" /></div>
         </div>
       </div>
-      <div className="flex items-center gap-1.5 bg-card px-2.5 py-1.5 text-[13px] font-medium text-ink">
-        {name}
-        {selected && <Check size={13} className="ml-auto text-accent" />}
+      <div className="mt-[9px] flex items-center text-[14px] font-medium leading-5 text-ink">
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {selected && <Check size={14} className="shrink-0 text-accent" />}
       </div>
+      <div className="text-[11px] leading-[14px] text-ink-secondary">{tagline}</div>
     </button>
   );
 }
@@ -251,7 +255,7 @@ function Appearance() {
   const save = useSettingsSave();
   return (
     <>
-      <div role="radiogroup" aria-label="Skin" className="grid grid-cols-3 gap-3 pb-4 max-sm:grid-cols-2">
+      <div role="radiogroup" aria-label="Skin" className="grid grid-cols-[repeat(4,140px)] justify-start gap-3 pb-4 max-sm:grid-cols-[repeat(2,140px)]">
         {SKINS.map((k) => <SkinTile key={k.id} id={k.id} name={k.name} tagline={k.tagline} selected={s.skin === k.id} onPick={() => void save({ skin: k.id })} />)}
       </div>
       <Row title="Font">
@@ -285,8 +289,8 @@ export function SettingsModal() {
   return (
     <div role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onMouseDown={(e) => e.target === e.currentTarget && close()} onKeyDown={(e) => e.key === "Escape" && close()}>
-      <div ref={ref} tabIndex={-1} className="flex h-[min(86vh,640px)] w-[min(96vw,820px)] animate-pop-in overflow-hidden rounded-2xl border border-hairline bg-card shadow-2xl outline-none max-sm:flex-col">
-        <nav aria-label="Settings sections" className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-hairline bg-panel p-3 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0">
+      <div ref={ref} tabIndex={-1} data-testid="settings-modal" className="flex h-[559px] max-h-[92vh] w-[860px] max-w-[96vw] animate-pop-in overflow-hidden rounded-2xl border border-hairline bg-app shadow-2xl outline-none max-sm:flex-col">
+        <nav aria-label="Settings sections" className="flex w-[190px] shrink-0 flex-col gap-0.5 border-r border-hairline bg-app p-3 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0">
           <div className="px-2 pb-2 pt-1 text-[15px] font-semibold text-ink max-sm:hidden">Settings</div>
           {PAGES.map((p) => (
             <button key={p.id} type="button" aria-current={page === p.id ? "page" : undefined} onClick={() => dispatch({ type: "settings", open: true, page: p.id })}
@@ -295,9 +299,9 @@ export function SettingsModal() {
             </button>
           ))}
         </nav>
-        <div className="relative min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-5">
+        <div className="relative min-w-0 flex-1 overflow-y-auto px-5 pb-5 pt-[17px]">
           <button type="button" aria-label="Close settings" onClick={close} className="absolute right-3 top-3 rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><X size={16} /></button>
-          <h2 className="mb-3 text-[18px] font-semibold text-ink">{PAGES.find((p) => p.id === page)?.label}</h2>
+          <h2 className="mb-[13px] text-[17px] font-semibold leading-6 text-ink">{PAGES.find((p) => p.id === page)?.label}</h2>
           {page === "general" && <General />}
           {page === "connections" && <Connections />}
           {page === "engines" && <Engines />}

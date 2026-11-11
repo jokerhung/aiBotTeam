@@ -178,6 +178,11 @@ class Store:
         await self.db.execute(f"UPDATE threads SET {', '.join(sets)} WHERE id=?", args)
         await self.db.commit()
 
+    async def reset_cursor(self, thread_id: str) -> None:
+        """Forget the engine's session so the next turn starts a fresh one (the transcript stays)."""
+        await self.db.execute("UPDATE threads SET cursor=NULL WHERE id=?", (thread_id,))
+        await self.db.commit()
+
     async def delete_thread(self, thread_id: str) -> None:
         await self.db.execute("DELETE FROM messages WHERE thread_id=?", (thread_id,))
         await self.db.execute("DELETE FROM msg_fts WHERE thread_id=?", (thread_id,))

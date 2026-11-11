@@ -113,7 +113,7 @@ try {
   await shot("context-menu");
   await page.keyboard.press("Escape");
   await page.getByLabel("Bot details").click();
-  await page.getByLabel("Name", { exact: true }).waitFor();
+  await page.getByTestId("panel-overview").waitFor();
   await shot("bot-panel");
   await page.getByLabel("Close panel").click();
   await page.getByLabel("Profile and settings").click();

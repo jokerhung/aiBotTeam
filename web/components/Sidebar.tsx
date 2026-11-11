@@ -419,7 +419,7 @@ export function Sidebar() {
                   <span className="min-w-0 truncate">Connect apps</span>
                   <span aria-hidden className="flex shrink-0 items-center gap-[7px] text-ink-tertiary opacity-70 transition-opacity group-hover/apps:opacity-100">
                     <span className="w-[16px] text-center text-[16px] font-semibold leading-none">G</span>
-                    <Hash size={16} strokeWidth={2} />
+                    <Hash size={16} strokeWidth={1.75} />
                     <span className="flex size-[17px] items-center justify-center rounded-[3px] border border-current text-[11px] font-bold leading-none">N</span>
                   </span>
                 </button>

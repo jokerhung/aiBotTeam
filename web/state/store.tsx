@@ -5,7 +5,7 @@ import type { AppConfig, AppSettings, Bot, InstanceInfo, Message, Section, Serve
 
 export type SettingsPage = "general" | "connections" | "engines" | "appearance";
 export const DEFAULT_SETTINGS: AppSettings = {
-  displayName: "", uiMode: "simple", skin: "daylight", font: "inter", chatWidth: "default", reduceMotion: false, language: "en",
+  displayName: "", uiMode: "simple", skin: "daylight", font: "skin", chatWidth: "default", reduceMotion: false, language: "en",
 };
 
 export interface AppState {

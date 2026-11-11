@@ -72,6 +72,7 @@ export function useBotMenu(bot: Bot) {
 }
 
 const MENU = "w-[228px] rounded-xl border border-hairline bg-menu p-1.5 text-ink";
+const ITEM = "h-[37px] gap-3 px-[9px] text-[15px] [&_svg]:size-4";
 
 export function BotContextMenu({ bot, children }: { bot: Bot; children: ReactNode }) {
   const entries = useBotMenu(bot);
@@ -83,7 +84,7 @@ export function BotContextMenu({ bot, children }: { bot: Bot; children: ReactNod
           e === "sep" ? (
             <ContextMenuSeparator key={`s${i}`} />
           ) : (
-            <ContextMenuItem key={e.key} className={cn(e.danger && "text-danger focus:text-danger")} onClick={e.run}>
+            <ContextMenuItem key={e.key} className={cn(ITEM, e.danger && "text-danger focus:text-danger")} onClick={e.run}>
               <e.icon />
               {e.label}
             </ContextMenuItem>
@@ -111,7 +112,7 @@ export function BotActionsButton({ bot, className }: { bot: Bot; className?: str
           e === "sep" ? (
             <DropdownMenuSeparator key={`s${i}`} />
           ) : (
-            <DropdownMenuItem key={e.key} className={cn(e.danger && "text-danger focus:text-danger")} onClick={e.run}>
+            <DropdownMenuItem key={e.key} className={cn(ITEM, e.danger && "text-danger focus:text-danger")} onClick={e.run}>
               <e.icon />
               {e.label}
             </DropdownMenuItem>

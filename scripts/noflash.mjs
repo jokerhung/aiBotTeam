@@ -22,10 +22,6 @@ for (const skin of ["midnight", "foundry", "pop", "daylight", "aurora"]) {
   await put({ skin });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
-  await page.goto(WEB); // first visit: the boot script learns the skin through the app
-  await page.waitForFunction((s) => document.documentElement.dataset.skin === s, skin);
-  await page.waitForTimeout(500);
-  // reload with the recorder installed before any page script runs
   await page.addInitScript(() => {
     const skin = () => document.documentElement?.dataset.skin;
     window.__skins = [];
@@ -35,16 +31,19 @@ for (const skin of ["midnight", "foundry", "pop", "daylight", "aurora"]) {
       for (const e of list.getEntries()) window.__skins.push({ at: e.name, skin: skin(), bg: getComputedStyle(document.body).backgroundColor });
     }).observe({ type: "paint", buffered: true });
   });
-  await page.reload({ waitUntil: "load" });
-  await page.waitForFunction(() => window.__skins.some((e) => e.at === "first-contentful-paint"), null, { timeout: 10000 });
-  await page.waitForTimeout(1500); // let the app hydrate and fetch /api/config
-  const log = await page.evaluate(() => window.__skins);
-  const paints = log.filter((e) => e.at === "first-paint" || e.at === "first-contentful-paint");
-  const wrongPaint = paints.find((e) => e.skin !== skin);
-  const changed = log.filter((e) => e.at === "change" && e.skin !== skin);
-  const ok = !wrongPaint && !changed.length;
-  console.log(`  ${ok ? "ok  " : "FAIL"} ${skin}: paints=${paints.map((p) => p.skin).join(",")} changes=${log.filter((e) => e.at === "change").map((e) => e.skin).join(",") || "none"}`);
-  if (!ok) failures.push(`${skin}: ${JSON.stringify(log)}`);
+  for (const visit of ["first visit (nothing stored in this browser)", "reload"]) {
+    if (visit === "reload") await page.reload({ waitUntil: "load" });
+    else await page.goto(WEB, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__skins.some((e) => e.at === "first-contentful-paint"), null, { timeout: 15000 });
+    await page.waitForTimeout(1500); // let the app hydrate and fetch /api/config
+    const log = await page.evaluate(() => window.__skins);
+    const paints = log.filter((e) => e.at === "first-paint" || e.at === "first-contentful-paint");
+    const wrongPaint = paints.find((e) => e.skin !== skin);
+    const changed = log.filter((e) => e.at === "change" && e.skin !== skin);
+    const ok = !wrongPaint && !changed.length;
+    console.log(`  ${ok ? "ok  " : "FAIL"} ${skin.padEnd(9)} ${visit}: paints=${paints.map((p) => p.skin).join(",")} changes=${log.filter((e) => e.at === "change").map((e) => e.skin).join(",") || "none"}`);
+    if (!ok) failures.push(`${skin} (${visit}): ${JSON.stringify(log)}`);
+  }
   await ctx.close();
 }
 await put({ skin: before.settings?.skin || "daylight" });

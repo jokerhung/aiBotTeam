@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { ChevronRight, FileText, Folder, Monitor, Plus, Share2, Trash2, X } from "lucide-react";
+import { Bug, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
 import { cn } from "@/lib/utils";
@@ -68,7 +68,7 @@ function ModelPicker({ value, onChange, allowNone }: { value: ModelSelection | n
   );
 }
 
-function Details({ bot }: { bot: Bot }) {
+function SettingsForm({ bot }: { bot: Bot }) {
   const name = useSaved(bot, "name", bot.name);
   const title = useSaved(bot, "title", bot.title);
   const desc = useSaved(bot, "description", bot.description);
@@ -111,32 +111,128 @@ function Details({ bot }: { bot: Bot }) {
   );
 }
 
+type View = "overview" | "settings" | "activity" | "inspector";
+
+function Row({ icon: Icon, label, right, onClick, chevron }: { icon: typeof Search; label: string; right?: React.ReactNode; onClick?: () => void; chevron?: boolean }) {
+  return (
+    <button type="button" disabled={!onClick} onClick={onClick}
+      className="flex h-[46px] w-full items-center gap-3 rounded-lg px-1 text-left text-[15px] text-ink enabled:hover:bg-ink/[0.05] disabled:text-ink-tertiary">
+      <Icon size={16} className="shrink-0 text-ink-secondary" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {right}
+      {chevron && <ChevronRight size={15} className="shrink-0 text-ink-tertiary" />}
+    </button>
+  );
+}
+
+function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
+  const { state, dispatch } = useStore();
+  const inst = state.instances.find((i) => i.id === bot.modelSelection.instanceId);
+  const modelLabel = inst?.models.find((m) => m.id === bot.modelSelection.model)?.label ?? bot.modelSelection.model;
+  const newTask = () => void api(`/api/bots/${bot.id}/tasks`, { method: "POST", body: JSON.stringify({ title: "New task" }) });
+  const fresh = async () => {
+    try {
+      await api(`/api/bots/${bot.id}/fresh?thread=${bot.threadId}`, { method: "POST" });
+      toast("Next message starts a fresh session");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not start fresh");
+    }
+  };
+  return (
+    <div className="px-[30px] pb-6" data-testid="panel-overview">
+      <Row icon={Sparkles} label="Model" right={<span className="max-w-[140px] truncate text-[14px] text-ink-secondary">{modelLabel}</span>} chevron onClick={() => go("settings")} />
+      <div className="mt-4 text-[14px] font-medium text-ink-secondary">Conversations</div>
+      <Row icon={SquarePen} label="New conversation" onClick={newTask} />
+      <div className="mt-4 text-[14px] font-medium text-ink-secondary">This conversation</div>
+      <Row icon={Search} label="Find in conversation" right={<kbd className="rounded border border-hairline px-1.5 text-[11px] text-ink-tertiary">Ctrl F</kbd>} onClick={() => dispatch({ type: "find", open: true })} />
+      <Row icon={RotateCcw} label="Start fresh" onClick={fresh} />
+      <Row icon={ListChecks} label="Activity" chevron onClick={() => go("activity")} />
+      <Row icon={Bug} label="Inspector" chevron onClick={() => go("inspector")} />
+    </div>
+  );
+}
+
+function Activity({ bot }: { bot: Bot }) {
+  const { state } = useStore();
+  const tools = (state.messages[bot.threadId] ?? []).filter((m) => m.kind === "activity" && m.tool);
+  return (
+    <div className="px-6 pb-6" data-testid="activity-view">
+      {tools.length === 0 && <div className="py-10 text-center text-[13px] text-ink-tertiary">Nothing has run in this conversation yet.</div>}
+      {tools.map((m) => (
+        <div key={m.id} className="flex items-center gap-2 border-b border-hairline/60 py-2 text-[13px]">
+          <span className={cn("size-2 shrink-0 rounded-full", m.tool?.ok === false ? "bg-danger" : m.tool?.ok ? "bg-success" : "animate-pulse bg-accent")} />
+          <span className="font-mono text-ink">{m.tool?.name}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-ink-tertiary">{m.tool?.summary}</span>
+          <span className="shrink-0 text-ink-tertiary">{new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface LoggedEvent { type: string; createdAt: string; data: Record<string, unknown> }
+
+function Inspector({ bot }: { bot: Bot }) {
+  const [events, setEvents] = useState<LoggedEvent[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ events: LoggedEvent[] }>(`/api/threads/${bot.threadId}/events?limit=200`).then((r) => !cancelled && setEvents(r.events)).catch(() => {});
+    return () => { cancelled = true; };
+  }, [bot.threadId, bot.busy]);
+  return (
+    <div className="px-6 pb-6" data-testid="inspector-view">
+      {events.length === 0 && <div className="py-10 text-center text-[13px] text-ink-tertiary">No events recorded for this conversation.</div>}
+      {events.slice().reverse().map((e, i) => (
+        <details key={i} className="border-b border-hairline/60 py-1.5 text-[12.5px]">
+          <summary className="cursor-pointer font-mono text-ink">{e.type}</summary>
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-inset p-2 font-mono text-[11.5px] text-ink-secondary">{JSON.stringify(e.data, null, 1)}</pre>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 export function BotPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   const [tab, setTab] = useState<Tab>("details");
+  const [view, setView] = useState<View>("overview");
   const tabs: { id: Tab; label: string }[] = [
     { id: "details", label: "Details" },
-    { id: "computer", label: "Computer" },
     { id: "library", label: "Library" },
+    { id: "computer", label: "Computer" },
   ];
+  const sub = tab === "details" && view !== "overview";
+  const circle = "flex size-9 items-center justify-center rounded-full bg-card text-ink-secondary shadow-(--shadow-float) ring-[0.5px] ring-ink/10 hover:text-ink";
   return (
-    <aside aria-label={`${bot.name} settings`} className="relative z-20 flex h-full w-[360px] shrink-0 animate-panel-in flex-col border-l-[0.5px] border-edge bg-panel max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:w-full">
-      <div className="flex items-center gap-1 px-3 pb-1 pt-3">
-        <div role="tablist" className="flex min-w-0 flex-1 gap-0.5 overflow-hidden">
-          {tabs.map((t) => (
-            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-              className={cn("min-w-0 truncate rounded-full px-2.5 py-1.5 text-[13px] font-medium", tab === t.id ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <button type="button" title="Copy a link to this bot" aria-label="Share" onClick={() => { void navigator.clipboard?.writeText(`${location.origin}/?bot=${bot.id}`); toast("Link copied"); }}
-          className="flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"><Share2 size={14} /></button>
-        <button type="button" title="Close" aria-label="Close panel" onClick={() => dispatch({ type: "panel", botId: null })}
-          className="flex size-8 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink"><X size={16} /></button>
+    <aside aria-label={`${bot.name} details`} data-testid="bot-panel" className="relative z-20 flex h-full w-[320px] shrink-0 animate-panel-in flex-col border-l-[0.5px] border-edge bg-app max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:w-full">
+      <div className="flex h-[58px] shrink-0 items-center justify-end gap-2.5 px-3.5">
+        <button type="button" title="Copy a link to this bot" aria-label="Share" onClick={() => { void navigator.clipboard?.writeText(`${location.origin}/?bot=${bot.id}`); toast("Link copied"); }} className={circle}><Share2 size={15} /></button>
+        <button type="button" title="Bot settings" aria-label="Bot settings" aria-pressed={view === "settings"} onClick={() => { setTab("details"); setView(view === "settings" ? "overview" : "settings"); }} className={cn(circle, view === "settings" && "text-ink")}><Settings size={15} /></button>
+        <button type="button" title="Close" aria-label="Close panel" onClick={() => dispatch({ type: "panel", botId: null })} className={circle}><X size={16} /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
-        {tab === "details" && <Details bot={bot} />}
+        <div className="flex flex-col items-center px-6 pb-3 pt-[10px] text-center">
+          <Mascot color={bot.color} size={52} busy={bot.busy} />
+          <div className="mt-[15px] max-w-full truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
+          {(bot.title || bot.description) && <div className="max-w-full truncate text-[14px] text-ink-secondary">{bot.title || bot.description}</div>}
+          <div role="tablist" className="mt-[22px] flex h-8 items-center rounded-full bg-raised p-[3px]" data-testid="panel-tabs">
+            {tabs.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => { setTab(t.id); setView("overview"); }}
+                className={cn("h-[26px] rounded-full px-[10.5px] text-[13.5px] font-medium", tab === t.id ? "bg-composer text-ink shadow-sm ring-[0.5px] ring-ink/10" : "text-ink-secondary hover:text-ink")}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {sub && (
+          <div className="px-6 pb-2">
+            <button type="button" onClick={() => setView("overview")} className="flex items-center gap-1 rounded-full px-2 py-1 text-[13px] text-ink-secondary hover:bg-ink/10 hover:text-ink"><ChevronLeft size={14} /> Back</button>
+          </div>
+        )}
+        {tab === "details" && view === "overview" && <Overview bot={bot} go={setView} />}
+        {tab === "details" && view === "settings" && <SettingsForm bot={bot} />}
+        {tab === "details" && view === "activity" && <Activity bot={bot} />}
+        {tab === "details" && view === "inspector" && <Inspector bot={bot} />}
         {tab === "computer" && <Computer bot={bot} />}
         {tab === "library" && <LibraryTab bot={bot} />}
       </div>

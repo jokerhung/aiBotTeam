@@ -51,8 +51,9 @@ class EchoDriver(Emitter):
                     ans = await self.broker.ask(t, f"echo_{turn_id}", "permission", "Bash", {"command": cmd})
                     reply = f"Allowed: ran {cmd}" if ans.get("behavior") == "allow" else f"Denied: skipped {cmd}"
                 else:
-                    q = text[len("/ask"):].strip() or "Pick one"
-                    ans = await self.broker.ask(t, f"echo_{turn_id}", "question", "ask_user", {"question": q, "choices": ["Alpha", "Beta", "Gamma"]})
+                    parts = [x.strip() for x in text[len("/ask"):].split("|") if x.strip()]  # "/ask Question | A | B | C"
+                    q = parts[0] if parts else "Pick one"
+                    ans = await self.broker.ask(t, f"echo_{turn_id}", "question", "ask_user", {"question": q, "choices": parts[1:] or ["Alpha", "Beta", "Gamma"]})
                     reply = f"You answered: {ans.get('message')}" if ans.get("behavior") == "allow" else "No answer"
                 await self._stream(t, turn_id, reply)
                 self.emit("item.completed", t, turn_id, itemType="assistant_text", text=reply)

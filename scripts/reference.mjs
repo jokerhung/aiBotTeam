@@ -64,7 +64,7 @@ await dismissAll();
 
 // ---- ours: same bot name and colour ----
 for (const b of (await j("GET", "/api/bots")).bots) if (b.name === "QA") await j("DELETE", `/api/bots/${b.id}`);
-const bot = await j("POST", "/api/bots", { name: "QA", color: "orange", modelSelection: { instanceId: "echo", model: "echo-1" } });
+const bot = await j("POST", "/api/bots", { name: "QA", title: "QA and Release Engineer", color: "orange", modelSelection: { instanceId: "echo", model: "echo-1" } });
 await j("PUT", "/api/config", { skin: "daylight" });
 const ours = await mk();
 await ours.goto(WEB);
@@ -97,22 +97,101 @@ if (Math.abs(sa - sb) > BOX_PX) failures.push(`sidebar width ${sb} vs ${sa}`);
 // ---- pixel regions that carry no data ----
 const regions = {
   "sidebar top (search / new bot / inbox)": { x: 0, y: 0, width: 280, height: 110 },
-  "sidebar bottom (profile / connect apps)": { x: 0, y: 730, width: 280, height: 70 },
+  // holds the Google / Slack / Notion marks, which are drawn as plain glyphs here: allow a little more
+  "sidebar bottom (profile / connect apps)": { x: 0, y: 730, width: 280, height: 70, share: 0.04 },
   "composer strip": { x: 280, y: 725, width: 1000, height: 75 },
   "header pill": { x: 640, y: 0, width: 280, height: 62 },
 };
-for (const [name, clip] of Object.entries(regions)) {
-  const a = PNG.sync.read(await ref.screenshot({ clip })), b = PNG.sync.read(await ours.screenshot({ clip }));
-  const diff = new PNG({ width: clip.width, height: clip.height });
-  const n = pixelmatch(a.data, b.data, diff.data, clip.width, clip.height, { threshold: 0.2 });
-  const share = n / (clip.width * clip.height);
-  const slug = name.replace(/\W+/g, "-");
-  writeFileSync(join(OUT, `ref-${slug}.reference.png`), PNG.sync.write(a));
-  writeFileSync(join(OUT, `ref-${slug}.ours.png`), PNG.sync.write(b));
-  writeFileSync(join(OUT, `ref-${slug}.diff.png`), PNG.sync.write(diff));
-  console.log(`  ${share <= SHARE ? "ok  " : "FAIL"} ${name}: ${(share * 100).toFixed(2)}% differ`);
-  if (share > SHARE) failures.push(`${name}: ${(share * 100).toFixed(2)}% of pixels differ`);
+async function compareRegions(prefix, save) {
+  for (const [name, { share: own, ...clip }] of Object.entries(regions)) {
+    const limit = own ?? SHARE;
+    const a = PNG.sync.read(await ref.screenshot({ clip })), b = PNG.sync.read(await ours.screenshot({ clip }));
+    const diff = new PNG({ width: clip.width, height: clip.height });
+    const n = pixelmatch(a.data, b.data, diff.data, clip.width, clip.height, { threshold: 0.2 });
+    const share = n / (clip.width * clip.height);
+    if (save || share > limit) {
+      const slug = (save ? "" : prefix.replace(/\W+/g, "") + "-") + name.replace(/\W+/g, "-");
+      writeFileSync(join(OUT, `ref-${slug}.reference.png`), PNG.sync.write(a));
+      writeFileSync(join(OUT, `ref-${slug}.ours.png`), PNG.sync.write(b));
+      writeFileSync(join(OUT, `ref-${slug}.diff.png`), PNG.sync.write(diff));
+    }
+    const ok = share <= limit;
+    if (!save && ok) { shares.push(share); continue; }
+    console.log(`  ${ok ? "ok  " : "FAIL"} ${prefix}${name}: ${(share * 100).toFixed(2)}% differ`);
+    if (!ok) failures.push(`${prefix}${name}: ${(share * 100).toFixed(2)}% of pixels differ`);
+    else shares.push(share);
+  }
 }
+const shares = [];
+await compareRegions("", true);
+
+// ---- the same regions in all 13 skins (the skin is a [data-skin] attribute on <html> in both apps) ----
+console.log("  main screen in every skin:");
+for (const id of ["midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "meadow", "pop", "halloween", "diwali", "aurora"]) {
+  for (const pg of [ref, ours]) await pg.evaluate((skin) => { document.documentElement.dataset.skin = skin; }, id);
+  await ref.waitForTimeout(250);
+  const before = failures.length;
+  const worst = shares.length;
+  await compareRegions(`[${id}] `, false);
+  const mine = shares.slice(worst);
+  console.log(`    ${failures.length === before ? "ok  " : "FAIL"} ${id.padEnd(10)} worst region ${(Math.max(...mine, 0) * 100).toFixed(2)}%`);
+}
+for (const pg of [ref, ours]) await pg.evaluate(() => { document.documentElement.dataset.skin = "daylight"; });
+
+// ---- bot panel: the same panel opened in both ----
+async function panelMetrics(pg, open) {
+  await open();
+  await pg.waitForTimeout(900);
+  return pg.evaluate(() => {
+    const aside = [...document.querySelectorAll("aside")].find((a) => a.getBoundingClientRect().x > 600);
+    if (!aside) return null;
+    const r = aside.getBoundingClientRect();
+    const tabs = [...aside.querySelectorAll("button")].filter((b) => /^(Details|Library|Computer)$/.test(b.innerText.trim()));
+    const tr = tabs.map((b) => b.getBoundingClientRect());
+    const circles = [...aside.querySelectorAll("button")].filter((b) => { const q = b.getBoundingClientRect(); return q.y < 60 && q.width > 30 && q.width < 40; }).map((b) => b.getBoundingClientRect());
+    return {
+      width: r.width, x: r.x,
+      tabsWidth: tr.length ? tr[tr.length - 1].right - tr[0].left : 0, tabsTop: tr.length ? tr[0].top : 0,
+      circle: circles[0]?.width ?? 0, circles: circles.length,
+    };
+  });
+}
+const refPanel = await panelMetrics(ref, async () => { await ref.locator("main button").filter({ hasText: /^QA/ }).first().click(); });
+const ourPanel = await panelMetrics(ours, async () => { await ours.getByLabel("Bot details").click(); });
+console.log("  bot panel: reference", JSON.stringify(refPanel), "\n             ours     ", JSON.stringify(ourPanel));
+if (!refPanel || !ourPanel) failures.push("bot panel not found");
+else for (const k of ["width", "x", "tabsWidth", "circle", "circles"]) {
+  const d = Math.abs(refPanel[k] - ourPanel[k]);
+  const ok = d <= (k === "tabsWidth" ? 12 : BOX_PX);
+  console.log(`  ${ok ? "ok  " : "FAIL"} panel ${k}: reference ${refPanel[k].toFixed(0)}  ours ${ourPanel[k].toFixed(0)}`);
+  if (!ok) failures.push(`panel ${k}: ${ourPanel[k]} vs ${refPanel[k]}`);
+}
+await ref.screenshot({ path: join(OUT, "reference-panel.png") });
+await ours.screenshot({ path: join(OUT, "ours-panel.png") });
+await ours.getByLabel("Close panel").click();
+
+// ---- skin selector ("Browse themes" there, Settings > Appearance here) ----
+const tileBoxes = (pg) => pg.locator("[data-skin-preview]").evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
+await ref.getByRole("button", { name: "You", exact: true }).click();
+await ref.getByRole("menuitem", { name: /Settings/ }).first().click();
+await ref.getByRole("button", { name: "Browse themes" }).click();
+await ref.waitForTimeout(900);
+await ours.getByLabel("Profile and settings").click();
+await ours.getByText("Settings", { exact: true }).click();
+await ours.getByRole("button", { name: "Appearance" }).click();
+await ours.waitForTimeout(700);
+const [rt, ot] = [await tileBoxes(ref), await tileBoxes(ours)];
+const metric = (t) => ({ count: t.length, w: t[0].w, h: t[0].h, colPitch: t[1].x - t[0].x, columns: t.filter((q) => Math.abs(q.y - t[0].y) < 4).length, rowPitch: t.find((q) => q.y > t[0].y + 20).y - t[0].y });
+const [rm, om] = [metric(rt), metric(ot)];
+console.log("  skin selector: reference", JSON.stringify(rm), "\n                 ours     ", JSON.stringify(om));
+for (const k of Object.keys(rm)) {
+  const d = Math.abs(rm[k] - om[k]);
+  const ok = d <= (k === "rowPitch" ? 14 : 3);  // row pitch follows how many lines each description wraps to
+  console.log(`  ${ok ? "ok  " : "FAIL"} skin selector ${k}: reference ${rm[k].toFixed(0)}  ours ${om[k].toFixed(0)}`);
+  if (!ok) failures.push(`skin selector ${k}: ${om[k]} vs ${rm[k]}`);
+}
+await ref.screenshot({ path: join(OUT, "reference-skins.png") });
+await ours.screenshot({ path: join(OUT, "ours-skins.png") });
 await j("DELETE", `/api/bots/${bot.id}`);
 await browser.close();
 if (failures.length) { console.error(`\nreference comparison failed:\n - ${failures.join("\n - ")}`); process.exit(1); }

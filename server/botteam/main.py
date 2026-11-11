@@ -28,7 +28,7 @@ from .wire import (
 
 FILE_MAX_BYTES = 100 * 1024 * 1024
 DEFAULT_SETTINGS = {
-    "displayName": "", "uiMode": "simple", "skin": "daylight", "font": "inter", "chatWidth": "default",
+    "displayName": "", "uiMode": "simple", "skin": "daylight", "font": "skin", "chatWidth": "default",
     "reduceMotion": False, "language": "en",
 }
 
@@ -320,6 +320,18 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             bot.threadId = bot.mainThreadId
             await store.save_bot(bot)
         await turns.publish_bot(bot)
+        return {"ok": True}
+
+    @app.post("/api/bots/{bot_id}/fresh")
+    async def start_fresh(bot_id: str, thread: str | None = None):
+        bot = await need(bot_id)
+        tid = await need_thread(bot, thread)
+        if tid in turns.runs:
+            raise HTTPException(409, "the bot is still answering")
+        await store.reset_cursor(tid)
+        inst = registry.get(bot.modelSelection.instanceId)
+        if inst and inst.driver and hasattr(inst.driver, "_close"):
+            await inst.driver._close(tid, settle=False)
         return {"ok": True}
 
     # ---- permission requests ------------------------------------------------------------
