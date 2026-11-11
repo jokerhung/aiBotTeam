@@ -135,6 +135,7 @@ async def test_a_bot_made_webhook_hides_the_secret_from_the_bot(hooks):
     bot = await make_bot(c)
     app.state.turns.runs["tx"] = type("R", (), {"bot_id": bot["id"], "group_id": None, "assignment_id": None, "origin": "person", "level": None, "started_at": 0, "label": None})()
     out = await app.state.agents.call("tx", "trigger", {"action": "create", "kind": "webhook", "name": "From CI"})
+    app.state.turns.runs.pop("tx")  # the stand-in turn is over
     assert out["ok"] is True and "whsec_" not in str(out)
     wid = out["id"]
     listed = (await c.get("/api/webhooks")).json()["webhooks"]
@@ -145,7 +146,6 @@ async def test_a_bot_made_webhook_hides_the_secret_from_the_bot(hooks):
     ok = await h.post(f"/hooks/{wid}", headers={"authorization": f"Bearer {secret}"}, json={"x": 1})
     assert ok.status_code == 202
     await wait_idle(c, bot["id"])
-    app.state.turns.runs.pop("tx")
 
 
 def free_port():
