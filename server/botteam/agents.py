@@ -9,7 +9,7 @@ from typing import Any, Optional
 from .approval import normalize_mode
 from .runtime import LEVELS
 
-TOOL_NAMES = ["list_bots", "coordinate_bots", "assignment_status", "start_thread", "list_threads", "post_to_room", "list_rooms",
+TOOL_NAMES = ["remember", "recall", "forget", "team_remember", "list_bots", "coordinate_bots", "assignment_status", "start_thread", "list_threads", "post_to_room", "list_rooms",
               "trigger_info", "trigger", "delete_trigger"]
 
 
@@ -64,6 +64,71 @@ class AgentTools:
             return await fn(thread_id, args if isinstance(args, dict) else {})
         except Exception as e:  # the runtime never throws into a turn
             return {"ok": False, "reason": "internal", "detail": f"{type(e).__name__}: {e}"}
+
+    # ---- memory -----------------------------------------------------------------------------------------------------------
+    async def _me(self, thread_id: str):
+        run = self.turns.runs.get(thread_id)
+        return await self.store.get_bot(run.bot_id) if run else await self.store.bot_of_thread(thread_id)
+
+    async def t_remember(self, thread_id: str, args: dict) -> dict:
+        bot = await self._me(thread_id)
+        if not bot or not self.turns.memory:
+            return {"ok": False, "reason": "unavailable", "detail": "memory is not available"}
+        if not bot.memory:
+            return {"ok": False, "reason": "memory_off", "detail": "the person turned memory off for you"}
+        return self.turns.memory.remember(bot.id, str(args.get("note") or ""), str(args["topic"]) if args.get("topic") else None)
+
+    async def t_recall(self, thread_id: str, args: dict) -> dict:
+        bot = await self._me(thread_id)
+        if not bot or not self.turns.memory or not bot.memory:
+            return {"ok": False, "reason": "memory_off", "detail": "memory is not available"}
+        mem = self.turns.memory
+        topic = str(args.get("topic") or "").strip()
+        if not topic:
+            return {"ok": True, "files": mem.files(bot.id)}
+        name = topic if topic.startswith(("memory/", "MEMORY")) else f"memory/{topic}"
+        path = mem.resolve(bot.id, name if name.endswith(".md") else name + ".md")
+        text = mem.read(path) if path else ""
+        return {"ok": True, "topic": topic, "text": text[:20000]} if text else {"ok": False, "reason": "not_found", "detail": "no such note"}
+
+    async def t_forget(self, thread_id: str, args: dict) -> dict:
+        bot = await self._me(thread_id)
+        if not bot or not self.turns.memory or not bot.memory:
+            return {"ok": False, "reason": "memory_off", "detail": "memory is not available"}
+        needle = str(args.get("match") or "").strip().lower()
+        if len(needle) < 4:
+            return {"ok": False, "reason": "too_short", "detail": "say enough of the note to tell it apart (at least 4 characters)"}
+        gone = [e for e in self.turns.memory.entries(bot.id) if needle in e["line"].lower()]
+        for e in gone:
+            self.turns.memory.delete_entry(bot.id, e["id"])
+        return {"ok": True, "removed": len(gone)}
+
+    async def t_team_remember(self, thread_id: str, args: dict) -> dict:
+        """A note for the whole section: it is written only if the person approves the card."""
+        bot = await self._me(thread_id)
+        if not bot or not self.turns.memory:
+            return {"ok": False, "reason": "unavailable", "detail": "memory is not available"}
+        if not bot.section:
+            return {"ok": False, "reason": "no_section", "detail": "you are not in a section, so there is no team memory"}
+        note = self.turns.memory.clean_entry(str(args.get("note") or ""))
+        if not note:
+            return {"ok": False, "reason": "empty", "detail": "there is nothing to remember"}
+        broker = self.turns.broker
+        if not broker:
+            return {"ok": False, "reason": "unavailable", "detail": "no one can approve this"}
+        from .store import new_id
+
+        ans = await broker.ask(thread_id, new_id("tm"), "permission", "TeamMemory", {"command": f"Add to the team memory: {note}", "summary": f"Add to the team memory: {note}"})
+        if ans.get("behavior") != "allow":
+            return {"ok": False, "reason": "declined", "detail": "the person did not approve it"}
+        from datetime import date
+
+        path = self.turns.memory.team_path(bot.section)
+        from .memory import write_atomic
+
+        old = self.turns.memory.read(path)
+        write_atomic(path, (old.rstrip("\n") + "\n" if old else "") + f"- [{date.today().isoformat()}] {note} (from {bot.name})\n")
+        return {"ok": True, "where": "team memory"}
 
     async def t_list_bots(self, thread_id: str, args: dict) -> dict:
         me = (self.turns.runs.get(thread_id).bot_id if self.turns.runs.get(thread_id) else None)

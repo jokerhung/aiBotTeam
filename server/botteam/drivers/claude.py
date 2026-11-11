@@ -130,6 +130,8 @@ class ClaudeDriver(Emitter):
             args += ["--effort", inp.effort]
         if inp.resume_cursor and not inp.session_reset:
             args += ["--resume", inp.resume_cursor]
+        if inp.skills_dir:
+            args += ["--add-dir", inp.skills_dir]  # its .claude/skills holds the skills of this bot
         if inp.system:
             args += ["--append-system-prompt", inp.system]
         return args
@@ -208,7 +210,9 @@ class ClaudeDriver(Emitter):
     # ---- frame mapping (stream-json -> RuntimeEvent) ------------------------
     def handle_frame(self, thread_id: str, s: Session, o: dict) -> None:
         t, tid = o.get("type"), s.turn_id
-        if t == "system" and o.get("subtype") == "init":
+        if t == "system" and o.get("subtype") == "compact_boundary":
+            self.emit("context.compacted", thread_id, tid, trigger=(o.get("compact_metadata") or {}).get("trigger"))
+        elif t == "system" and o.get("subtype") == "init":
             s.cursor = o.get("session_id") or s.cursor
             self.emit("session.started", thread_id, tid, sessionId=s.cursor, model=o.get("model"))
         elif t == "stream_event":

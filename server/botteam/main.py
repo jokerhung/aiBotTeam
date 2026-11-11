@@ -25,6 +25,8 @@ from .host import RuntimeHost
 from .notifications import Notifications
 from .routines import RoutineService
 from .apps_catalog import CATALOG, by_id as catalog_app
+from .memory import Memory, redact
+from .skills import SkillError, Skills
 from .mcp_servers import McpServers, SpecError, from_desktop_json, public as mcp_public
 from .runtime import Runtime
 from .webhooks import WebhookService, make_hook_app
@@ -77,6 +79,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     hook_state: dict = {}
     mcp = McpServers(store, bus, home)
     turns.mcp = mcp
+    memory, skills = Memory(home), Skills(home)
+    turns.memory, turns.skills = memory, skills
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
@@ -253,6 +257,10 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                 raise HTTPException(404, "section not found")
         if "threadId" in fields:
             fields["threadId"] = await need_thread(bot, fields["threadId"])
+        if fields.get("skills") is not None:
+            have = {s["id"] for s in skills.list()}
+            if any(x not in have for x in fields["skills"]):
+                raise HTTPException(404, "skill not found")
         if fields.get("mcpServers") is not None:
             known = {i for i, _ in await mcp.list()}
             if any(x not in known for x in fields["mcpServers"]):
@@ -756,6 +764,84 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         config.save()
         return {"decider": groups.decider}
 
+    # ---- memory and skills ------------------------------------------------------------------------------------------------------
+    @app.get("/api/bots/{bot_id}/memory")
+    async def get_memory(bot_id: str):
+        bot = await need(bot_id)
+        return {"enabled": bot.memory, "gauge": memory.gauge(bot_id), "entries": memory.entries(bot_id), "files": memory.files(bot_id), "folder": str(memory.folder(bot_id)),
+                "teamMemory": memory.read(memory.team_path(bot.section)) if bot.section else None}
+
+    @app.get("/api/bots/{bot_id}/memory/file")
+    async def read_memory_file(bot_id: str, name: str):
+        await need(bot_id)
+        path = memory.resolve(bot_id, name)
+        if not path:
+            raise HTTPException(404, "file not found")
+        return {"name": name, "text": memory.read(path)}
+
+    @app.put("/api/bots/{bot_id}/memory/file")
+    async def write_memory_file(bot_id: str, body: dict):
+        await need(bot_id)
+        path = memory.resolve(bot_id, str(body.get("name") or ""))
+        if not path:
+            raise HTTPException(404, "file not found")
+        from .memory import write_atomic
+
+        write_atomic(path, str(body.get("text") or ""))
+        return {"ok": True, "gauge": memory.gauge(bot_id)}
+
+    @app.delete("/api/bots/{bot_id}/memory/entries/{eid}")
+    async def delete_memory_entry(bot_id: str, eid: str):
+        await need(bot_id)
+        if not memory.delete_entry(bot_id, eid):
+            raise HTTPException(404, "note not found")
+        return {"ok": True, "gauge": memory.gauge(bot_id)}
+
+    @app.put("/api/bots/{bot_id}/memory/team")
+    async def write_team_memory(bot_id: str, body: dict):
+        bot = await need(bot_id)
+        if not bot.section:
+            raise HTTPException(400, "this bot is not in a section")
+        from .memory import write_atomic
+
+        write_atomic(memory.team_path(bot.section), str(body.get("text") or ""))
+        return {"ok": True}
+
+    @app.get("/api/skills")
+    async def list_skills():
+        return {"skills": skills.list()}
+
+    @app.post("/api/skills", status_code=201)
+    async def create_skill(body: dict):
+        try:
+            return skills.save(None, str(body.get("name") or ""), str(body.get("description") or ""), str(body.get("body") or ""), body.get("enabled"))
+        except SkillError as e:
+            raise HTTPException(400, str(e))
+
+    @app.patch("/api/skills/{sid}")
+    async def patch_skill(sid: str, body: dict):
+        cur = skills.get(sid)
+        if not cur:
+            raise HTTPException(404, "skill not found")
+        try:
+            return skills.save(sid, str(body.get("name", cur["name"])), str(body.get("description", cur["description"])), str(body.get("body", cur["body"])), body.get("enabled"))
+        except SkillError as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/skills/{sid}")
+    async def delete_skill(sid: str):
+        try:
+            gone = skills.delete(sid)
+        except SkillError:
+            gone = False
+        if not gone:
+            raise HTTPException(404, "skill not found")
+        for b in await store.list_bots():
+            if sid in b.skills:
+                b.skills = [x for x in b.skills if x != sid]
+                await store.save_bot(b)
+        return {"ok": True}
+
     # ---- custom MCP servers -----------------------------------------------------------------------------------------------------
     @app.get("/api/mcp/servers")
     async def list_mcp():
@@ -1053,6 +1139,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.webhooks, app.state.hook_app = webhooks, make_hook_app(webhooks)
     app.state.runtime, app.state.host, app.state.agents, app.state.groups, app.state.notify = runtime, host, agents, groups, notify
     app.state.mcp = mcp
+    app.state.memory, app.state.skills = memory, skills
     _ = now_ms
     return app
 

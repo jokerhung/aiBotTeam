@@ -68,6 +68,8 @@ class Turns:
         self.groups = None  # rooms: told when a room turn ends so the next responder can start
         self.routines = None  # routine runs: told when their turn ends
         self.mcp = None  # custom MCP servers (their entries for a turn)
+        self.memory = None  # per-bot notes and the team's
+        self.skills = None  # the skill library
         self.notify = None  # the notification log
         self.delegated: dict[str, asyncio.Future] = {}  # work thread -> the runtime's wait for that turn's result
         self.attachments_dir = attachments_dir or data_dir() / "attachments"
@@ -276,6 +278,16 @@ class Turns:
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
             custom_mcp=await self.mcp.entries_for(bot.mcpServers, thread_id, bot.mcpAccess) if self.mcp and bot.mcpServers else {},
         )
+        if self.memory and bot.memory:  # the recall block goes before the turn's message; the stored message stays as the person wrote it
+            recall = self.memory.recall_block(bot.id, bot.section)
+            if recall:
+                inp.text = f"{recall}\n\n{inp.text}"
+        if self.skills and bot.skills:
+            have = self.skills.for_bot(bot.skills)
+            if inst.driver.provider == "claude":
+                inp.skills_dir = self.skills.turn_dir(thread_id, have)
+            else:
+                inp.system = (inp.system or "") + self.skills.as_text(have)
         self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id, routine_run_id=routine_run_id)
         await self.publish_bot(bot)
         try:
@@ -378,10 +390,19 @@ class Turns:
             await self._tool_completed(bot, t, run, d)
         elif ev.type == "item.completed" and d.get("itemType") == "assistant_text":
             await self._final_text(bot, t, run, d.get("text", ""))
+        elif ev.type == "context.compacted":
+            await self._compacted(bot, t, run)
         elif ev.type == "runtime.error":
             await self._error(bot, t, run, d)
         elif ev.type == "turn.completed":
             await self._completed(bot, t, run, d)
+
+    async def _compacted(self, bot: WireBot, thread_id: str, run: ThreadRun) -> None:
+        """The engine shortened the conversation to make room: a line in the chat says so, so a changed memory of it is no surprise."""
+        await self._finalize_live(bot, thread_id, run)
+        m = WireMessage(id=new_id("msg"), role="bot", kind="notice", author=bot.id, at=now_ms(), text="Earlier messages were summarised to make room (context compacted)")
+        await self.store.add_message(self._owner(bot, thread_id), thread_id, m)
+        self._frame("message", bot.id, thread_id, m)
 
     async def _set_label(self, bot: WireBot, run: ThreadRun, label: Optional[str]) -> None:
         if run.label != label:
@@ -494,6 +515,8 @@ class Turns:
         self.runs.pop(thread_id, None)
         if self.mcp:
             self.mcp.cleanup(thread_id)  # the private spec files of this turn's custom servers
+        if self.skills:
+            self.skills.cleanup(thread_id)
         await self._after_turn(thread_id, run, d)
         if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
             grp = await self.store.group_of_thread(thread_id)

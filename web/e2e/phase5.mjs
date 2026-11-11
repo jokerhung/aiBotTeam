@@ -81,7 +81,37 @@ await p.waitForTimeout(700);
 mine = (await j("/api/bots")).json.bots.find((x) => x.id === bot.id);
 ok(mine.mcpAccess[listed.id].scope === "write" && mine.mcpAccess[listed.id].outbound === "ask", "write access that asks before sending out is saved");
 
+// --- 5: skills and memory in the bot's settings
+await p.locator('[data-testid="new-skill"]').click();
+await p.waitForSelector('[data-testid="skill-editor"]');
+await p.locator('[data-testid="skill-editor"]').getByLabel("Name").fill("E2E Greeter");
+await p.locator('[data-testid="skill-editor"]').getByLabel("When to use it").fill("Greeting people");
+await p.locator('[data-testid="skill-editor"]').getByLabel("Instructions").fill("Say hello warmly.");
+await p.locator('[data-testid="skill-editor"]').getByRole("button", { name: "Save", exact: true }).click();
+await p.waitForSelector('[data-testid="skill-row"]');
+await p.getByLabel("Give E2E Greeter").click();
+await p.waitForTimeout(700);
+mine = (await j("/api/bots")).json.bots.find((x) => x.id === bot.id);
+ok(mine.skills.length === 1, "a skill made in the UI can be given to the bot");
+const skillId = mine.skills[0];
+await j(`/api/bots/${bot.id}/memory/file`, "PUT", { name: "MEMORY.md", text: ["- [2026-11-10] E2E likes tea", "- [2026-11-11] E2E prefers short answers", ""].join(String.fromCharCode(10)) });
+await p.reload();
+await p.locator(`[role=button][title="E2E5 Bot"]`).click();
+await p.getByTitle("Bot details").click();
+await p.getByTitle("Bot settings").click();
+await p.waitForSelector('[data-testid="memory-entries"]');
+ok((await p.locator('[data-testid="memory-entries"] >> text=E2E likes tea').count()) === 1, "the notes are listed with their dates");
+ok(/2 \/ 200/.test(await p.locator('[data-testid="memory-gauge"]').innerText()), "the gauge shows lines against the 200-line budget");
+await p.getByLabel("Delete note").first().click();
+await p.waitForTimeout(600);
+ok((await j(`/api/bots/${bot.id}/memory`)).json.entries.length === 1, "a note can be deleted from the list");
+await p.getByLabel("Let this bot use memory").click();
+await p.waitForTimeout(700);
+ok((await j("/api/bots")).json.bots.find((x) => x.id === bot.id).memory === false, "memory can be switched off for the bot");
+await p.screenshot({ path: `${SHOTS}/p5-bot-settings.png` });
+
 ok(errors.filter((e) => !/favicon|404|ERR_ABORTED/.test(e)).length === 0, `no page errors ${errors.slice(0, 3).join(" | ")}`);
 await b.close();
 await j(`/api/mcp/servers/${listed.id}`, "DELETE");
+await j(`/api/skills/${skillId}`, "DELETE");
 await j(`/api/bots/${bot.id}`, "DELETE");

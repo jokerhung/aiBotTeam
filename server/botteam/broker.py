@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
-from .approval import EDIT_TOOLS, OWN_PREFIX, OWN_TOOLS, command_of, is_readonly_command, needs_explicit_approval
+from .approval import ALWAYS_ASK, EDIT_TOOLS, OWN_PREFIX, OWN_TOOLS, command_of, is_readonly_command, needs_explicit_approval
 from .config import ConfigStore
 from .store import new_id, now_ms
 
@@ -130,6 +130,8 @@ class Broker:
         def allow(source: str) -> dict:
             return {"behavior": "allow", "source": source}
 
+        if tool in ALWAYS_ASK:  # a change to what the whole team remembers is a person's decision at every level
+            return None
         if tool in OWN_TOOLS or tool.startswith(OWN_PREFIX) or pol.mode == "full":
             return allow("auto")
         if pol.allow_prefixes and any(tool.startswith(p) for p in pol.allow_prefixes):

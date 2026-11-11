@@ -122,6 +122,8 @@ export interface Bot {
   managedSections?: string[];
   reportsTo?: string | null;
   mcpServers?: string[];
+  memory?: boolean;
+  skills?: string[];
   mcpAccess?: Record<string, { scope: "read" | "write"; outbound: "ask" | "allow" }>;
   fallbackSelection: ModelSelection | null;
   lastText: string;
@@ -239,6 +241,23 @@ export interface InboxItem {
   botColor: MausColor;
   groupId: string | null;
   groupName: string | null;
+}
+
+export interface MemoryView {
+  enabled: boolean;
+  gauge: { lines: number; bytes: number; lineBudget: number; byteBudget: number; notLoaded: number; state: "ok" | "amber" | "red" };
+  entries: { id: string; text: string; date: string | null; line: string }[];
+  files: { name: string; bytes: number }[];
+  folder: string;
+  teamMemory: string | null;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  enabled: boolean;
 }
 
 export interface McpStatus {

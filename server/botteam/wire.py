@@ -79,6 +79,8 @@ class WireBot(BaseModel):
     managedSections: list[str] = Field(default_factory=list)  # a Chief of Staff's own sections; empty means the whole team
     reportsTo: Optional[str] = None  # the bot this one reports to (usually the Chief of Staff)
     mcpServers: list[str] = Field(default_factory=list)  # custom MCP servers this bot may use
+    memory: bool = True  # keep notes between tasks and load them into each turn
+    skills: list[str] = Field(default_factory=list)  # skills (SKILL.md) this bot has
     mcpAccess: dict[str, dict] = Field(default_factory=dict)  # per server: {"scope": read | write, "outbound": ask | allow}
     fallbackSelection: Optional[ModelSelection] = None
     lastText: str = ""
@@ -153,6 +155,8 @@ class PatchBot(BaseModel):
     managedSections: Optional[list[str]] = None
     reportsTo: Optional[str] = None
     mcpServers: Optional[list[str]] = None
+    memory: Optional[bool] = None
+    skills: Optional[list[str]] = None
     mcpAccess: Optional[dict[str, dict]] = None
     notifications: Optional[bool] = None
     fallbackSelection: Optional[ModelSelection] = None

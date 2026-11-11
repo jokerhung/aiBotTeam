@@ -10,6 +10,8 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { Mascot } from "./Mascot";
+import { MemorySection } from "./MemorySection";
+import { SkillsSection } from "./SkillsSection";
 import { toast } from "./Toaster";
 
 const COLORS: MausColor[] = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "silver", "chrome"];
@@ -159,6 +161,8 @@ function SettingsForm({ bot }: { bot: Bot }) {
         </select>
       </Field>
       <AppsField bot={bot} />
+      <SkillsSection bot={bot} />
+      <MemorySection bot={bot} />
       <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">
         <label className="flex items-center gap-2 text-[14px] text-ink">
           <input type="checkbox" checked={bot.chief} onChange={(e) => void queuePatch(bot.id, { chief: e.target.checked })} /> Chief of Staff

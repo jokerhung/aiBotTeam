@@ -152,6 +152,10 @@ def agent_call(tool: str, args: dict) -> dict:
 
 
 TEAM_TOOLS = [
+    {"name": "remember", "description": "Keep a note between tasks: a fact, a preference, a decision. One short dated line in your MEMORY.md (or in memory/<topic>.md when you give a topic). Never put keys, tokens or passwords in it.", "inputSchema": {"type": "object", "properties": {"note": {"type": "string"}, "topic": {"type": "string"}}, "required": ["note"]}},
+    {"name": "recall", "description": "Read a longer note from your memory/ folder by topic; with no topic, list your memory files.", "inputSchema": {"type": "object", "properties": {"topic": {"type": "string"}}}},
+    {"name": "forget", "description": "Remove the note(s) of your MEMORY.md that contain this text.", "inputSchema": {"type": "object", "properties": {"match": {"type": "string"}}, "required": ["match"]}},
+    {"name": "team_remember", "description": "Propose a note for the memory your whole section shares. The person approves it first.", "inputSchema": {"type": "object", "properties": {"note": {"type": "string"}}, "required": ["note"]}},
     {"name": "list_bots", "description": "List the bots on this team: id, name, role, whether they are busy.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "coordinate_bots", "description": "Hand work to teammates (or ask one a question). They work in their own threads and report back; you are woken once with every result. Set consult for a question that acts on nothing, reply 'none' for a one-way notice, answers to answer a teammate's open question.",
      "inputSchema": {"type": "object", "properties": {"bot_ids": {"type": "array", "items": {"type": "string"}}, "message": {"type": "string"}, "reply": {"type": "string", "enum": ["resume", "none"]}, "consult": {"type": "boolean"}, "thread": {"type": "string"}, "done_when": {"type": "string"}, "rework": {"type": "boolean"}, "answers": {"type": "string"}}, "required": ["bot_ids", "message"]}},
