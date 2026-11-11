@@ -120,6 +120,11 @@ export const vi: Record<string, string> = {
   "Last 500 events, newest first": "500 sự kiện gần nhất, mới nhất trước", "Failed": "Lỗi",
   "My bots": "Bot của tôi", "Search bots": "Tìm bot", "Drag a bot onto any time to schedule it.": "Kéo một bot vào bất kỳ giờ nào để lên lịch cho nó.", "When": "Khi nào", "Continue": "Tiếp tục", "New automation": "Tự động hóa mới", "Starts": "Bắt đầu", "Date": "Ngày", "Who does it": "Ai làm", "This bot owns each scheduled run.": "Bot này chịu trách nhiệm mỗi lần chạy theo lịch.", "Tell the bot what to do each time": "Nói cho bot biết cần làm gì mỗi lần", "More options": "Tùy chọn khác", "Every day": "Mỗi ngày", "Weekdays": "Các ngày trong tuần làm việc", "Every week": "Mỗi tuần", "On a schedule": "Theo lịch", "When something happens in an app": "Khi có chuyện xảy ra trong một ứng dụng", "When another app sends something": "Khi ứng dụng khác gửi tới", "Needs a connected app": "Cần một ứng dụng đã kết nối", "Previous month": "Tháng trước", "Next month": "Tháng sau",
   "A task is one piece of work a bot does once. A routine starts a new task on a schedule.": "Một task là một việc bot làm một lần. Routine bắt đầu một task mới theo lịch.",
+  "answered for you": "đã trả lời thay bạn",
+  "just now": "vừa xong", "You": "Bạn", "Get a browser notification when this bot needs you while the tab is hidden.": "Nhận thông báo trình duyệt khi bot này cần bạn lúc tab đang ẩn.", "green": "xanh lá", "blue": "xanh dương", "red": "đỏ", "orange": "cam", "purple": "tím", "cyan": "lục lam", "pink": "hồng", "yellow": "vàng", "teal": "xanh ngọc", "coral": "san hô", "silver": "bạc", "chrome": "chrome",
+  "Nothing for you yet.": "Chưa có gì cho bạn.", "When a bot needs your OK, has a question or finishes something, it shows up here.": "Khi một bot cần bạn đồng ý, có câu hỏi hoặc làm xong việc, nó sẽ hiện ở đây.", "Expand": "Mở rộng", "Narrow": "Thu hẹp",
+  "Each time it sends something, your bot does this.": "Mỗi lần nó gửi tới, bot của bạn sẽ làm việc này.", "What should it do?": "Nó cần làm gì?", "More": "Thêm", "e.g. draft a short follow-up email for the person in it": "vd: soạn một email theo dõi ngắn cho người trong đó",
+  "completed": "hoàn tất", "stopped": "đã dừng", "queued": "đang chờ",
 };
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */
@@ -164,6 +169,12 @@ export const viPatterns: [RegExp, string][] = [
   [/^(.+) settings$/, "Cài đặt $1"],
   [/^(.+) details$/, "Chi tiết $1"],
   [/^Approval mode: (.+)$/, "Mức duyệt: $1"],
+  [/^(\d+) m ago$/, "$1 phút trước"],
+  [/^(\d+) h ago$/, "$1 giờ trước"],
+  [/^(\d+) d ago$/, "$1 ngày trước"],
+  [/^Message (.+)$/, "Nhắn $1"],
+  [/^Permission needed: (.+)$/, "Cần cấp quyền: $1"],
+
   [/^Once at (.+)$/, "Một lần lúc $1"],
   [/^Start the conversation in (.+)\. Use @ to ask a member\.$/, "Bắt đầu trò chuyện trong $1. Dùng @ để hỏi một thành viên."],
   [/^Message (.+) — (.+)$/, "Nhắn $1 — $2"],

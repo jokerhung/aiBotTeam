@@ -127,12 +127,17 @@ class AgentTools:
         a = await self.runtime.get(assignment_id)
         if not a or a["status"] != "needs_input":
             return {"ok": False, "reason": "not_asking", "detail": "that work no longer asks a question"}
+        run = self.turns.runs.get(thread_id)
+        me = run.bot_id if run else None
+        parent = await self.runtime.get(a["parent_id"]) if a["parent_id"] else None
+        if not me or not (self.host.is_chief(me) or (parent and parent["assignee_bot"] == me)):
+            return {"ok": False, "reason": "not_allowed", "detail": "only the Chief of Staff, or the bot that handed this work out, may answer for the person"}
         broker = self.turns.broker
         open_ = broker.open_for(a["thread_id"]) if broker else []
         asker = [r for r in open_ if r["type"] == "question"]
         if not asker:
             return {"ok": False, "reason": "not_asking", "detail": "no open question on that work"}
-        await broker.resolve(asker[0]["id"], "allow", message, source="team")
+        await broker.resolve(asker[0]["id"], "allow", message, source="team", by=self.host.bot_name(me))
         return {"ok": True, "note": f"Answered {a['id']} for the person; the work runs on."}
 
     async def t_assignment_status(self, thread_id: str, args: dict) -> dict:

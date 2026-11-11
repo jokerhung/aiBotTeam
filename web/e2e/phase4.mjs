@@ -130,11 +130,18 @@ await p.waitForTimeout(2500);
 ok((await p.locator('[data-testid="run-row"]').count()) > 0, "the run log lists the run");
 
 // --- webhooks tab: create, secret once, curl 202 / 401
-await p.getByRole("tab", { name: "Webhooks" }).click();
-await p.getByRole("button", { name: /New webhook/ }).click();
+// the reference's route: New -> plain words -> Set it up yourself -> When -> "When another app sends something"
+await p.getByRole("button", { name: "New routine" }).first().click();
+await p.getByRole("button", { name: "Set it up yourself" }).click();
+await p.getByRole("radio", { name: "When another app sends something" }).click();
+await p.getByRole("button", { name: "Continue" }).click();
+await p.waitForSelector('[data-testid="webhook-dialog"]');
+await p.screenshot({ clip: { x: 280, y: 0, width: 1080, height: 860 }, path: `${SHOTS}/x-webhook-dialog.png` });
+await p.locator('[data-testid="webhook-dialog"] [role=radio]', { hasText: `Bo${stamp}` }).click();
+await p.locator('[data-testid="webhook-dialog"] textarea').fill("Summarise each deploy event.");
+await p.getByRole("button", { name: /More$/ }).click();
 await p.getByLabel("Name", { exact: true }).fill(`Deploys ${stamp}`);
-await p.getByLabel("Bot", { exact: true }).selectOption(B.id);
-await p.getByRole("button", { name: "Create webhook" }).click();
+await p.getByRole("button", { name: "Set it up", exact: true }).click();
 await p.waitForSelector('[data-testid="webhook-secret"]');
 const secret = (await p.locator('[data-testid="webhook-secret"] code').nth(1).innerText()).trim();
 ok(secret.startsWith("whsec_"), "the secret is shown once after creating a webhook");

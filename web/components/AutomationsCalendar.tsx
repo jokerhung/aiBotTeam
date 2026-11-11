@@ -16,7 +16,7 @@ export const mondayOf = (ms: number) => { const s = startOfDay(ms); const wd = (
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([locale()], { hour: "numeric", minute: "2-digit" });
 
 const STATUS_TONE: Record<string, string> = {
-  done: "bg-success/20 text-success", running: "bg-accent/20 text-accent-text", failed: "bg-danger/15 text-danger", timeout: "bg-danger/15 text-danger",
+  done: "bg-success/20 text-success", completed: "bg-success/20 text-success", running: "bg-accent/20 text-accent-text", failed: "bg-danger/15 text-danger", timeout: "bg-danger/15 text-danger",
   skipped: "bg-warning/20 text-warning", cancelled: "bg-ink/10 text-ink-secondary", stopped: "bg-ink/10 text-ink-secondary",
 };
 

@@ -8,11 +8,11 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { type Range, CalendarView } from "./AutomationsCalendar";
 import { Mascot } from "./Mascot";
-import { AutomationForm, WhenStep } from "./RoutineWizard";
+import { AutomationForm, WebhookDialog, WhenStep } from "./RoutineWizard";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 const STATUS_TONE: Record<string, string> = {
-  done: "bg-success/20 text-success", running: "bg-accent/20 text-accent-text", failed: "bg-danger/15 text-danger", timeout: "bg-danger/15 text-danger",
+  done: "bg-success/20 text-success", completed: "bg-success/20 text-success", running: "bg-accent/20 text-accent-text", failed: "bg-danger/15 text-danger", timeout: "bg-danger/15 text-danger",
   skipped: "bg-warning/20 text-warning", cancelled: "bg-ink/10 text-ink-secondary", stopped: "bg-ink/10 text-ink-secondary",
 };
 
@@ -67,7 +67,7 @@ function RoutineAsk({ onForm, onClose }: { onForm: () => void; onClose: () => vo
         <div className="mt-4 flex items-center gap-2 text-[13px] text-ink-secondary">
           {t("Who should do it?")}
           <select value={who} onChange={(e) => setWho(e.target.value)} aria-label={t("Who should do it?")} className="h-8 rounded-lg bg-raised px-2.5 text-[13.5px] text-ink">
-            {bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {bots.map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
           </select>
         </div>
         <div className="mt-3 flex items-center justify-between">
@@ -110,7 +110,7 @@ function RunLog({ routines, runs, compact }: { routines: Routine[]; runs: Routin
         {shown.length === 0 && <div className="py-4 text-center text-[13px] text-ink-tertiary">{t("No runs yet.")}</div>}
         {shown.map((r) => (
           <button key={r.id} type="button" data-testid="run-row" onClick={() => open(r)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-raised/60">
-            <span className={cn("w-[72px] shrink-0 rounded-full px-2 py-0.5 text-center text-[11.5px] font-medium", STATUS_TONE[r.status] ?? "bg-ink/10")}>{r.status}</span>
+            <span className={cn("w-[72px] shrink-0 rounded-full px-2 py-0.5 text-center text-[11.5px] font-medium", STATUS_TONE[r.status] ?? "bg-ink/10")}>{t(r.status)}</span>
             <span data-no-i18n="" className="min-w-0 flex-1 truncate text-ink">{byId.get(r.routineId)?.name ?? r.routineId}</span>
             <span data-no-i18n="" className="hidden min-w-0 max-w-[40%] truncate text-ink-tertiary sm:block">{r.detail}</span>
             <span className="shrink-0 tabular-nums text-ink-tertiary">{new Date(r.startedAt).toLocaleString([locale()], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
@@ -150,7 +150,7 @@ function RoutineRows({ routines, onEdit }: { routines: Routine[]; onEdit: (r: Ro
 }
 
 // ---- webhooks ----------------------------------------------------------------------------------------------------------
-function WebhooksTab() {
+function WebhooksTab({ fresh }: { fresh?: { id: string; secret: string; url: string } | null }) {
   const { state, dispatch } = useStore();
   const t = useT();
   const targets = useTargets().filter((x) => x.kind === "bot");
@@ -159,7 +159,7 @@ function WebhooksTab() {
   const [prompt, setPrompt] = useState("");
   const [target, setTarget] = useState(targets[0]?.id ?? "");
   const [auth, setAuth] = useState<"bearer" | "url">("bearer");
-  const [shown, setShown] = useState<{ id: string; secret: string; url: string } | null>(null);
+  const [shown, setShown] = useState<{ id: string; secret: string; url: string } | null>(fresh ?? null);
   const [open, setOpen] = useState<string | null>(null);
   const hookBase = (w: Webhook) => w.url;
   const reveal = (w: Webhook, secret: string) => setShown({ id: w.id, secret, url: auth === "url" || w.auth === "url" ? `${w.url}/${secret}` : w.url });
@@ -236,7 +236,7 @@ function WebhooksTab() {
       {adding ? (
         <div className="rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10" data-testid="webhook-form">
           <input data-no-i18n="" value={name} onChange={(e) => setName(e.target.value)} aria-label={t("Name")} placeholder={t("Name, e.g. Deploys")} className={cn(INPUT, "h-9")} />
-          <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t("Bot")} className={cn(INPUT, "mt-2 h-9")}>{targets.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+          <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t("Bot")} className={cn(INPUT, "mt-2 h-9")}>{targets.map((x) => <option key={x.id} value={x.id} data-no-i18n="">{x.name}</option>)}</select>
           <textarea data-no-i18n="" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} aria-label={t("Instructions")} placeholder={t("What should the bot do with each event?")} className={cn(INPUT, "mt-2 py-2 leading-5")} />
           <div role="radiogroup" className="mt-2 flex gap-1.5">
             {([["bearer", "Bearer header"], ["url", "Secret in the URL"]] as const).map(([id, text]) => (
@@ -267,7 +267,8 @@ export function AutomationsPage() {
   const [botFilter, setBotFilter] = useState("all");
   // a new routine goes: plain words -> when -> the form (or a webhook); a bot dropped on the calendar goes straight to the form
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
-  const [step, setStep] = useState<"ask" | "when" | "form">("ask");
+  const [step, setStep] = useState<"ask" | "when" | "form" | "webhook">("ask");
+  const [fresh, setFresh] = useState<{ id: string; secret: string; url: string } | null>(null);
   const [prefill, setPrefill] = useState<{ botId?: string; at?: number } | undefined>();
   const routines = state.routines.filter((r) => botFilter === "all" || r.targetId === botFilter);
   const runs = state.runs.filter((r) => routines.some((x) => x.id === r.routineId));
@@ -282,7 +283,10 @@ export function AutomationsPage() {
         <button type="button" aria-label="Open bot list" onClick={() => dispatch({ type: "drawer", open: true })} className="-ml-2 rounded-md p-1.5 text-ink-secondary hover:bg-raised md:hidden"><Menu size={20} /></button>
         <button type="button" aria-label={t("Back")} title={t("Back")} onClick={() => dispatch({ type: "automations", open: false })} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><ArrowLeft size={18} /></button>
         <CalendarClock size={17} className="shrink-0 text-accent-text" aria-hidden />
-        <h1 className="min-w-0 truncate text-[17px] font-semibold text-ink">{t("Automations")}</h1>
+        <div className="min-w-0 leading-tight">
+          <h1 className="truncate text-[17px] font-semibold text-ink">{t("Automations")}</h1>
+          <p className="hidden truncate text-[12px] text-ink-tertiary xl:block">{t("Routines run on a schedule; webhooks run when something calls them.")}</p>
+        </div>
         <div role="tablist" className="ml-3 flex gap-0.5 rounded-lg bg-raised/70 p-0.5">
           {(["routines", "webhooks"] as const).map((id) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
@@ -292,17 +296,17 @@ export function AutomationsPage() {
         <div className="ml-auto flex items-center gap-2">
           <select value={botFilter} onChange={(e) => setBotFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 rounded-xl bg-raised px-3 text-[13.5px] text-ink">
             <option value="all">{t("All bots")}</option>
-            {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            {state.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
+            {state.groups.map((g) => <option key={g.id} value={g.id} data-no-i18n="">{g.name}</option>)}
           </select>
           <div role="group" aria-label={t("Layout")} className="flex overflow-hidden rounded-xl ring-1 ring-ink/10">
             <button type="button" aria-pressed={layout === "list"} onClick={() => setLayout("list")} className={seg(layout === "list")}>{t("List")}</button>
             <button type="button" aria-pressed={layout === "calendar"} onClick={() => setLayout("calendar")} className={seg(layout === "calendar")}>{t("Calendar")}</button>
           </div>
-          <button type="button" aria-label={t("New routine")} onClick={create} className="flex h-9 items-center gap-1.5 rounded-xl bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("New")}</button>
+          <button type="button" aria-label={t("New routine")} onClick={create} className="flex h-9 items-center gap-1.5 rounded-xl bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("New routine")}</button>
         </div>
       </header>
-      {tab === "webhooks" ? <div className="min-h-0 flex-1 overflow-y-auto"><WebhooksTab /></div>
+      {tab === "webhooks" ? <div className="min-h-0 flex-1 overflow-y-auto"><WebhooksTab key={fresh?.id ?? "tab"} fresh={fresh} /></div>
         : layout === "calendar" ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <CalendarView routines={routines} runs={runs} anchor={anchor} setAnchor={setAnchor} range={range} setRange={setRange} onEdit={(r) => { setEditing(r); setStep("form"); }}
@@ -316,7 +320,8 @@ export function AutomationsPage() {
           </div>
         )}
       {editing === "new" && step === "ask" && <RoutineAsk onForm={() => setStep("when")} onClose={close} />}
-      {editing === "new" && step === "when" && <WhenStep onBack={() => setStep("ask")} onClose={close} onSchedule={() => setStep("form")} onWebhook={() => { close(); setTab("webhooks"); }} />}
+      {editing === "new" && step === "when" && <WhenStep onBack={() => setStep("ask")} onClose={close} onSchedule={() => setStep("form")} onWebhook={() => setStep("webhook")} />}
+      {editing === "new" && step === "webhook" && <WebhookDialog onClose={close} onCreated={(w, secret) => { setFresh({ id: w.id, secret, url: w.auth === "url" ? `${w.url}/${secret}` : w.url }); close(); setTab("webhooks"); }} />}
       {editing && step === "form" && <AutomationForm key={editing === "new" ? "new" : editing.id} routine={editing === "new" ? null : editing} prefill={prefill} onClose={close} />}
     </main>
   );

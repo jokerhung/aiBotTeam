@@ -152,3 +152,31 @@ async def test_reports_to_scopes_a_chief_and_refuses_loops(ctx):
     mine = next(x for x in (await c.get("/api/bots")).json()["bots"] if x["id"] == b["id"])
     assert mine["reportsTo"] is None
     await wait_until(lambda: _idle(c, b))
+
+
+async def test_a_chief_answers_a_childs_question_for_the_person_and_the_card_says_who(ctx):
+    c, app = ctx
+    a, b, x = await make_bot(c, "Chiefa"), await make_bot(c, "Asker"), await make_bot(c, "Bystander")
+    await c.patch(f"/api/bots/{a['id']}", json={"chief": True})
+    await c.post(f"/api/bots/{a['id']}/messages", json={"text": "/coordinate Asker | /ask Which colour? | Red | Blue"})
+
+    async def waiting():
+        return next((r for r in await app.state.runtime.all() if r["assignee_bot"] == b["id"] and r["status"] == "needs_input"), None)
+    child = await wait_until(waiting)
+    stand_in = lambda bot: type("R", (), {"bot_id": bot["id"], "group_id": None, "assignment_id": None, "origin": "person", "level": None, "started_at": 0, "label": None})()
+    app.state.turns.runs["tz"] = stand_in(x)  # a bot that neither delegated this nor is the Chief may not answer
+    refused = await app.state.agents._answer("tz", child["id"], "Red")
+    app.state.turns.runs.pop("tz")
+    assert refused["ok"] is False and refused["reason"] == "not_allowed"
+    app.state.turns.runs["ty"] = stand_in(a)
+    done = await app.state.agents._answer("ty", child["id"], "Blue")
+    app.state.turns.runs.pop("ty")
+    assert done["ok"] is True
+
+    async def card():
+        for m in await msgs(c, b, child["thread_id"]):
+            if m["kind"] == "request" and m["request"]["status"] == "resolved":
+                return m["request"]
+    req = await wait_until(card)
+    assert req["source"] == "team" and req["answeredBy"] == "Chiefa" and req["answer"] == "Blue"
+    await wait_until(lambda: _idle(c, b))

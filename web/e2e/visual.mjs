@@ -182,6 +182,46 @@ const dismiss = (p) => p.getByRole("button", { name: "Done", exact: true }).firs
   await jj(`/api/routines/${routine.id}`, "DELETE"); await jj(`/api/bots/${bot.id}`, "DELETE");
 }
 
+// 1f. Inbox panel (empty) and the "When another app sends something" dialog: ours against the reference
+{
+  const ref = await page(REF);
+  await dismiss(ref);
+  await ref.getByRole("button", { name: "Inbox" }).first().click();
+  await ref.waitForTimeout(900);
+  const ours = await page(OURS);
+  await ours.locator('[data-testid="inbox-button"]').click();
+  await ours.waitForSelector('[data-testid="inbox-panel"]');
+  await ours.waitForTimeout(600);
+  const rbx = await ref.locator("aside, [role=complementary]").filter({ hasText: "Nothing for you yet" }).first().boundingBox();
+  const obx = await ours.locator('[data-testid="inbox-panel"]').boundingBox();
+  const clip = (bx) => ({ x: bx.x, y: 0, width: Math.min(bx.width, 320), height: 230 });
+  const ri = await ref.screenshot({ clip: clip(rbx) }), oi = await ours.screenshot({ clip: clip(obx) });
+  writeFileSync(`${OUT}/ref-inbox-panel.png`, ri); writeFileSync(`${OUT}/ours-inbox-panel.png`, oi);
+  report("inbox panel (empty) vs reference", diff(ri, oi, "inbox-panel"), Number(process.env.LIMIT_INBOX || 0.1), `panel ${Math.round(rbx.width)}px vs ${Math.round(obx.width)}px wide`);
+
+  await ref.getByRole("button", { name: "You", exact: true }).click();
+  await ref.getByText("Automations", { exact: true }).first().click(); await ref.waitForTimeout(500);
+  await ref.getByRole("button", { name: /New/ }).last().click(); await ref.waitForTimeout(500);
+  await ref.getByText("Set it up yourself").click(); await ref.waitForTimeout(500);
+  await ref.getByText("When another app sends something").click();
+  await ref.getByRole("button", { name: "Continue" }).click(); await ref.waitForTimeout(900);
+  await ours.getByTitle("Profile and settings").click();
+  await ours.locator('[data-testid="open-automations"]').click();
+  await ours.getByRole("button", { name: "New routine" }).first().click();
+  await ours.getByRole("button", { name: "Set it up yourself" }).click();
+  await ours.getByRole("radio", { name: "When another app sends something" }).click();
+  await ours.getByRole("button", { name: "Continue" }).click();
+  await ours.waitForSelector('[data-testid="webhook-dialog"]'); await ours.waitForTimeout(600);
+  const rd = await ref.getByRole("dialog").first().boundingBox(), od = await ours.locator('[data-testid="webhook-dialog"] > div').boundingBox();
+  for (const [name, top] of [["header", true], ["footer", false]]) {
+    const h = top ? 110 : 66;
+    const cr = (bx) => ({ x: bx.x, y: top ? bx.y : bx.y + bx.height - h, width: 560, height: h });
+    const r = await ref.screenshot({ clip: cr(rd) }), o = await ours.screenshot({ clip: cr(od) });
+    writeFileSync(`${OUT}/ref-hook-${name}.png`, r); writeFileSync(`${OUT}/ours-hook-${name}.png`, o);
+    report(`webhook dialog ${name} vs reference`, diff(r, o, `hook-${name}`), Number(process.env.LIMIT_HOOK || 0.1), `dialog ${Math.round(rd.width)}px vs ${Math.round(od.width)}px wide`);
+  }
+}
+
 // 2. Our own screens against stored baselines (regression, tighter limit); UPDATE=1 rewrites them
 const snaps = readdirSync(OUT).filter((f) => /^p4-.*\.png$/.test(f)).map((f) => ({ name: f.replace(/\.png$/, ""), path: `${OUT}/${f}` })); // written by phase4.mjs
 for (const { name, path } of snaps) {

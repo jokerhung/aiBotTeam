@@ -35,8 +35,9 @@ export interface RequestInfo {
   choices: string[];
   questions: RequestQuestion[];
   behavior?: "allow" | "deny" | null;
-  source?: "user" | "auto" | "rule" | "expired" | "unavailable" | "system" | null;
+  source?: "user" | "auto" | "rule" | "expired" | "unavailable" | "system" | "team" | null;
   answer?: string | null;
+  answeredBy?: string | null;
 }
 
 export interface Attachment {

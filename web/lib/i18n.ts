@@ -54,7 +54,7 @@ function translateText(node: Text, lang: string) {
 }
 
 function translateAttrs(el: Element, lang: string) {
-  if (inSkipped(el)) return;
+  if (el.closest("[data-no-i18n]")) return; // what people wrote stays; a field's own placeholder or label is interface text
   for (const attr of ATTRS) {
     const value = el.getAttribute(attr);
     if (value === null) continue;

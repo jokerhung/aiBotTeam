@@ -342,7 +342,7 @@ export function Sidebar() {
     },
   };
 
-  const row = (b: Bot) => <BotRow key={b.id} bot={b} icons={icons} selected={b.id === state.selectedId && !state.selectedGroupId && !state.automationsOpen && !state.teamMapOpen && !state.inboxOpen} onSelect={() => select(b)} drag={drag} />;
+  const row = (b: Bot) => <BotRow key={b.id} bot={b} icons={icons} selected={b.id === state.selectedId && !state.selectedGroupId && !state.automationsOpen && !state.teamMapOpen} onSelect={() => select(b)} drag={drag} />;
   const addSection = async () => {
     const name = window.prompt(tr("Name of the new section"));
     if (name?.trim()) await api("/api/sidebar-sections", { method: "POST", body: JSON.stringify({ name: name.trim() }) });

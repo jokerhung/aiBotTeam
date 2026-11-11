@@ -3,7 +3,7 @@ import { CalendarClock, Check, ChevronRight, FileText, Share2, UserPlus, X, Cloc
 import { useMemo, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Routine } from "@/lib/wire";
+import type { Routine, Webhook } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { Mascot } from "./Mascot";
@@ -194,6 +194,81 @@ export function AutomationForm({ routine, prefill, onClose }: { routine: Routine
           <button type="button" onClick={onClose} className="rounded-full px-3 py-2 text-[14px] text-ink-secondary hover:text-ink">{t("Cancel")}</button>
           <button type="button" disabled={busy || !prompt.trim() || (!interval && chip !== "once" && !chosenDays.length)} onClick={save}
             className="h-10 rounded-full bg-accent px-5 text-[14px] font-medium text-[var(--color-accent-ink)] disabled:bg-ink/10 disabled:text-ink-tertiary">{t("Save")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** "When another app sends something": who does it and what to do with each event; the secret is shown once afterwards. */
+export function WebhookDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Webhook, secret: string) => void }) {
+  const { state } = useStore();
+  const t = useT();
+  const bots = state.bots.filter((b) => !b.hidden);
+  const [who, setWho] = useState(bots[0]?.id ?? "");
+  const [text, setText] = useState("");
+  const [more, setMore] = useState(false);
+  const [name, setName] = useState("");
+  const [auth, setAuth] = useState<"bearer" | "url">("bearer");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const create = async () => {
+    if (!who || !text.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await api<{ webhook: Webhook; secret: string }>("/api/webhooks", { method: "POST", body: JSON.stringify({ name: name.trim() || text.trim().slice(0, 40), prompt: text.trim(), targetId: who, auth }) });
+      onCreated(r.webhook, r.secret);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div role="dialog" aria-modal="true" aria-label="When another app sends something" data-testid="webhook-dialog"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-[560px] overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10">
+        <div className="flex items-start justify-between px-5 pb-4 pt-5">
+          <div>
+            <h2 className="text-[17px] font-semibold">{t("When another app sends something")}</h2>
+            <p className="mt-1 text-[12.5px] text-ink-tertiary">{t("Each time it sends something, your bot does this.")}</p>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><X size={15} /></button>
+        </div>
+        <div className="border-t border-edge px-5 pb-4 pt-4">
+          <div className="text-[13.5px] font-medium">{t("Who should do it?")}</div>
+          <div role="radiogroup" aria-label={t("Who should do it?")} className="mt-2.5 grid grid-cols-3 gap-2">
+            {bots.map((b) => (
+              <button key={b.id} type="button" role="radio" aria-checked={who === b.id} onClick={() => setWho(b.id)}
+                className={cn("flex h-[50px] items-center gap-2.5 rounded-xl px-3 text-left text-[14px] ring-1", who === b.id ? "bg-accent/12 ring-accent/60" : "bg-raised ring-ink/10 hover:bg-raised-hover")}>
+                <Mascot color={b.color} size={24} /><span data-no-i18n="" className="min-w-0 flex-1 truncate">{b.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-5 text-[13.5px] font-medium">{t("What should it do?")}</div>
+          <textarea autoFocus data-no-i18n="" value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={t("What should it do?")}
+            placeholder={t("e.g. draft a short follow-up email for the person in it")}
+            className="mt-2.5 block w-full resize-none rounded-xl bg-inset px-3.5 py-3 text-[14px] leading-5 text-ink outline-none ring-1 ring-inset ring-accent placeholder:text-ink-tertiary" />
+          <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)}
+            className="mt-4 flex h-11 w-full items-center gap-2 rounded-xl bg-raised px-3.5 text-left text-[13.5px] ring-1 ring-ink/10">
+            <span className={cn("text-[10px] transition-transform", more && "rotate-90")}>▶</span> {t("More")}
+          </button>
+          {more && (
+            <div className="mt-3 flex flex-col gap-2.5" data-testid="webhook-more">
+              <input data-no-i18n="" value={name} onChange={(e) => setName(e.target.value)} aria-label={t("Name")} placeholder={t("Name, e.g. Deploys")} className={cn(INPUT, "h-10")} />
+              <div role="radiogroup" className="flex gap-1.5">
+                {([["bearer", "Bearer header"], ["url", "Secret in the URL"]] as const).map(([id, label]) => (
+                  <button key={id} type="button" role="radio" aria-checked={auth === id} onClick={() => setAuth(id)}
+                    className={cn("flex-1 rounded-lg px-2 py-1.5 text-[13px] ring-1 ring-ink/10", auth === id && "bg-accent/12 ring-accent/60")}>{t(label)}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {error && <div role="alert" className="mt-3 text-[13px] text-danger">{error}</div>}
+        </div>
+        <div className="flex h-[66px] items-center justify-end gap-3 border-t border-edge px-5">
+          <button type="button" onClick={onClose} className="rounded-full px-3 py-2 text-[14px] text-ink-secondary hover:text-ink">{t("Cancel")}</button>
+          <button type="button" disabled={!who || !text.trim() || busy} onClick={create}
+            className="h-10 rounded-full bg-accent px-5 text-[14px] font-medium text-[var(--color-accent-ink)] disabled:bg-ink/10 disabled:text-ink-tertiary">{t("Set it up")}</button>
         </div>
       </div>
     </div>

@@ -35,6 +35,15 @@ const WHO: Record<string, string> = {
 function Decided({ r }: { r: RequestInfo }) {
   const t = useT();
   const allowed = r.behavior === "allow";
+  // a teammate answered for the person: the card says who
+  if (r.source === "team" && r.answeredBy) {
+    return (
+      <div data-testid="request-decided" className="flex min-w-0 items-center gap-2 text-[13px] leading-5 text-ink-tertiary">
+        <Check size={14} className="shrink-0 text-success" />
+        <span data-no-i18n="" className="truncate">{`${r.answeredBy} ${t("answered for you")}: ${(r.answer ?? "").slice(0, 100)}`}</span>
+      </div>
+    );
+  }
   // a question the person answered reads like the reference: a green tick and "You chose: ..."
   if (r.type === "question" && allowed && r.answer && r.source === "user") {
     return (
@@ -80,7 +89,7 @@ export function ApprovalDock({ m, thread, bot }: { m: Message; thread: string; b
       className="mb-2 w-full rounded-[18px] border border-hairline bg-card px-4 pb-3.5 pt-3 shadow-(--shadow-float)">
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex h-5 w-full items-center gap-2 text-left text-[13.5px] text-ink-secondary">
         <Mascot color={bot.color} size={16} />
-        <span className="min-w-0 flex-1 truncate">{bot.name} {t(what)}</span>
+        <span className="min-w-0 flex-1 truncate"><span data-no-i18n="">{bot.name}</span> {t(what)}</span>
         <ChevronDown size={15} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
       </button>
       <pre className={cn("mt-2 overflow-auto rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-[17px] text-ink-secondary", open ? "max-h-48 whitespace-pre-wrap break-all" : "max-h-[33px] truncate whitespace-nowrap")}>{r.command ?? r.summary}</pre>

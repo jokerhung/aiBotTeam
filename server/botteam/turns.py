@@ -132,6 +132,8 @@ class Turns:
         await self.store.add_message(self._owner(bot, thread_id), thread_id, m)
         self.req_msgs[req["id"]] = m.id
         self._frame("message", bot.id, thread_id, m)
+        if self.runtime:  # a handed-off task that waits on the person says so: running -> needs_input
+            await self.runtime.note_question(thread_id, True)
         await self.publish_bot(bot)
         if self.notify:
             grp = await self.store.group_of_thread(thread_id)
@@ -140,6 +142,8 @@ class Turns:
 
     async def _request_resolved(self, thread_id: str, req: dict) -> None:
         mid = self.req_msgs.pop(req["id"], None)
+        if self.runtime and not any(r for r in (self.broker.open_for(thread_id) if self.broker else [])):
+            await self.runtime.note_question(thread_id, False)
         bot = await self._bot_for(thread_id)
         if not mid or not bot:
             return

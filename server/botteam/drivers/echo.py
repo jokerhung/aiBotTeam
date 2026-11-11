@@ -56,6 +56,8 @@ class EchoDriver(Emitter):
                 self.emit("item.completed", t, turn_id, itemType="assistant_text", text=reply)
                 self.emit("turn.completed", t, turn_id, ok=True)
                 return
+            if not text.startswith("/") and "\n/ask" in text:  # the task of a hand-off arrives after the envelope
+                text = text[text.index("\n/ask") + 1:]
             if text.startswith(("/approve", "/ask")) and self.broker is not None:
                 if text.startswith("/approve"):
                     cmd = text[len("/approve"):].strip() or "mkdir demo"

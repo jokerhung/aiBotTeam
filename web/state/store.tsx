@@ -125,24 +125,24 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, connected: action.connected };
     case "select": {
       const bot = state.bots.find((b) => b.id === action.id);
-      return { ...state, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, inboxOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
+      return { ...state, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
         dividerAt: { ...state.dividerAt, [action.id]: bot?.readAt ?? 0 } };
     }
     case "selectGroup":
-      return { ...state, selectedGroupId: action.id, automationsOpen: false, teamMapOpen: false, inboxOpen: false, drawerOpen: false, findOpen: false, groupPanelId: state.groupPanelId === action.id ? action.id : null,
+      return { ...state, selectedGroupId: action.id, automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, groupPanelId: state.groupPanelId === action.id ? action.id : null,
         dividerAt: { ...state.dividerAt, [action.id]: state.groups.find((g) => g.id === action.id)?.readAt ?? 0 } };
     case "groupPanel":
       return { ...state, groupPanelId: action.id };
     case "newGroup":
       return { ...state, newGroupOpen: action.open };
     case "automations":
-      return { ...state, automationsOpen: action.open, teamMapOpen: false, inboxOpen: false, drawerOpen: false };
+      return { ...state, automationsOpen: action.open, teamMapOpen: false, drawerOpen: false };
     case "teamMap":
-      return { ...state, teamMapOpen: action.open, automationsOpen: false, inboxOpen: false, drawerOpen: false };
+      return { ...state, teamMapOpen: action.open, automationsOpen: false, drawerOpen: false };
     case "notifPanel":
       return { ...state, notifOpen: action.open ?? state.notifOpen, notifPinned: action.pinned ?? state.notifPinned };
     case "inboxPanel":
-      return { ...state, inboxOpen: action.open, automationsOpen: false, teamMapOpen: false, drawerOpen: false };
+      return { ...state, inboxOpen: action.open };
     case "teamData":
       return { ...state, groups: action.groups ?? state.groups, routines: action.routines ?? state.routines, runs: action.runs ?? state.runs,
         webhooks: action.webhooks ?? state.webhooks, notifications: action.notifications ?? state.notifications, inbox: action.inbox ?? state.inbox };

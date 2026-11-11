@@ -39,8 +39,9 @@ class RequestInfo(BaseModel):
     choices: list[str] = Field(default_factory=list)
     questions: list[dict[str, Any]] = Field(default_factory=list)
     behavior: Optional[str] = None
-    source: Optional[str] = None  # user | auto | rule | expired | unavailable | system
+    source: Optional[str] = None  # user | auto | rule | expired | unavailable | system | team
     answer: Optional[str] = None
+    answeredBy: Optional[str] = None  # a teammate who answered for the person (source "team")
 
 
 class Attachment(BaseModel):

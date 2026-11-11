@@ -153,7 +153,7 @@ class Broker:
 
     # ---- resolving ---------------------------------------------------------
     async def resolve(self, req_id: str, behavior: str, message: Optional[str] = None, always: bool = False,
-                      answers: Optional[dict] = None, source: str = "user") -> bool:
+                      answers: Optional[dict] = None, source: str = "user", by: Optional[str] = None) -> bool:
         req, fut = self.open.get(req_id), self._futures.get(req_id)
         if not req or not fut or fut.done():
             return False
@@ -161,7 +161,7 @@ class Broker:
         cmd, instance = self._ctx.get(req_id, (None, ""))
         if behavior == "allow" and always and cmd and source == "user":
             self.add_rule(cmd[0], cmd[1], instance)  # the exact command + directory the CLI sent, never a display string
-        req.update(status="resolved", behavior=behavior, source=source, answer=message)
+        req.update(status="resolved", behavior=behavior, source=source, answer=message, answeredBy=by)
         thread_id = self._thread_of.pop(req_id, "")
         self.open.pop(req_id, None)
         self._futures.pop(req_id, None)

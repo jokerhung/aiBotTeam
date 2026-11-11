@@ -1,8 +1,8 @@
 "use client";
-import { Bell, BellRing, Inbox as InboxIcon, Pin, PinOff, Trash2, X } from "lucide-react";
+import { Bell, BellRing, Inbox as InboxIcon, Maximize2, Minimize2, Pin, PinOff, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { desktopAlertsOn, enableDesktopAlerts, DESKTOP_ALERTS_KEY } from "./useTeamBehaviors";
-import { locale, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { InboxItem, Notification, RequestQuestion } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -10,14 +10,6 @@ import { useStore } from "@/state/store";
 import { Mascot } from "./Mascot";
 
 const optionLabel = (o: NonNullable<RequestQuestion["options"]>[number]) => (typeof o === "string" ? o : o.label);
-
-function ago(at: number): string {
-  const s = Math.max(0, Math.floor((Date.now() - at) / 1000));
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return new Date(at).toLocaleDateString([locale()], { month: "short", day: "numeric" });
-}
 
 const KIND_LABEL: Record<string, [string, string]> = {
   approval: ["Approval", "text-warning"], question: ["Question", "text-warning"], turn_done: ["Done", "text-success"],
@@ -68,8 +60,8 @@ export function NotificationsPanel() {
       <div className="shrink-0 border-y-[0.5px] border-edge px-2.5 py-2">
         <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 w-full rounded-xl bg-raised px-3 text-[13.5px] text-ink">
           <option value="all">{t("All bots")}</option>
-          {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          {state.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
+          {state.groups.map((g) => <option key={g.id} value={g.id} data-no-i18n="">{g.name}</option>)}
         </select>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -89,7 +81,7 @@ export function NotificationsPanel() {
                   {label && <span className={cn("shrink-0 text-[11.5px] font-medium", tone)}>{t(label)}</span>}
                 </span>
                 {n.body && <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-secondary">{n.body}</span>}
-                <span className="block text-[11.5px] text-ink-tertiary">{agoText(n.at)}</span>
+                <span className="block text-[11.5px] text-ink-tertiary">{t(agoText(n.at))}</span>
               </span>
             </button>
           );
@@ -125,7 +117,7 @@ function InboxCard({ item }: { item: InboxItem }) {
       <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
         <Mascot color={item.botColor} size={18} />
         <span data-no-i18n="" className="min-w-0 flex-1 truncate">{item.botName}{item.groupName ? ` · ${item.groupName}` : ""}</span>
-        <span className="tabular-nums text-ink-tertiary">{ago(item.openedAt)}</span>
+        <span className="tabular-nums text-ink-tertiary">{t(agoText(item.openedAt))}</span>
       </div>
       {item.type === "permission" ? (
         <>
@@ -152,35 +144,38 @@ function InboxCard({ item }: { item: InboxItem }) {
           </div>
         </>
       )}
-      <span className="sr-only">{where}</span>
+      <span data-no-i18n="" className="sr-only">{where}</span>
     </div>
   );
 }
 
-/** Every card waiting on the person, across all bots and rooms, answered in place. */
+/** Every card waiting on the person, across all bots and rooms, answered in place: a right-hand panel like the reference's, which can be widened. */
 export function InboxPanel() {
   const { state, dispatch } = useStore();
   const t = useT();
+  const [wide, setWide] = useState(false);
   if (!state.inboxOpen) return null;
   return (
-    <main data-testid="inbox-panel" className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
-      <header className="flex shrink-0 items-center gap-3 px-5 py-3 max-md:pl-14">
-        <InboxIcon size={18} className="text-accent-text" />
-        <h1 className="text-[18px] font-semibold text-ink">{t("Inbox")}</h1>
-        <span className="text-[13px] text-ink-tertiary">{t("Everything waiting on you")}</span>
-        <button type="button" aria-label="Close" onClick={() => dispatch({ type: "inboxPanel", open: false })} className="ml-auto rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><X size={16} /></button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <div className="mx-auto w-full max-w-[640px]">
-          {state.inbox.length === 0 && (
-            <div className="flex flex-col items-center gap-2 py-24 text-center text-ink-secondary">
-              <BellRing size={28} className="text-ink-tertiary" />
-              <div className="text-[15px]">{t("Nothing is waiting on you.")}</div>
-            </div>
-          )}
-          {state.inbox.map((it) => <InboxCard key={it.requestId} item={it} />)}
-        </div>
+    <aside aria-label={t("Inbox")} data-testid="inbox-panel"
+      className={cn("flex h-full shrink-0 flex-col border-l-[0.5px] border-edge bg-panel max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:shadow-xl", wide ? "w-[560px]" : "w-[320px]")}>
+      <div className="flex h-[60px] shrink-0 items-center gap-2 px-5">
+        <InboxIcon size={15} className="text-ink-secondary" />
+        <h2 className="flex-1 text-[14px] font-medium text-ink">{t("Inbox")}</h2>
+        <button type="button" title={t(wide ? "Narrow" : "Expand")} aria-label={t(wide ? "Narrow" : "Expand")} aria-pressed={wide} onClick={() => setWide((v) => !v)}
+          className="flex size-8 items-center justify-center rounded-full bg-composer text-ink-secondary ring-1 ring-ink/10 hover:text-ink">{wide ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
+        <button type="button" aria-label="Close" onClick={() => dispatch({ type: "inboxPanel", open: false })}
+          className="flex size-8 items-center justify-center rounded-full bg-composer text-ink-secondary ring-1 ring-ink/10 hover:text-ink"><X size={14} /></button>
       </div>
-    </main>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+        {state.inbox.length === 0 && (
+          <div className="flex flex-col items-center gap-1.5 px-6 pt-8 text-center">
+            <InboxIcon size={20} className="mb-1 text-ink-tertiary" />
+            <div className="text-[13.5px] font-semibold text-ink">{t("Nothing for you yet.")}</div>
+            <div className="text-[12px] leading-[18px] text-ink-secondary">{t("When a bot needs your OK, has a question or finishes something, it shows up here.")}</div>
+          </div>
+        )}
+        {state.inbox.map((it) => <InboxCard key={it.requestId} item={it} />)}
+      </div>
+    </aside>
   );
 }

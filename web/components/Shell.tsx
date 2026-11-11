@@ -44,8 +44,6 @@ export function Shell() {
           <TeamMapPage />
         ) : state.automationsOpen ? (
           <AutomationsPage />
-        ) : state.inboxOpen ? (
-          <InboxPanel />
         ) : group ? (
           <>
             <GroupView key={group.id} group={group} />
@@ -80,6 +78,7 @@ export function Shell() {
             )}
           </main>
         )}
+        <InboxPanel />
         <NotificationsPanel />
       </div>
       <NewGroupDialog />
