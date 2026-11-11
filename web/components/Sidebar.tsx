@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, Bell, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Archive, BarChart3, Bell, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -231,6 +231,7 @@ function ProfileMenu({ icons }: { icons: boolean }) {
       <PopoverContent side="top" align="start" className="w-[230px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
         <div className="px-2.5 pb-1.5 pt-1 text-[13px] font-medium text-ink-secondary">{name}</div>
         <button type="button" data-testid="open-automations" onClick={() => { setOpen(false); dispatch({ type: "automations", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><CalendarClock size={15} /> Automations</button>
+        <button type="button" data-testid="open-usage" onClick={() => { setOpen(false); dispatch({ type: "usage", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><BarChart3 size={15} /> Usage</button>
         <button type="button" data-testid="open-team-map" onClick={() => { setOpen(false); dispatch({ type: "teamMap", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Network size={15} /> Team map</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "settings", open: true, page: "general" }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Settings size={15} /> Settings</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "shortcuts", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Keyboard size={15} /> Keyboard shortcuts</button>

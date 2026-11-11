@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS messages(
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, parent_id TEXT, role TEXT,
   at INTEGER NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS usage(id TEXT PRIMARY KEY, at INTEGER NOT NULL, bot_id TEXT NOT NULL, thread_id TEXT NOT NULL, instance TEXT NOT NULL, model TEXT NOT NULL,
+  input INTEGER NOT NULL, output INTEGER NOT NULL, cost REAL NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS usage_at ON usage(at);
 CREATE TABLE IF NOT EXISTS mcp_servers(id TEXT PRIMARY KEY, name TEXT NOT NULL, spec TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
@@ -102,6 +105,15 @@ class Store:
     async def list_bots(self) -> list[WireBot]:
         cur = await self.db.execute("SELECT body FROM bots ORDER BY pos")
         return [WireBot.model_validate_json(r[0]) for r in await cur.fetchall()]
+
+    async def add_usage(self, bot_id: str, thread_id: str, instance: str, model: str, input_: int, output: int, cost: float, at: Optional[int] = None) -> None:
+        await self.db.execute("INSERT INTO usage(id, at, bot_id, thread_id, instance, model, input, output, cost) VALUES(?,?,?,?,?,?,?,?,?)",
+                              (new_id("us"), at or now_ms(), bot_id, thread_id, instance, model, int(input_), int(output), float(cost)))
+        await self.db.commit()
+
+    async def usage_rows(self, since: int = 0, until: Optional[int] = None) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT at, bot_id, thread_id, instance, model, input, output, cost FROM usage WHERE at>=? AND at<? ORDER BY at", (since, until or 2**62))
+        return [{"at": r[0], "botId": r[1], "threadId": r[2], "instance": r[3], "model": r[4], "input": r[5], "output": r[6], "cost": r[7]} for r in await cur.fetchall()]
 
     async def get_bot(self, bot_id: str) -> Optional[WireBot]:
         cur = await self.db.execute("SELECT body FROM bots WHERE id=?", (bot_id,))

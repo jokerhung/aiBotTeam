@@ -12,6 +12,7 @@ from .approval import normalize_mode
 from .broker import Broker, Policy
 from .bus import Bus
 from .drivers.base import SendTurnInput
+from .observe import context_window
 from .events import RuntimeEvent
 from .registry import Registry
 from .runtime import RunResult
@@ -68,6 +69,7 @@ class Turns:
         self.groups = None  # rooms: told when a room turn ends so the next responder can start
         self.routines = None  # routine runs: told when their turn ends
         self.mcp = None  # custom MCP servers (their entries for a turn)
+        self.config = None  # where a usage limit's reset time is kept for the Usage page
         self.memory = None  # per-bot notes and the team's
         self.skills = None  # the skill library
         self.notify = None  # the notification log
@@ -175,7 +177,8 @@ class Turns:
             "tasks": tasks, "busy": bool(runs), "threadBusy": active is not None,
             "activity": "waiting-on-you" if waiting else ("working" if runs else "idle"),
             "turnStartedAt": min((r.started_at for r in runs), default=None), "waitingFor": await self._waiting_for(bot),
-            "statusLine": active.label if active else None, "usage": usage,
+            "statusLine": active.label if active else None,
+            "usage": {**usage, "contextWindow": context_window(bot.modelSelection.model)},
         })
         return out.model_dump()
 
@@ -390,6 +393,12 @@ class Turns:
             await self._tool_completed(bot, t, run, d)
         elif ev.type == "item.completed" and d.get("itemType") == "assistant_text":
             await self._final_text(bot, t, run, d.get("text", ""))
+        elif ev.type == "thread.token-usage.updated":  # how full the conversation is, for the meter in the composer
+            if d.get("contextTokens") is not None:
+                th = await self.store.get_thread(t) or {}
+                u = th.get("usage", {})
+                u["contextTokens"] = int(d["contextTokens"])
+                await self.store.patch_thread(t, usage=u)
         elif ev.type == "context.compacted":
             await self._compacted(bot, t, run)
         elif ev.type == "runtime.error":
@@ -476,6 +485,9 @@ class Turns:
             run.retry_pending = True  # the turn.completed that follows restarts the turn instead of ending it
             return
         run.failed = True
+        if d.get("limitResetsAt") and self.config:
+            self.config.data.setdefault("limits", {})[bot.modelSelection.instanceId] = {"resetsAt": d["limitResetsAt"], "limit": d.get("limit")}
+            self.config.save()
         await self._finalize_live(bot, thread_id, run)
         await self._add_error(bot, thread_id, d.get("message") or "The turn failed.", setup=bool(d.get("setup")),
                               terminal=bool(d.get("terminal")), limit=d.get("limit"), limitResetsAt=d.get("limitResetsAt"))
@@ -512,6 +524,7 @@ class Turns:
             if d.get("cost"):
                 u["cost"] = round(u.get("cost", 0) + d["cost"], 6)
             await self.store.patch_thread(thread_id, usage=u)
+            await self.store.add_usage(bot.id, thread_id, bot.modelSelection.instanceId, bot.modelSelection.model, usage.get("input", 0), usage.get("output", 0), d.get("cost") or 0)
         self.runs.pop(thread_id, None)
         if self.mcp:
             self.mcp.cleanup(thread_id)  # the private spec files of this turn's custom servers

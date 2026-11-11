@@ -130,7 +130,7 @@ export interface Bot {
   lastAt: number | null;
   readAt: number;
   tasks: Task[];
-  usage: { input?: number; output?: number; turns?: number; cost?: number };
+  usage: { input?: number; output?: number; turns?: number; cost?: number; contextTokens?: number; contextWindow?: number };
   waitingFor?: string[];
 }
 

@@ -9,6 +9,7 @@ import { APPROVAL_MODES, type ApprovalMode, type Attachment, type Bot } from "@/
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
+import { ContextMeter } from "./Observe";
 
 const MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_MODE: ApprovalMode = "full";
@@ -245,6 +246,7 @@ export function Composer({ bot, dock }: { bot: Bot; dock?: React.ReactNode }) {
                     className="block max-h-[9rem] min-h-7 w-full resize-none overflow-y-auto bg-transparent px-0.5 py-1 text-[14px] leading-5 text-ink outline-none placeholder:text-ink-tertiary"
                   />
                 </div>
+                <ContextMeter bot={bot} />
                 {bot.threadBusy && !sendable ? (
                   <button type="button" title="Stop" aria-label="Stop" onClick={() => api(`/api/bots/${bot.id}/interrupt?thread=${thread}`, { method: "POST" })} className={cn(round, "bg-ink text-app")}>
                     <Square size={11} fill="currentColor" />

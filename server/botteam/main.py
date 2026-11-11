@@ -26,6 +26,7 @@ from .notifications import Notifications
 from .routines import RoutineService
 from .apps_catalog import CATALOG, by_id as catalog_app
 from . import teams as teamlib
+from . import observe
 from .memory import Memory, redact
 from .skills import SkillError, Skills
 from .mcp_servers import McpServers, SpecError, from_desktop_json, public as mcp_public
@@ -80,6 +81,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     hook_state: dict = {}
     mcp = McpServers(store, bus, home)
     turns.mcp = mcp
+    turns.config = config
     memory, skills = Memory(home), Skills(home)
     turns.memory, turns.skills = memory, skills
     turns.notify, routines.notify = notify, notify
@@ -1147,6 +1149,57 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await store.patch_thread(thread_id, leafId=leaf)
         bus.publish({"kind": "thread", "botId": t["botId"], "threadId": thread_id, "activeLeafId": leaf})
         return {"activeLeafId": leaf}
+
+    @app.get("/api/bots/{bot_id}/runs")
+    async def bot_runs(bot_id: str, limit: int = 30):
+        """The recent turns of a bot, from its event logs: when, how long, which tools, what it used."""
+        bot = await need(bot_id)
+        rows = []
+        for t in await store.list_threads(bot.id):
+            for r in observe.runs_of(observe.read_log(turns.log_dir / f"{t['id']}.ndjson"), t["id"]):
+                rows.append({**r, "thread": t["title"] or "Main conversation"})
+        rows.sort(key=lambda r: r["startedAt"] or 0, reverse=True)
+        return {"runs": rows[: min(max(limit, 1), 200)]}
+
+    @app.get("/api/threads/{thread_id}/trace")
+    async def thread_trace(thread_id: str, turn: str):
+        events = observe.read_log(turns.log_dir / f"{thread_id}.ndjson")
+        if not any(e.get("turnId") == turn for e in events):
+            raise HTTPException(404, "turn not found")
+        return observe.trace_of(events, turn)
+
+    @app.get("/api/usage")
+    async def usage(since: int = 0, until: int | None = None, by: str = "day"):
+        """Tokens and cost by day, bot or model, with the total; the totals are sums of the recorded turns."""
+        from datetime import datetime as _dt
+
+        rows = await store.usage_rows(since, until)
+        names = {b.id: b.name for b in await store.list_bots()}
+        keyf = {"day": lambda r: _dt.fromtimestamp(r["at"] / 1000).strftime("%Y-%m-%d"), "bot": lambda r: names.get(r["botId"], "(deleted bot)"), "model": lambda r: r["model"]}.get(by)
+        if not keyf:
+            raise HTTPException(400, "group by day, bot or model")
+        groups: dict[str, dict] = {}
+        for r in rows:
+            g = groups.setdefault(keyf(r), {"key": keyf(r), "input": 0, "output": 0, "cost": 0.0, "turns": 0})
+            g["input"] += r["input"]; g["output"] += r["output"]; g["cost"] = round(g["cost"] + r["cost"], 6); g["turns"] += 1
+        total = {"input": sum(r["input"] for r in rows), "output": sum(r["output"] for r in rows), "cost": round(sum(r["cost"] for r in rows), 6), "turns": len(rows)}
+        return {"rows": sorted(groups.values(), key=lambda g: g["key"]), "total": total, "limits": config.data.get("limits", {})}
+
+    @app.get("/api/bots/{bot_id}/export")
+    async def export_transcript(bot_id: str, thread: str | None = None, format: str = "md"):
+        from fastapi.responses import PlainTextResponse
+
+        bot = await need(bot_id)
+        tid = await need_thread(bot, thread)
+        msgs, _ = await store.page(tid, None, 100_000)
+        data = [m.model_dump() for m in msgs]
+        title = ((await store.get_thread(tid)) or {}).get("title", "")
+        if format == "json":
+            return PlainTextResponse(json.dumps({"bot": bot.name, "thread": title, "messages": data}, ensure_ascii=False, indent=1), media_type="application/json",
+                                     headers={"content-disposition": f'attachment; filename="{bot.name}-transcript.json"'})
+        if format != "md":
+            raise HTTPException(400, "format is md or json")
+        return PlainTextResponse(observe.to_markdown(bot.name, title, data), media_type="text/markdown", headers={"content-disposition": f'attachment; filename="{bot.name}-transcript.md"'})
 
     @app.get("/api/threads/{thread_id}/events")
     async def thread_events(thread_id: str, limit: int = 500):

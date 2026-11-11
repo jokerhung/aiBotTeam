@@ -10,6 +10,7 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { Mascot } from "./Mascot";
+import { ActivityPanel, ExportButtons, InspectorPanel } from "./Observe";
 import { MemorySection } from "./MemorySection";
 import { SkillsSection } from "./SkillsSection";
 import { toast } from "./Toaster";
@@ -221,6 +222,7 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
       <Row icon={RotateCcw} label={t("Start fresh")} onClick={fresh} />
       <Row icon={ListChecks} label={t("Activity")} chevron onClick={() => go("activity")} />
       <Row icon={Bug} label={t("Inspector")} chevron onClick={() => go("inspector")} />
+      <div className="mt-2 px-1"><div className="mb-1.5 text-[12.5px] text-ink-tertiary">{t("Export transcript")}</div><ExportButtons bot={bot} /></div>
       <div className="mt-4 flex items-center justify-between text-[14px] font-medium text-ink-secondary">
         <span>{t("Routines")}</span>
         <button type="button" onClick={() => go("routines")} className="text-[13px] font-normal text-ink-tertiary hover:text-ink">{t("Manage")}</button>
@@ -231,45 +233,7 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
   );
 }
 
-function Activity({ bot }: { bot: Bot }) {
-  const { state } = useStore();
-  const tools = (state.messages[bot.threadId] ?? []).filter((m) => m.kind === "activity" && m.tool);
-  return (
-    <div className="px-6 pb-6" data-testid="activity-view">
-      {tools.length === 0 && <div className="py-10 text-center text-[13px] text-ink-tertiary">Nothing has run in this conversation yet.</div>}
-      {tools.map((m) => (
-        <div key={m.id} className="flex items-center gap-2 border-b border-hairline/60 py-2 text-[13px]">
-          <span className={cn("size-2 shrink-0 rounded-full", m.tool?.ok === false ? "bg-danger" : m.tool?.ok ? "bg-success" : "animate-pulse bg-accent")} />
-          <span className="font-mono text-ink">{m.tool?.name}</span>
-          <span className="min-w-0 flex-1 truncate font-mono text-ink-tertiary">{m.tool?.summary}</span>
-          <span className="shrink-0 text-ink-tertiary">{new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
-interface LoggedEvent { type: string; createdAt: string; data: Record<string, unknown> }
-
-function Inspector({ bot }: { bot: Bot }) {
-  const [events, setEvents] = useState<LoggedEvent[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    api<{ events: LoggedEvent[] }>(`/api/threads/${bot.threadId}/events?limit=200`).then((r) => !cancelled && setEvents(r.events)).catch(() => {});
-    return () => { cancelled = true; };
-  }, [bot.threadId, bot.busy]);
-  return (
-    <div className="px-6 pb-6" data-testid="inspector-view">
-      {events.length === 0 && <div className="py-10 text-center text-[13px] text-ink-tertiary">No events recorded for this conversation.</div>}
-      {events.slice().reverse().map((e, i) => (
-        <details key={i} className="border-b border-hairline/60 py-1.5 text-[12.5px]">
-          <summary className="cursor-pointer font-mono text-ink">{e.type}</summary>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-inset p-2 font-mono text-[11.5px] text-ink-secondary">{JSON.stringify(e.data, null, 1)}</pre>
-        </details>
-      ))}
-    </div>
-  );
-}
 
 export function BotPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
@@ -314,8 +278,8 @@ export function BotPanel({ bot }: { bot: Bot }) {
         )}
         {tab === "details" && view === "overview" && <Overview bot={bot} go={setView} />}
         {tab === "details" && view === "settings" && <SettingsForm bot={bot} />}
-        {tab === "details" && view === "activity" && <Activity bot={bot} />}
-        {tab === "details" && view === "inspector" && <Inspector bot={bot} />}
+        {tab === "details" && view === "activity" && <ActivityPanel bot={bot} />}
+        {tab === "details" && view === "inspector" && <InspectorPanel bot={bot} />}
         {tab === "details" && view === "routines" && <Routines bot={bot} />}
         {tab === "computer" && <Computer bot={bot} />}
         {tab === "library" && <LibraryTab bot={bot} />}

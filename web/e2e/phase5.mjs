@@ -20,6 +20,8 @@ const echo = { instanceId: "echo", model: "echo-1" };
 
 // leftovers of an earlier run
 for (const s of (await j("/api/mcp/servers")).json.servers) if (s.name.startsWith("E2E ")) await j(`/api/mcp/servers/${s.id}`, "DELETE");
+for (const k of (await j("/api/skills")).json.skills) if (k.name.startsWith("E2E ")) await j(`/api/skills/${k.id}`, "DELETE");
+for (const x of (await j("/api/sidebar-sections")).json.sections) if (x.name.startsWith("E2E Crew")) await j(`/api/sidebar-sections/${x.id}`, "DELETE");
 for (const x of (await j("/api/bots")).json.bots) if (x.name.startsWith("E2E5 ")) await j(`/api/bots/${x.id}`, "DELETE");
 const bot = (await j("/api/bots", "POST", { name: "E2E5 Bot", modelSelection: echo })).json;
 
@@ -144,6 +146,50 @@ ok(!!added && added.approvalMode === "ask" && added.cwd === null && !added.soul.
 await p.locator('[data-testid="import-team"]').getByRole("button", { name: "Done" }).click();
 for (const x of secs) await j(`/api/sidebar-sections/${x.id}`, "DELETE");
 for (const x of (await j("/api/bots")).json.bots) if (x.name === "E2E5 Member") await j(`/api/bots/${x.id}`, "DELETE");
+
+// --- 4: runs, the waterfall of a turn, the event log, usage and the export
+const obs = (await j("/api/bots", "POST", { name: "E2E5 Obs", modelSelection: echo })).json;
+await j(`/api/bots/${obs.id}/messages`, "POST", { text: "/tool look around", threadId: obs.threadId });
+await j(`/api/bots/${obs.id}/messages`, "POST", { text: "and a plain turn", threadId: obs.threadId });
+await p.waitForTimeout(6000);
+await p.locator(`[role=button][title="E2E5 Obs"]`).click();
+await p.getByTitle("Bot details").click();
+await p.getByRole("button", { name: "Activity" }).first().click();
+await p.waitForSelector('[data-testid="run-card"]');
+ok((await p.locator('[data-testid="run-card"]').count()) >= 2, "Activity lists the recent runs of the bot");
+ok(await p.locator('[data-testid="run-card"]', { hasText: "Bash" }).first().isVisible(), "a run shows the tools it used");
+await p.locator('[data-testid="run-card"]', { hasText: "Bash" }).first().getByRole("button").first().click();
+await p.waitForSelector('[data-testid="waterfall"]');
+ok(/Bash/.test(await p.locator('[data-testid="waterfall"]').innerText()), "opening a run draws the waterfall of its tool calls");
+await p.screenshot({ path: `${SHOTS}/p5-activity.png` });
+await p.getByRole("button", { name: "Back" }).first().click();
+await p.getByRole("button", { name: "Inspector" }).first().click();
+await p.waitForSelector('[data-testid="inspector-view"]');
+await p.waitForFunction(() => document.querySelectorAll('[data-testid="event-row"]').length > 5, null, { timeout: 10000 }).catch(() => {});
+ok((await p.locator('[data-testid="event-row"]').count()) > 5, "the Inspector lists the thread's events");
+await p.getByRole("button", { name: "item", exact: true }).click();
+const filtered = await p.locator('[data-testid="event-row"] summary').allInnerTexts();
+ok(filtered.length > 0 && filtered.every((x) => x.includes("item.")), "the filter keeps only one kind of event");
+await p.locator('[data-testid="event-row"]').first().locator("summary").click();
+ok((await p.locator('[data-testid="event-row"] pre').first().innerText()).includes('"eventId"'), "an event opens to its raw JSON");
+// usage
+await p.getByTitle("Profile and settings").click();
+await p.locator('[data-testid="open-usage"]').click();
+await p.waitForSelector('[data-testid="usage-total"]');
+const api_total = (await j("/api/usage")).json.total;
+const shownTurns = await p.locator('[data-testid="total-turns"]').innerText();
+ok(Number(shownTurns.replace(/\D/g, "")) === api_total.turns && api_total.turns >= 2, "the Usage page total is the sum of the recorded turns");
+await p.getByRole("button", { name: "By bot" }).click();
+await p.locator('[data-testid="usage-row"]', { hasText: "E2E5 Obs" }).waitFor({ timeout: 10000 }).catch(() => {});
+ok((await p.locator('[data-testid="usage-row"]', { hasText: "E2E5 Obs" }).count()) === 1, "usage can be grouped by bot");
+await p.screenshot({ path: `${SHOTS}/p5-usage.png` });
+await p.locator('[data-testid="usage-page"]').getByRole("button", { name: "Close" }).click();
+// export
+await p.getByRole("button", { name: "Back" }).first().click();
+const [md] = await Promise.all([p.waitForEvent("download"), p.getByRole("link", { name: "Markdown" }).click()]);
+const mdText = await (await import("node:fs/promises")).readFile(await md.path(), "utf8");
+ok(md.suggestedFilename().endsWith(".md") && mdText.includes("look around") && mdText.startsWith("# E2E5 Obs"), "the transcript downloads as Markdown");
+await j(`/api/bots/${obs.id}`, "DELETE");
 
 ok(errors.filter((e) => !/favicon|404|ERR_ABORTED/.test(e)).length === 0, `no page errors ${errors.slice(0, 3).join(" | ")}`);
 await b.close();
