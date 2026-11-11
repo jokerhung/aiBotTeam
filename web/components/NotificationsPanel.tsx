@@ -4,12 +4,11 @@ import { useState } from "react";
 import { desktopAlertsOn, enableDesktopAlerts, DESKTOP_ALERTS_KEY } from "./useTeamBehaviors";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { InboxItem, Notification, RequestQuestion } from "@/lib/wire";
+import type { InboxItem, Message, Notification, RequestInfo } from "@/lib/wire";
+import { ApprovalDock, QuestionCard } from "./RequestCard";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { Mascot } from "./Mascot";
-
-const optionLabel = (o: NonNullable<RequestQuestion["options"]>[number]) => (typeof o === "string" ? o : o.label);
 
 const KIND_LABEL: Record<string, [string, string]> = {
   approval: ["Approval", "text-warning"], question: ["Question", "text-warning"], turn_done: ["Done", "text-success"],
@@ -99,52 +98,22 @@ export function NotificationsPanel() {
 }
 
 
+/** A card waiting on the person, drawn with the same components as in the chat (so it looks, and answers, the same), under a line saying where it is from. */
 function InboxCard({ item }: { item: InboxItem }) {
-  const { dispatch } = useStore();
+  const { state } = useStore();
   const t = useT();
-  const [busy, setBusy] = useState(false);
-  const [typed, setTyped] = useState("");
-  const send = async (body: object) => {
-    setBusy(true);
-    await api(`/api/threads/${item.threadId}/requests/${item.requestId}`, { method: "POST", body: JSON.stringify(body) }).catch(() => {});
-    dispatch({ type: "teamData", inbox: await api<{ items: InboxItem[] }>("/api/inbox").then((r) => r.items).catch(() => []) });
-    setBusy(false);
-  };
-  const q = item.questions[0] ?? { question: item.summary, options: item.choices };
-  const where = item.groupName ?? item.botName;
+  const bot = state.bots.find((b) => b.id === item.botId);
+  if (!bot) return null;
+  const req: RequestInfo = { id: item.requestId, type: item.type, tool: item.tool, summary: item.summary, command: item.command, cwd: item.cwd, canAlways: item.canAlways, status: "open",
+    openedAt: item.openedAt, choices: item.choices, questions: item.questions };
+  const msg: Message = { id: item.requestId, role: "bot", kind: "request", text: "", at: item.openedAt, request: req };
   return (
-    <div data-testid="inbox-card" className="mb-2 rounded-2xl bg-card p-3 ring-[0.5px] ring-ink/10">
-      <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
-        <Mascot color={item.botColor} size={18} />
+    <div data-testid="inbox-card" className="mb-3">
+      <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] text-ink-tertiary">
         <span data-no-i18n="" className="min-w-0 flex-1 truncate">{item.botName}{item.groupName ? ` · ${item.groupName}` : ""}</span>
-        <span className="tabular-nums text-ink-tertiary">{t(agoText(item.openedAt))}</span>
+        <span className="tabular-nums">{t(agoText(item.openedAt))}</span>
       </div>
-      {item.type === "permission" ? (
-        <>
-          <div className="mt-1.5 text-[13.5px] text-ink">{item.command ? t("wants to run a command") : `${t("wants to use")} ${item.tool}`}</div>
-          <pre data-no-i18n="" className="mt-1.5 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-inset px-2.5 py-1.5 font-mono text-[12px] text-ink-secondary">{item.command ?? item.summary}</pre>
-          <div className="mt-2.5 flex justify-end gap-2">
-            <button type="button" disabled={busy} onClick={() => send({ behavior: "deny", message: "Denied from the inbox" })} className="h-8 rounded-full bg-raised px-3.5 text-[13px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50">{t("Deny")}</button>
-            <button type="button" disabled={busy} onClick={() => send({ behavior: "allow" })} className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-50">{t("Allow once")}</button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div data-no-i18n="" className="mt-1.5 text-[14px] font-medium text-ink">{q.question}</div>
-          <div className="mt-2 flex flex-col gap-1.5">
-            {(q.options ?? []).map((o, i) => (
-              <button key={i} type="button" disabled={busy} onClick={() => send({ behavior: "allow", message: optionLabel(o), answers: { [q.question]: optionLabel(o) } })}
-                className="min-h-9 rounded-xl px-3 py-1.5 text-left text-[13.5px] text-ink ring-[0.5px] ring-ink/15 hover:bg-ink/[0.04] disabled:opacity-60"><span data-no-i18n="">{optionLabel(o)}</span></button>
-            ))}
-          </div>
-          <div className="mt-2 flex h-9 items-center rounded-xl bg-ink/[0.045] pl-3 pr-1">
-            <input value={typed} onChange={(e) => setTyped(e.target.value)} aria-label={t("Type your own answer")} placeholder={t("Type your own answer")}
-              onKeyDown={(e) => { if (e.key === "Enter" && typed.trim() && !e.nativeEvent.isComposing) void send({ behavior: "allow", message: typed.trim(), answers: { [q.question]: typed.trim() } }); }}
-              className="h-full min-w-0 flex-1 bg-transparent text-[13.5px] text-ink outline-none placeholder:text-ink-tertiary" />
-          </div>
-        </>
-      )}
-      <span data-no-i18n="" className="sr-only">{where}</span>
+      {item.type === "permission" ? <ApprovalDock m={msg} thread={item.threadId} bot={bot} /> : <QuestionCard r={req} thread={item.threadId} active={false} bot={bot} />}
     </div>
   );
 }

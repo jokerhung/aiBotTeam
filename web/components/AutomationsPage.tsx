@@ -1,5 +1,5 @@
 "use client";
-import { ArrowLeft, CalendarClock, Copy, Menu, Pencil, Play, Plus, Send, Trash2, Webhook as WebhookIcon, X, Zap } from "lucide-react";
+import { ArrowLeft, CalendarClock, Copy, Menu, Pencil, Play, Plus, Send, Trash2, X, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -7,7 +7,6 @@ import type { Routine, RoutineRun, Webhook, WebhookAttempt } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { type Range, CalendarView } from "./AutomationsCalendar";
-import { Mascot } from "./Mascot";
 import { AutomationForm, WebhookDialog, WhenStep } from "./RoutineWizard";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
@@ -122,28 +121,55 @@ function RunLog({ routines, runs, compact }: { routines: Routine[]; runs: Routin
 }
 
 // ---- routines list -----------------------------------------------------------------------------------------------------
+/** The reference's switch: 44 x 24, blue when on. */
+function Toggle({ on, label, onChange }: { on: boolean; label: string; onChange: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onChange}
+      className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", on ? "bg-accent" : "bg-ink/20")}>
+      <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition-all", on ? "left-[22px]" : "left-0.5")} />
+    </button>
+  );
+}
+
+/** One automation as the reference lists it: a status dot and title, what it does, when it last ran and runs next, the switch on the right. */
+function AutoCard({ testid, enabled, title, desc, meta, actions, onToggle, toggleLabel, children }: {
+  testid: string; enabled: boolean; title: string; desc: string; meta: string; actions: React.ReactNode; onToggle: () => void; toggleLabel: string; children?: React.ReactNode;
+}) {
+  return (
+    <div data-testid={testid} className="mx-auto mb-3 w-full max-w-[720px] rounded-2xl bg-card px-4 py-3.5 ring-1 ring-ink/10">
+      <div className="flex items-start gap-3">
+        <span className={cn("mt-[7px] size-2.5 shrink-0 rounded-full", enabled ? "bg-success" : "bg-ink/30")} />
+        <div className="min-w-0 flex-1">
+          <div data-no-i18n="" className={cn("truncate text-[15px] font-medium leading-6 text-ink", !enabled && "opacity-60")}>{title}</div>
+          <div data-no-i18n="" className="truncate text-[13px] leading-[18px] text-ink">{desc}</div>
+          <div className="mt-0.5 truncate text-[12.5px] leading-[18px] text-ink-tertiary">{meta}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}<span className="ml-1.5"><Toggle on={enabled} label={toggleLabel} onChange={onToggle} /></span></div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function RoutineRows({ routines, onEdit }: { routines: Routine[]; onEdit: (r: Routine) => void }) {
   const { state } = useStore();
   const t = useT();
   const nameOf = (r: Routine) => (r.targetKind === "bot" ? state.bots.find((b) => b.id === r.targetId)?.name : state.groups.find((g) => g.id === r.targetId)?.name) ?? "?";
-  const colorOf = (r: Routine) => (r.targetKind === "bot" ? state.bots.find((b) => b.id === r.targetId)?.color : undefined);
   const act = (p: Promise<unknown>) => void p.catch(() => {});
+  const when = (ms: number) => new Date(ms).toLocaleString([locale()], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const ic = "rounded-full p-1.5 text-ink-secondary hover:bg-ink/10";
   return (
-    <div className="px-5 py-3">
-      <p className="mb-3 text-[13px] leading-5 text-ink-secondary" data-testid="routine-explainer">{t("A task is one piece of work a bot does once. A routine starts a new task on a schedule.")}</p>
+    <div className="px-5 py-5">
+      <p className="mx-auto mb-4 max-w-[720px] text-[13px] leading-5 text-ink-secondary" data-testid="routine-explainer">{t("A task is one piece of work a bot does once. A routine starts a new task on a schedule.")}</p>
       {routines.map((r) => (
-        <div key={r.id} data-testid="routine-row" className="mb-2 flex items-center gap-3 rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10">
-          <span className="shrink-0">{colorOf(r) ? <Mascot color={colorOf(r)!} size={32} /> : <span className="flex size-8 items-center justify-center rounded-full bg-raised"><CalendarClock size={15} /></span>}</span>
-          <div className="min-w-0 flex-1">
-            <div data-no-i18n="" className={cn("truncate text-[14px] font-medium text-ink", !r.enabled && "opacity-50")}>{r.name}</div>
-            <div className="truncate text-[12.5px] text-ink-tertiary"><span data-no-i18n="">{nameOf(r)}</span> · {r.schedule}{r.enabled && r.nextRun ? ` · ${t("next")} ${new Date(r.nextRun).toLocaleString([locale()], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}{!r.enabled ? ` · ${t("Paused")}` : ""}</div>
-          </div>
-          <button type="button" role="switch" aria-checked={r.enabled} aria-label={r.enabled ? t("Pause") : t("Resume")} onClick={() => act(api(`/api/routines/${r.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !r.enabled }) }))}
-            className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", r.enabled ? "bg-accent" : "bg-ink/20")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-all", r.enabled ? "left-[18px]" : "left-0.5")} /></button>
-          <button type="button" title={t("Run now")} aria-label={t("Run now")} onClick={() => act(api(`/api/routines/${r.id}/run`, { method: "POST" }))} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Play size={14} /></button>
-          <button type="button" title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(r)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Pencil size={14} /></button>
-          <button type="button" title={t("Delete routine")} aria-label={t("Delete routine")} onClick={() => confirm(t("Delete this routine?")) && act(api(`/api/routines/${r.id}`, { method: "DELETE" }))} className="rounded-full p-1.5 text-ink-tertiary hover:bg-danger/10 hover:text-danger"><Trash2 size={14} /></button>
-        </div>
+        <AutoCard key={r.id} testid="routine-row" enabled={r.enabled} title={r.name} desc={`${r.schedule} · ${nameOf(r)}: ${r.prompt}`}
+          meta={[r.enabled ? t("On") : t("Paused"), r.lastRun ? `${t("last run")} ${when(r.lastRun)}` : "", r.enabled && r.nextRun ? `${t("next")} ${when(r.nextRun)}` : ""].filter(Boolean).join(" · ")}
+          toggleLabel={r.enabled ? t("Pause") : t("Resume")} onToggle={() => act(api(`/api/routines/${r.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !r.enabled }) }))}
+          actions={<>
+            <button type="button" title={t("Run now")} aria-label={t("Run now")} onClick={() => act(api(`/api/routines/${r.id}/run`, { method: "POST" }))} className={ic}><Play size={14} /></button>
+            <button type="button" title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(r)} className={ic}><Pencil size={14} /></button>
+            <button type="button" title={t("Delete routine")} aria-label={t("Delete routine")} onClick={() => confirm(t("Delete this routine?")) && act(api(`/api/routines/${r.id}`, { method: "DELETE" }))} className={cn(ic, "hover:bg-danger/10 hover:text-danger")}><Trash2 size={14} /></button>
+          </>} />
       ))}
     </div>
   );
@@ -198,25 +224,20 @@ function WebhooksTab({ fresh }: { fresh?: { id: string; secret: string; url: str
       {state.webhooks.map((w) => {
         const bot = state.bots.find((b) => b.id === w.targetId);
         return (
-          <div key={w.id} data-testid="webhook-row" className="mb-2 rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10">
-            <div className="flex items-center gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary"><WebhookIcon size={15} /></span>
-              <div className="min-w-0 flex-1">
-                <div data-no-i18n="" className={cn("truncate text-[14px] font-medium text-ink", !w.enabled && "opacity-50")}>{w.name}</div>
-                <div data-no-i18n="" className="truncate font-mono text-[12px] text-ink-tertiary">{hookBase(w)}{w.auth === "url" ? "/…" : ""} · {bot?.name ?? "?"}</div>
-              </div>
+          <AutoCard key={w.id} testid="webhook-row" enabled={w.enabled} title={w.name} desc={`${t("Webhook")} · ${bot?.name ?? "?"}: ${w.prompt || ""}`}
+            meta={[w.enabled ? t("On") : t("Paused"), w.lastAt ? `${t("last call")} ${new Date(w.lastAt).toLocaleString([locale()], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : t("no calls yet"), `${hookBase(w)}${w.auth === "url" ? "/…" : ""}`].join(" · ")}
+            toggleLabel={w.enabled ? t("Pause") : t("Resume")} onToggle={() => void api(`/api/webhooks/${w.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !w.enabled }) }).catch(() => {})}
+            actions={<>
               {w.awaitingReveal && (
                 <button type="button" onClick={async () => { const r = await api<{ secret: string }>(`/api/webhooks/${w.id}/reveal`, { method: "POST" }).catch(() => null); if (r) reveal(w, r.secret); }}
-                  className="rounded-full bg-accent px-3 py-1 text-[12.5px] font-medium text-[var(--color-accent-ink)]">{t("Show secret")}</button>
+                  className="mr-1 rounded-full bg-accent px-3 py-1 text-[12.5px] font-medium text-[var(--color-accent-ink)]">{t("Show secret")}</button>
               )}
               <button type="button" title={t("Copy link")} aria-label={t("Copy link")} onClick={() => void navigator.clipboard?.writeText(w.url)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Copy size={14} /></button>
               <button type="button" onClick={async () => { const r = await api<{ secret: string }>(`/api/webhooks/${w.id}/rotate`, { method: "POST" }).catch(() => null); if (r) reveal(w, r.secret); }}
                 className="rounded-full px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-ink/10">{t("New secret")}</button>
-              <button type="button" role="switch" aria-checked={w.enabled} aria-label={w.enabled ? t("Pause") : t("Resume")} onClick={() => void api(`/api/webhooks/${w.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !w.enabled }) }).catch(() => {})}
-                className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", w.enabled ? "bg-accent" : "bg-ink/20")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-all", w.enabled ? "left-[18px]" : "left-0.5")} /></button>
               <button type="button" onClick={() => toggle(w)} aria-expanded={open === w.id} className="rounded-full px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-ink/10">{t("Attempts")}</button>
               <button type="button" title={t("Delete")} aria-label={t("Delete")} onClick={() => confirm(t("Delete this webhook?")) && void api(`/api/webhooks/${w.id}`, { method: "DELETE" }).catch(() => {})} className="rounded-full p-1.5 text-ink-tertiary hover:bg-danger/10 hover:text-danger"><Trash2 size={14} /></button>
-            </div>
+            </>}>
             {open === w.id && (
               <div data-testid="webhook-attempts" className="mt-2 max-h-48 overflow-y-auto border-t border-hairline pt-2">
                 {attemptsOf(w.id).length === 0 && <div className="py-2 text-center text-[13px] text-ink-tertiary">{t("No calls yet.")}</div>}
@@ -229,7 +250,7 @@ function WebhooksTab({ fresh }: { fresh?: { id: string; secret: string; url: str
                 ))}
               </div>
             )}
-          </div>
+          </AutoCard>
         );
       })}
       {state.webhooks.length === 0 && !adding && <div className="py-10 text-center text-[13.5px] text-ink-tertiary">{t("No webhooks yet.")}</div>}

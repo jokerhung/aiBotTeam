@@ -113,7 +113,7 @@ export function ApprovalDock({ m, thread, bot }: { m: Message; thread: string; b
   );
 }
 
-function QuestionCard({ r, thread, active, bot }: { r: RequestInfo; thread: string; active: boolean; bot: Bot }) {
+export function QuestionCard({ r, thread, active, bot }: { r: RequestInfo; thread: string; active: boolean; bot: Bot }) {
   const t = useT();
   const qs = useMemo(() => questionsOf(r), [r]);
   const single = qs.length === 1 && !qs[0].multiSelect;

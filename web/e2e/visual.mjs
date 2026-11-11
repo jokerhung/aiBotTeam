@@ -27,6 +27,14 @@ function diff(aBuf, bBuf, name) {
   writeFileSync(`${OUT}/diff-${name}.png`, PNG.sync.write(D));
   return n / (w * h);
 }
+const leftovers = async () => { // what an earlier run that stopped half way left behind
+  const J = async (path, method = "GET") => (await fetch((process.env.API || "http://127.0.0.1:8899") + path, { method })).json().catch(() => ({}));
+  for (const x of (await J("/api/bots")).bots ?? []) if (/^(Vis |Viet |Ledger$)/.test(x.name)) await J(`/api/bots/${x.id}`, "DELETE");
+  for (const g of (await J("/api/groups")).groups ?? []) if (/^(Vis |Viet )/.test(g.name)) await J(`/api/groups/${g.id}`, "DELETE");
+  for (const r of (await J("/api/routines")).routines ?? []) if (/^(Vis |Viet |Keep an eye)/.test(r.name)) await J(`/api/routines/${r.id}`, "DELETE");
+  for (const w of (await J("/api/webhooks")).webhooks ?? []) if (/^(Vis |Viet |Deploy events)/.test(w.name)) await J(`/api/webhooks/${w.id}`, "DELETE");
+};
+await leftovers();
 let failed = false;
 const ok2 = (c, m) => { console.log(`${c ? "PASS" : "FAIL"}  ${m}`); failed ||= !c; };
 const report = (name, ratio, max, what) => { const ok = ratio <= max; failed ||= !ok; console.log(`${ok ? "PASS" : "FAIL"}  ${name}: ${(ratio * 100).toFixed(2)}% of pixels differ (limit ${(max * 100).toFixed(1)}%) — ${what}`); };
@@ -38,6 +46,7 @@ const report = (name, ratio, max, what) => { const ok = ratio <= max; failed ||=
   await ref.getByRole("button", { name: "You", exact: true }).click();
   await ref.getByText("Automations", { exact: true }).first().click();
   await ref.waitForTimeout(800);
+  const refHasRoutine = (await ref.getByText("Keep an eye on my day").count()) > 0;  // the reference grows a routine of its own after a while
   const refShot = await ref.screenshot({ clip: MAIN });
   writeFileSync(`${OUT}/ref-automations.png`, refShot);
   const ours = await page(OURS);
@@ -47,7 +56,8 @@ const report = (name, ratio, max, what) => { const ok = ratio <= max; failed ||=
   await ours.waitForTimeout(500);
   const ourShot = await ours.screenshot({ clip: MAIN });
   writeFileSync(`${OUT}/ours-automations.png`, ourShot);
-  report("automations-empty vs reference", diff(refShot, ourShot, "automations-empty"), Number(process.env.LIMIT_AUTOMATIONS || 0.04), "main pane");
+  if (refHasRoutine) console.log("SKIP  automations-empty vs reference: the reference currently lists a routine, so the empty state is not on screen there (its list card is compared below)");
+  else report("automations-empty vs reference", diff(refShot, ourShot, "automations-empty"), Number(process.env.LIMIT_AUTOMATIONS || 0.04), "main pane");
 }
 
 // 1b. Routine dialog ("What should happen?"): pixel comparison of the dialog box, ours against the reference
@@ -220,6 +230,71 @@ const dismiss = (p) => p.getByRole("button", { name: "Done", exact: true }).firs
     writeFileSync(`${OUT}/ref-hook-${name}.png`, r); writeFileSync(`${OUT}/ours-hook-${name}.png`, o);
     report(`webhook dialog ${name} vs reference`, diff(r, o, `hook-${name}`), Number(process.env.LIMIT_HOOK || 0.1), `dialog ${Math.round(rd.width)}px vs ${Math.round(od.width)}px wide`);
   }
+}
+
+// 1g. List cards with data (a routine and a webhook against the reference's own routine card) and an inbox question card against the reference's
+// question card (same bot name and question, so the text is the same on both sides)
+{
+  const echo = { instanceId: "echo", model: "echo-1" };
+  const bot = await jj("/api/bots", "POST", { name: "Ledger", color: "teal", modelSelection: echo, approvalMode: "ask" });
+  const routine = await jj("/api/routines", "POST", { name: "Keep an eye on my day", prompt: "keeps an eye on your day for you", targetKind: "bot", targetId: bot.id, kind: "interval", everyMin: 15 });
+  const made = await jj("/api/webhooks", "POST", { name: "Deploy events", targetId: bot.id, prompt: "Summarise each deploy event." });
+  const ref = await page(REF);
+  await dismiss(ref);
+  await ref.getByRole("button", { name: "Inbox" }).first().click();  // the reference's own routine ("Keep an eye on my day") appears once the inbox has been opened
+  await ref.waitForTimeout(1500);
+  await ref.getByRole("button", { name: "You", exact: true }).click();
+  await ref.getByText("Automations", { exact: true }).first().click();
+  await ref.waitForTimeout(900);
+  const hasCard = (await ref.getByText("Keep an eye on my day").count()) > 0;
+  const rcard = hasCard ? await ref.getByText("Keep an eye on my day").first().evaluate((el) => {
+    let n = el; while (n && !(n.getBoundingClientRect().width >= 600 && parseFloat(getComputedStyle(n).borderTopLeftRadius) >= 10)) n = n.parentElement;  // the rounded card around the text
+    const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }) : null;
+  const ours = await page(OURS);
+  await ours.getByTitle("Profile and settings").click();
+  await ours.locator('[data-testid="open-automations"]').click();
+  await ours.waitForSelector('[data-testid="routine-row"]');
+  await ours.waitForTimeout(500);
+  const ocard = await ours.locator('[data-testid="routine-row"]').first().boundingBox();
+  const sides = [["status dot column", (bx) => ({ x: bx.x, y: bx.y, width: 60, height: Math.min(bx.height, 94) }), 0.08], ["switch column", (bx) => ({ x: bx.x + bx.width - 64, y: bx.y, width: 64, height: Math.min(bx.height, 94) }), 0.08]];
+  const cardLimit = Number(process.env.LIMIT_CARD || 0.1);
+  if (!rcard) console.log("SKIP  list cards vs reference: the reference has no routine on screen right now (its empty state is compared above)");
+  if (rcard) report("list card size", Math.abs(rcard.width - ocard.width) / rcard.width, 0.03, `width ${Math.round(rcard.width)}px vs ${Math.round(ocard.width)}px`);
+  if (rcard) for (const [name, f, limit] of sides) {
+    const r = await ref.screenshot({ clip: f(rcard) }), o = await ours.screenshot({ clip: f(ocard) });
+    const slug = name.replace(/ /g, "-");
+    writeFileSync(`${OUT}/ref-card-${slug}.png`, r); writeFileSync(`${OUT}/ours-card-${slug}.png`, o);
+    report(`routine card ${name} vs reference`, diff(r, o, `card-${slug}`), Math.max(limit, cardLimit), "same card chrome");
+  }
+  await ours.getByRole("tab", { name: "Webhooks" }).click();
+  await ours.waitForSelector('[data-testid="webhook-row"]');
+  await ours.waitForTimeout(400);
+  const wcard = await ours.locator('[data-testid="webhook-row"]').first().boundingBox();
+  if (rcard) report("webhook card size", Math.abs(rcard.width - wcard.width) / rcard.width, 0.03, `width ${Math.round(rcard.width)}px vs ${Math.round(wcard.width)}px`);
+  if (rcard) for (const [name, f, limit] of sides) {
+    const r = await ref.screenshot({ clip: f(rcard) }), o = await ours.screenshot({ clip: f(wcard) });
+    const slug = name.replace(/ /g, "-");
+    writeFileSync(`${OUT}/ours-hookcard-${slug}.png`, o);
+    report(`webhook card ${name} vs reference routine card`, diff(r, o, `hookcard-${slug}`), Math.max(limit, cardLimit), "same card chrome");
+  }
+  // inbox question card
+  const question = "What wording should the new footer text on the pricing page use?";
+  await jj(`/api/bots/${bot.id}/messages`, "POST", { text: `/ask ${question}`, threadId: bot.threadId });
+  await ours.waitForTimeout(1500);
+  await ours.locator('[data-testid="inbox-button"]').click();
+  await ours.locator('[title="Expand"], [aria-label="Expand"]').first().click();
+  await ours.waitForSelector('[data-testid="inbox-card"] [data-testid="ask-card"]');
+  await ours.waitForTimeout(500);
+  const qprev = await page(REF.replace(/\/$/, "") + "/question-cards-preview.html?state=open&skin=daylight");
+  const rq = await qprev.getByText("Ledger asks").first().locator("xpath=ancestor::div[@role='group'][1]").boundingBox();
+  const oq = await ours.locator('[data-testid="ask-card"]').first().boundingBox();
+  const qclip = (bx) => ({ x: bx.x, y: bx.y, width: Math.min(bx.width, 520), height: 72 });
+  const rqs = await qprev.screenshot({ clip: qclip(rq) }), oqs = await ours.screenshot({ clip: qclip(oq) });
+  writeFileSync(`${OUT}/ref-inbox-card.png`, rqs); writeFileSync(`${OUT}/ours-inbox-card.png`, oqs);
+  report("inbox question card vs reference question card", diff(rqs, oqs, "inbox-card"), Number(process.env.LIMIT_QCARD || 0.1), "header and question text");
+  await jj(`/api/bots/${bot.id}/interrupt`, "POST");
+  await jj(`/api/routines/${routine.id}`, "DELETE"); await jj(`/api/webhooks/${made.webhook.id}`, "DELETE"); await jj(`/api/bots/${bot.id}`, "DELETE");
 }
 
 // 2. Our own screens against stored baselines (regression, tighter limit); UPDATE=1 rewrites them

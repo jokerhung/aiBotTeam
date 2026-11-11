@@ -125,6 +125,8 @@ export const vi: Record<string, string> = {
   "Nothing for you yet.": "Chưa có gì cho bạn.", "When a bot needs your OK, has a question or finishes something, it shows up here.": "Khi một bot cần bạn đồng ý, có câu hỏi hoặc làm xong việc, nó sẽ hiện ở đây.", "Expand": "Mở rộng", "Narrow": "Thu hẹp",
   "Each time it sends something, your bot does this.": "Mỗi lần nó gửi tới, bot của bạn sẽ làm việc này.", "What should it do?": "Nó cần làm gì?", "More": "Thêm", "e.g. draft a short follow-up email for the person in it": "vd: soạn một email theo dõi ngắn cho người trong đó",
   "completed": "hoàn tất", "stopped": "đã dừng", "queued": "đang chờ",
+  "On": "Bật", "last run": "chạy gần nhất", "last call": "gọi gần nhất", "no calls yet": "chưa có lượt gọi",
+  "Webhook": "Webhook",
 };
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */
