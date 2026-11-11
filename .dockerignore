@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+web/.next
+web/.next-export
+web/e2e/shots
+server/.venv
+**/__pycache__
+.git
+_reference
+*.db

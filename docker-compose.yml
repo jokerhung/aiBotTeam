@@ -1,0 +1,16 @@
+# docker compose up  ->  http://localhost:8899   (pair the browser with the code printed in `docker compose logs botteam`)
+services:
+  botteam:
+    build: .
+    image: botteam:latest
+    ports:
+      - "127.0.0.1:8899:8899"   # the app; change the left side to publish it elsewhere
+      - "127.0.0.1:8900:8900"   # webhook receiver
+    volumes:
+      - botteam-data:/data       # everything BotTeam keeps; back it up with `docker compose exec botteam botteam backup /data/backup.zip`
+    environment:
+      # engines: an OpenAI-compatible endpoint can be added in the app; the Claude Code and Codex CLIs are not in this image
+      BOTTEAM_DATA_DIR: /data
+    restart: unless-stopped
+volumes:
+  botteam-data:

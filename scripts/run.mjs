@@ -22,6 +22,7 @@ const targets = {
   server: ["uv", ["run", "--project", "server", "python", "-m", "uvicorn", "botteam.main:app", "--app-dir", "server",
     "--host", "127.0.0.1", "--port", serverPort, "--reload", "--loop", "botteam.loop:loop_factory"]],
   web: ["pnpm", ["--filter", "web", "exec", "next", "dev", "-p", webPort, "-H", "127.0.0.1"]],
+  one: ["uv", ["run", "--project", "server", "botteam", "serve", "--no-open", "--port", serverPort]],
   "web-start": ["pnpm", ["--filter", "web", "exec", "next", "start", "-p", webPort, "-H", "127.0.0.1"]],
 };
 const t = targets[process.argv[2]];

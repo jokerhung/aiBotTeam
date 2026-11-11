@@ -20,6 +20,8 @@
     "test:instant": "node scripts/instant.mjs",
     "test:ui": "node scripts/routines.mjs && node scripts/reference.mjs && node scripts/reference-shots.mjs && node scripts/reference-cards.mjs && node scripts/noflash.mjs && node scripts/instant.mjs && node scripts/visual.mjs",
     "test:cards": "node scripts/reference-cards.mjs",
+    "build:static": "node scripts/build-static.mjs",
+    "start:one": "node scripts/run.mjs one",
     "start:web": "node scripts/run.mjs web-start",
     "typecheck": "pnpm --filter web exec tsc --noEmit"
   },

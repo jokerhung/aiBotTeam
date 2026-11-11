@@ -27,6 +27,8 @@ from .routines import RoutineService
 from .apps_catalog import CATALOG, by_id as catalog_app
 from . import teams as teamlib
 from . import observe
+from .auth import COOKIE, OPEN_PATHS, Pairing
+from .backup import BackupError, make_backup
 from .memory import Memory, redact
 from .skills import SkillError, Skills
 from .mcp_servers import McpServers, SpecError, from_desktop_json, public as mcp_public
@@ -50,7 +52,7 @@ WEB_PORT = os.environ.get("WEB_PORT", "5299")
 CONFIG_FRAME = {"kind": "config", "version": "0.2.0", "needsSetup": False}
 
 
-def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False) -> FastAPI:
+def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False, remote: bool | None = None, web_dir: Path | None = None) -> FastAPI:
     home = home or data_dir()
     store = Store(db_path or home / "messages.db")
     bus = Bus()
@@ -79,6 +81,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     webhooks = WebhookService(store, turns, bus, port=hook_port)
     webhooks.notify = notify
     hook_state: dict = {}
+    pairing = Pairing(required=bool(remote) if remote is not None else os.environ.get("BOTTEAM_REMOTE") == "1")
     mcp = McpServers(store, bus, home)
     turns.mcp = mcp
     turns.config = config
@@ -96,6 +99,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await store.open()
+        if pairing.required:
+            print(f"\nBotTeam is open to other computers. Pair a browser with this code (valid 10 minutes, once): {pairing.new_code()}\n", flush=True)
         await store.expire_open_requests()
         await broker.start()
         await host.refresh()
@@ -131,6 +136,54 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         CORSMiddleware, allow_origins=[f"http://127.0.0.1:{WEB_PORT}", f"http://localhost:{WEB_PORT}"],
         allow_methods=["*"], allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def require_pairing(request, call_next):
+        """Only when the server is open beyond this computer: no session, no API. The UI files themselves are public; they ask for the code."""
+        path = request.url.path
+        if pairing.required and path.startswith("/api/") and path not in OPEN_PATHS and not pairing.valid(request.cookies.get(COOKIE)):
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"detail": "pairing required"}, status_code=401)
+        return await call_next(request)
+
+    @app.get("/health")
+    async def health():
+        return {"ok": True}
+
+    @app.get("/api/auth/status")
+    async def auth_status(request: Request):
+        return {"required": pairing.required, "authenticated": (not pairing.required) or pairing.valid(request.cookies.get(COOKIE))}
+
+    @app.post("/api/auth/pair")
+    async def auth_pair(body: dict):
+        from fastapi.responses import JSONResponse
+
+        token = pairing.pair(str(body.get("code") or "")) if pairing.required else None
+        if not token:
+            return JSONResponse({"detail": "that code is not valid"}, status_code=401)
+        r = JSONResponse({"ok": True})
+        r.set_cookie(COOKIE, token, httponly=True, samesite="lax", max_age=30 * 24 * 3600, path="/")
+        return r
+
+    @app.post("/api/auth/logout")
+    async def auth_logout(request: Request):
+        pairing.revoke(request.cookies.get(COOKIE))
+        return {"ok": True}
+
+    @app.get("/api/backup")
+    async def download_backup():
+        """The data folder as one zip (databases are snapshotted consistently)."""
+        import tempfile
+
+        from fastapi.responses import FileResponse
+
+        out = Path(tempfile.mkdtemp()) / f"botteam-backup-{now_ms()}.zip"
+        try:
+            make_backup(home, out)
+        except BackupError as e:
+            raise HTTPException(500, str(e))
+        return FileResponse(out, media_type="application/zip", filename=out.name)
 
     async def need(bot_id: str):
         bot = await store.get_bot(bot_id)
@@ -1236,6 +1289,19 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.webhooks, app.state.hook_app = webhooks, make_hook_app(webhooks)
     app.state.runtime, app.state.host, app.state.agents, app.state.groups, app.state.notify = runtime, host, agents, groups, notify
     app.state.mcp = mcp
+
+    static = web_dir or (Path(os.environ["BOTTEAM_WEB_DIR"]) if os.environ.get("BOTTEAM_WEB_DIR") else None)
+    if static is None:
+        for cand in (Path(__file__).resolve().parent / "webui", Path(__file__).resolve().parents[2] / "web" / ".next-export"):
+            if (cand / "index.html").exists():
+                static = cand
+                break
+    if static and (static / "index.html").exists():
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/", StaticFiles(directory=str(static), html=True), name="web")  # added after every route above: /api answers first
+    app.state.web_dir = static
+    app.state.pairing = pairing
     app.state.memory, app.state.skills = memory, skills
     _ = now_ms
     return app

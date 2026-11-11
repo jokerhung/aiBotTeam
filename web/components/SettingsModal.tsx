@@ -81,6 +81,11 @@ function General() {
         </select>
       </Row>
       </Section>
+      <Section title={t("Your data")}>
+      <Row title={t("Backup")} hint="Everything BotTeam keeps on this computer, as one zip. To restore, stop the server and run `botteam restore`.">
+        <a href="/api/backup" download data-testid="download-backup" className="rounded-full bg-raised px-3.5 py-1.5 text-[13.5px] text-ink hover:bg-raised-hover">{t("Download backup")}</a>
+      </Row>
+      </Section>
     </>
   );
 }

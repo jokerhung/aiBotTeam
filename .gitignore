@@ -9,3 +9,5 @@ tsconfig.tsbuildinfo
 .env
 web/e2e/actual/
 web/e2e/shots/
+web/.next-export/
+server/botteam/webui/

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "botteam-server"
 version = "0.1.0"
@@ -12,6 +16,13 @@ dependencies = [
   "tzdata",
   "pyyaml>=6.0.3",
 ]
+
+[project.scripts]
+botteam = "botteam.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["botteam"]
+artifacts = ["botteam/webui/**"]
 
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio", "asgi-lifespan"]
