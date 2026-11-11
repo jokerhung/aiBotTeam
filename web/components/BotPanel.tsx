@@ -1,10 +1,11 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Library, Monitor, Share2, User, X } from "lucide-react";
+import { ChevronRight, FileText, Folder, Monitor, Plus, Share2, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
 import { cn } from "@/lib/utils";
 import type { Bot, MausColor, ModelSelection } from "@/lib/wire";
+import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { Mascot } from "./Mascot";
@@ -136,19 +137,95 @@ export function BotPanel({ bot }: { bot: Bot }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
         {tab === "details" && <Details bot={bot} />}
-        {tab === "computer" && <Empty icon={Monitor} title="Computer" text="Screens and files this bot works with will appear here." />}
-        {tab === "library" && <Empty icon={Library} title="Library" text="Notes and saved skills for this bot will appear here." />}
+        {tab === "computer" && <Computer bot={bot} />}
+        {tab === "library" && <LibraryTab bot={bot} />}
       </div>
     </aside>
   );
 }
 
-function Empty({ icon: Icon, title, text }: { icon: typeof User; title: string; text: string }) {
+interface Entry { name: string; dir: boolean; size: number; at: number }
+const bytes = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+
+/** The bot's working folder, read-only: where it runs commands and what it left there. */
+function Computer({ bot }: { bot: Bot }) {
+  const [path, setPath] = useState("");
+  const [data, setData] = useState<{ root: string; entries: Entry[] } | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    api<{ root: string; entries: Entry[] }>(`/api/bots/${bot.id}/files?path=${encodeURIComponent(path)}`)
+      .then((r) => { if (!cancelled) { setData(r); setError(""); } })
+      .catch((e: Error) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [bot.id, bot.cwd, path]);
+  const parts = path ? path.split("/") : [];
   return (
-    <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
-      <Icon size={22} className="text-ink-tertiary" />
-      <div className="text-[15px] font-medium text-ink">{title}</div>
-      <div className="text-[13px] text-ink-secondary">{text}</div>
+    <div className="px-5 py-4" data-testid="computer-tab">
+      <div className="mb-2 flex items-center gap-1 text-[12.5px] text-ink-secondary">
+        <Monitor size={13} />
+        <button type="button" onClick={() => setPath("")} className="truncate font-mono hover:text-ink" title={data?.root}>{data?.root ?? "Working folder"}</button>
+        {parts.map((seg, i) => (
+          <span key={i} className="flex items-center gap-1"><ChevronRight size={12} />
+            <button type="button" onClick={() => setPath(parts.slice(0, i + 1).join("/"))} className="font-mono hover:text-ink">{seg}</button></span>
+        ))}
+      </div>
+      {error && <div role="alert" className="text-[13px] text-danger">{error}</div>}
+      {data && data.entries.length === 0 && <div className="py-8 text-center text-[13px] text-ink-tertiary">This folder is empty.</div>}
+      {path && <button type="button" onClick={() => setPath(parts.slice(0, -1).join("/"))} className="mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13.5px] text-ink-secondary hover:bg-ink/[0.06]"><Folder size={14} /> ..</button>}
+      {data?.entries.map((e) => (
+        <button key={e.name} type="button" disabled={!e.dir} onClick={() => setPath(path ? `${path}/${e.name}` : e.name)}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13.5px] text-ink enabled:hover:bg-ink/[0.06]">
+          {e.dir ? <Folder size={14} className="shrink-0 text-accent" /> : <FileText size={14} className="shrink-0 text-ink-tertiary" />}
+          <span className="min-w-0 flex-1 truncate">{e.name}</span>
+          {!e.dir && <span className="shrink-0 text-[11.5px] text-ink-tertiary">{bytes(e.size)}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface Note { id: string; title: string; text: string }
+
+/** Notes the bot keeps: they are part of what it is told on every turn. */
+function LibraryTab({ bot }: { bot: Bot }) {
+  const [notes, setNotes] = useState<Note[]>([]);
+  const load = () => api<{ notes: Note[] }>(`/api/bots/${bot.id}/library`).then((r) => setNotes(r.notes)).catch(() => {});
+  useEffect(() => { void load(); }, [bot.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const add = async () => { await api(`/api/bots/${bot.id}/library`, { method: "POST", body: JSON.stringify({ title: "New note", text: "" }) }); await load(); };
+  const save = (n: Note, patch: Partial<Note>) => api(`/api/bots/${bot.id}/library/${n.id}`, { method: "PATCH", body: JSON.stringify(patch) }).catch(() => {});
+  const del = async (n: Note) => { await api(`/api/bots/${bot.id}/library/${n.id}`, { method: "DELETE" }); await load(); };
+  return (
+    <div className="px-5 py-4" data-testid="library-tab">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">Notes {bot.name} keeps</span>
+        <button type="button" onClick={add} className="flex items-center gap-1 rounded-full bg-raised px-2.5 py-1 text-[12.5px] font-medium text-ink hover:bg-raised-hover"><Plus size={13} /> Add</button>
+      </div>
+      {notes.length === 0 && <div className="py-8 text-center text-[13px] text-ink-tertiary">No notes yet. Anything you save here is part of what the bot knows.</div>}
+      {notes.map((n) => <NoteCard key={n.id} note={n} onSave={(patch) => save(n, patch)} onDelete={() => del(n)} />)}
+    </div>
+  );
+}
+
+/** One note; edits save by themselves a moment after you stop typing, so closing the panel loses nothing. */
+function NoteCard({ note, onSave, onDelete }: { note: Note; onSave: (p: Partial<Note>) => unknown; onDelete: () => void }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pending = useRef<Partial<Note>>({});
+  useEffect(() => () => { clearTimeout(timer.current); if (Object.keys(pending.current).length) void onSave(pending.current); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const edit = (patch: Partial<Note>) => {
+    pending.current = { ...pending.current, ...patch };
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => { const p = pending.current; pending.current = {}; void onSave(p); }, 400);
+  };
+  return (
+    <div className="mb-3 rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10">
+      <div className="flex items-center gap-2">
+        <input defaultValue={note.title} aria-label="Note title" onChange={(e) => edit({ title: e.target.value })}
+          className="min-w-0 flex-1 bg-transparent text-[14px] font-medium text-ink outline-none" />
+        <button type="button" aria-label="Delete note" onClick={onDelete} className="rounded-full p-1 text-ink-tertiary hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
+      </div>
+      <textarea defaultValue={note.text} rows={4} aria-label="Note text" placeholder="Write something the bot should remember" onChange={(e) => edit({ text: e.target.value })}
+        className="mt-1.5 w-full resize-y rounded-lg bg-inset px-2.5 py-2 text-[13.5px] text-ink outline-none placeholder:text-ink-tertiary" />
     </div>
   );
 }

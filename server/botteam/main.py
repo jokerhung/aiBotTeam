@@ -22,7 +22,7 @@ from .registry import KEY_CATALOG, KEY_IDS, Registry
 from .store import Store, data_dir, now_ms
 from .turns import Turns
 from .wire import (
-    BotDefaults, ConfigPatch, CreateBot, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
+    BotDefaults, ConfigPatch, CreateBot, NoteBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
     PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage,
 )
 
@@ -385,6 +385,52 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             bus.publish({"kind": "bots.order", "botIds": body.botIds})
         await turns.publish_bot(bot)
         return await turns.bot_dict(bot)
+
+    # ---- computer (the bot's working folder, read-only) --------------------------------------------
+    @app.get("/api/bots/{bot_id}/files")
+    async def bot_files(bot_id: str, path: str = ""):
+        bot = await need(bot_id)
+        root = Path(bot.cwd or os.getcwd()).resolve()
+        target = (root / path).resolve()
+        if target != root and root not in target.parents:  # never outside the working folder
+            raise HTTPException(400, "that path is outside the working folder")
+        if not target.is_dir():
+            raise HTTPException(404, "folder not found")
+        entries = []
+        try:
+            for child in sorted(target.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower()))[:300]:
+                try:
+                    st = child.stat()
+                except OSError:
+                    continue
+                entries.append({"name": child.name, "dir": child.is_dir(), "size": 0 if child.is_dir() else st.st_size, "at": int(st.st_mtime * 1000)})
+        except PermissionError:
+            raise HTTPException(403, "that folder cannot be read")
+        rel = "" if target == root else target.relative_to(root).as_posix()
+        return {"root": str(root), "path": rel, "entries": entries}
+
+    # ---- library (notes the bot keeps) ------------------------------------------------------------
+    @app.get("/api/bots/{bot_id}/library")
+    async def library(bot_id: str):
+        await need(bot_id)
+        return {"notes": await store.list_notes(bot_id)}
+
+    @app.post("/api/bots/{bot_id}/library", status_code=201)
+    async def add_note(bot_id: str, body: NoteBody):
+        await need(bot_id)
+        return await store.create_note(bot_id, body.title or "Untitled", body.text or "")
+
+    @app.patch("/api/bots/{bot_id}/library/{note_id}")
+    async def patch_note(bot_id: str, note_id: str, body: NoteBody):
+        if not await store.patch_note(bot_id, note_id, body.title, body.text):
+            raise HTTPException(404, "note not found")
+        return {"ok": True}
+
+    @app.delete("/api/bots/{bot_id}/library/{note_id}")
+    async def delete_note(bot_id: str, note_id: str):
+        if not await store.delete_note(bot_id, note_id):
+            raise HTTPException(404, "note not found")
+        return {"ok": True}
 
     # ---- search -------------------------------------------------------------------------------
     @app.get("/api/search")

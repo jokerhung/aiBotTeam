@@ -15,7 +15,7 @@ Làm spike đầu phase: xác nhận Claude CLI gọi được công cụ MCP c�
 - [x] Fail-closed: không ai trả lời (client ngắt, lượt kết thúc) → `unavailable`, coi là từ chối.
 - [x] Yêu cầu mở khoá sandbox (`requiresExplicitApproval`) chỉ mức `full` tự trả lời.
 - [x] Route: `POST /api/threads/{threadId}/requests/{requestId}` với `{behavior, message?, always?}` (đối chiếu đường dẫn gốc trong `server/routes/`).
-- [x] Codex: `codex exec` không có hỏi-đáp tương tác, nên mỗi mức duyệt ánh xạ sang sandbox (ask=read-only, edits/auto=workspace-write, full=danger-full-access); không có thẻ duyệt riêng cho Codex.
+- [x] Codex: chạy qua `codex app-server` (JSON-RPC); yêu cầu duyệt lệnh và sửa file của Codex đi vào cùng broker với Claude (Allow/Deny/Always allow/tự duyệt), mỗi mức duyệt ánh xạ sang approvalPolicy + sandbox của Codex.
 
 ## 2. Thẻ trong chat
 
@@ -32,7 +32,7 @@ Làm spike đầu phase: xác nhận Claude CLI gọi được công cụ MCP c�
 - [x] **Section:** nhóm bot có tiêu đề gập được, đổi tên, kéo-thả bot giữa section và sắp xếp (`/api/sidebar-sections`, `PUT /api/bots/order`).
 - [x] **Ghim** lên đầu, **ẩn/lưu trữ** (`ArchivedBotsPanel`), **xoá** có xác nhận và hoàn tác ngắn.
 - [x] **Chọn nhiều** (`BulkSelectBar`): xoá/ẩn hàng loạt.
-- [x] **Panel cài đặt bot** (tab Computer và Library mới là khung trống, nội dung thuộc phase sau) (panel phải, trượt vào bằng `--animate-panel-in`): hồ sơ + trình sửa avatar, chỉ dẫn (soul), model + model dự phòng, quyền truy cập, thư mục làm việc (`cwd`), thông báo. Lưu qua hàng đợi patch (`bot-patch-queue.ts`) để gõ nhanh không mất thứ tự.
+- [x] **Panel cài đặt bot** (tab Computer duyệt thư mục làm việc chỉ-đọc; tab Library là ghi chú của bot, đưa vào chỉ dẫn mỗi lượt) (panel phải, trượt vào bằng `--animate-panel-in`): hồ sơ + trình sửa avatar, chỉ dẫn (soul), model + model dự phòng, quyền truy cập, thư mục làm việc (`cwd`), thông báo. Lưu qua hàng đợi patch (`bot-patch-queue.ts`) để gõ nhanh không mất thứ tự.
 - [x] Bố cục khi mở panel: sidebar thu thành icon nếu cửa sổ không đủ rộng; hai panel cùng mở thì panel sau phủ lên.
 
 ## 4. Cài đặt app
@@ -67,7 +67,7 @@ Theo `SettingsModal.tsx` và `app-settings.png`:
 
 - [x] Broker: cho phép, từ chối, hết hạn, client ngắt giữa chừng, hai yêu cầu trùng id, tự duyệt theo danh sách lệnh.
 - [x] Bảo mật: `GET /api/config` không bao giờ trả giá trị khoá; đường dẫn đính kèm không thoát khỏi kho.
-- [ ] So ảnh (đã chụp và xem bằng mắt qua Playwright: thẻ duyệt, thẻ hỏi, menu, modal, panel, 13 skin; chưa có so ảnh tự động theo ngưỡng): thẻ câu hỏi, thẻ duyệt (mở và đã quyết), menu chuột phải, modal cài đặt (Connections), panel cài đặt bot, bộ chọn skin; chạy lại màn chính trên cả 13 skin.
+- [x] So ảnh: `pnpm test:visual` dựng một stack cô lập, chạy engine demo qua thẻ câu hỏi, thẻ duyệt (mở và đã quyết), menu chuột phải, modal cài đặt (Connections, skin), panel cài đặt bot và màn chính trên cả 13 skin, rồi so với ảnh gốc trong `web/e2e/baseline` (ngưỡng 0,3% điểm ảnh khác); `pnpm test:visual:update` để cập nhật. Đối chiếu bằng mắt với `localhost:5199` đã làm.
 
 ## Tiêu chí hoàn thành
 

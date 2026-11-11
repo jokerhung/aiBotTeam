@@ -1,6 +1,6 @@
 "use client";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Bot, Message } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -209,7 +209,8 @@ function Header({ bot }: { bot: Bot }) {
 export function ChatView({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
   const thread = bot.threadId;
-  const messages = state.messages[thread] ?? [];
+  const stored = state.messages[thread];
+  const messages = useMemo(() => stored ?? [], [stored]);
   const hasMore = state.hasMore[thread] ?? false;
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);

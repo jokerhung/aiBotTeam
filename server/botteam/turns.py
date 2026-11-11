@@ -72,6 +72,16 @@ class Turns:
         if self._consumer:
             self._consumer.cancel()
 
+    async def _system(self, bot: WireBot) -> str:
+        """The persona plus the notes in the bot's library, so what you saved there is what it knows."""
+        text = persona(bot)
+        notes = await self.store.list_notes(bot.id)
+        if notes:
+            sep = "\n\n"
+            body = sep.join(f"## {n['title']}\n{n['text']}" for n in notes)[:6000]
+            text += f"\n\nNotes you keep (your library):\n{body}"
+        return text
+
     # ---- permission requests ----------------------------------------------------------
     async def policy(self, thread_id: str) -> Optional[Policy]:
         bot = await self.store.bot_of_thread(thread_id)
@@ -202,7 +212,7 @@ class Turns:
             transcript = [("user" if m.role == "user" else "assistant", m.text) for m in rows[:-1] if m.kind == "text" and m.text]
         inp = SendTurnInput(
             thread_id=thread_id, bot_id=bot.id, text=text, model=bot.modelSelection.model,
-            effort=bot.modelSelection.effort, system=persona(bot), resume_cursor=t.get("cursor"),
+            effort=bot.modelSelection.effort, system=await self._system(bot), resume_cursor=t.get("cursor"),
             cwd=bot.cwd, transcript=transcript, approval_mode=normalize_mode(bot.approvalMode),
             attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or []],
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],

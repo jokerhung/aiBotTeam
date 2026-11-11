@@ -225,3 +225,8 @@ class ConfigPatch(BaseModel):
     reduceMotion: Optional[bool] = None
     language: Optional[str] = Field(default=None, max_length=12)
     keys: Optional[dict[str, Optional[str]]] = None  # name -> secret; null/empty clears
+
+
+class NoteBody(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=120)
+    text: Optional[str] = Field(default=None, max_length=200_000)

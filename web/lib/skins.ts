@@ -24,8 +24,9 @@ export const SKINS: readonly Skin[] = [
 export const SKIN_IDS = new Set(SKINS.map((s) => s.id));
 
 /** Apply the skin and the other look settings to <html> now, and remember them so the next load paints right away. */
-export function applyLook(s: { skin: string; chatWidth: string; font: string; reduceMotion: boolean }) {
+export function applyLook(s: { skin: string; chatWidth: string; font: string; reduceMotion: boolean; language?: string }) {
   const d = document.documentElement;
+  if (s.language) d.lang = s.language;
   const skin = SKIN_IDS.has(s.skin) ? s.skin : "daylight";
   d.dataset.skin = skin;
   if (s.chatWidth === "wide") d.dataset.chatWidth = "wide";

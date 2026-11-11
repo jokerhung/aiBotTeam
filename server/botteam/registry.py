@@ -10,7 +10,8 @@ from typing import Any, Optional
 from .config import ConfigStore
 from .drivers.base import Listener
 from .drivers.claude import CLAUDE_MODELS, ClaudeDriver
-from .drivers.codex import CodexDriver, codex_models
+from .drivers.codex import codex_models
+from .drivers.codex_app import CodexAppDriver
 from .drivers.echo import EchoDriver
 from .drivers.openai_compat import OpenAICompatDriver
 from .drivers.proc import run_text
@@ -132,7 +133,7 @@ class Registry:
     async def _detect(self, inst: Instance, cfg: dict) -> None:
         kind = inst.driver_kind
         if kind == "echo":
-            inst.driver, inst.state, inst.version = EchoDriver(), "available", "0.1.0"
+            inst.driver, inst.state, inst.version = EchoDriver(broker=self.broker), "available", "0.1.0"
             inst.models = [{"id": "echo-1", "label": "Echo 1", "default": True}]
         elif kind in ("claude", "codex"):
             binary = cfg.get("path") or shutil.which(kind)
@@ -151,7 +152,7 @@ class Registry:
                 code, out = await run_text([binary, "auth", "status"], timeout=10)
                 inst.signed_in = claude_signed_in(code, out)
             else:
-                inst.driver = CodexDriver(binary)
+                inst.driver = CodexAppDriver(binary, broker=self.broker)
                 inst.models = codex_models()
                 code, out = await run_text([binary, "login", "status"], timeout=10)
                 inst.signed_in = None if code == -1 else (code == 0 and "logged in" in out.lower())

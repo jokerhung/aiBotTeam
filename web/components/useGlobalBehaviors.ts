@@ -16,7 +16,7 @@ export function useGlobalBehaviors() {
   const s = state.config.settings;
   useEffect(() => {
     applyLook(s);
-  }, [s.skin, s.chatWidth, s.font, s.reduceMotion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [s.skin, s.chatWidth, s.font, s.reduceMotion, s.language]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const typing = (t: EventTarget | null) => {

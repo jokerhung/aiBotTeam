@@ -11,6 +11,8 @@
     "test": "pnpm test:server && pnpm test:web",
     "test:server": "uv run --project server pytest -q server",
     "test:web": "pnpm --filter web test",
+    "test:visual": "node scripts/visual.mjs",
+    "test:visual:update": "node scripts/visual.mjs --update",
     "start:web": "node scripts/run.mjs web-start",
     "typecheck": "pnpm --filter web exec tsc --noEmit"
   },

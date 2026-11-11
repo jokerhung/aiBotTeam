@@ -425,3 +425,72 @@ async def test_reading_the_attachment_store_needs_no_card(tmp_path):
         assert opened and opened[-1][1]["status"] == "open"
         await b.resolve(opened[-1][1]["id"], "deny")
         await t
+
+
+async def test_library_notes_crud_and_reach_the_persona(ctx):
+    c, app = ctx
+    bot = await make_bot(c)
+    n = (await c.post(f"/api/bots/{bot['id']}/library", json={"title": "Style", "text": "Use metric units."})).json()
+    assert (await c.get(f"/api/bots/{bot['id']}/library")).json()["notes"][0]["title"] == "Style"
+    assert (await c.patch(f"/api/bots/{bot['id']}/library/{n['id']}", json={"text": "Use metric units always."})).status_code == 200
+    from botteam.wire import WireBot
+    b = WireBot(**(await c.get("/api/bots")).json()["bots"][0])
+    assert "metric units always" in await app.state.turns._system(b)
+    assert (await c.delete(f"/api/bots/{bot['id']}/library/{n['id']}")).status_code == 200
+    assert (await c.delete(f"/api/bots/{bot['id']}/library/{n['id']}")).status_code == 404
+
+
+async def test_files_listing_stays_inside_the_working_folder(ctx, tmp_path):
+    c, _ = ctx
+    bot = await make_bot(c)
+    work = tmp_path / "work"
+    (work / "sub").mkdir(parents=True)
+    (work / "a.txt").write_text("hi")
+    (tmp_path / "secret.txt").write_text("nope")
+    await c.patch(f"/api/bots/{bot['id']}", json={"cwd": str(work)})
+    r = (await c.get(f"/api/bots/{bot['id']}/files")).json()
+    assert [e["name"] for e in r["entries"]] == ["sub", "a.txt"] and r["entries"][0]["dir"]
+    assert (await c.get(f"/api/bots/{bot['id']}/files", params={"path": "sub"})).json()["path"] == "sub"
+    for evil in ("..", "../", "sub/../..", str(tmp_path)):
+        assert (await c.get(f"/api/bots/{bot['id']}/files", params={"path": evil})).status_code in (400, 404), evil
+
+
+def test_codex_policy_mapping_and_notifications():
+    from botteam.drivers.codex_app import CodexAppDriver, Session, policy_for
+    assert policy_for("ask") == ("untrusted", "workspace-write")
+    assert policy_for("full") == ("never", "danger-full-access")
+    assert policy_for("bogus")[0] == "untrusted"  # unknown fails closed
+    drv = CodexAppDriver("codex")
+    events = []
+    drv.on_event(lambda e: events.append(e))
+    s = Session(proc=None, cwd="/", mode="ask", turn_id="t1", settled=False)
+    drv.handle_notification("th", s, "item/agentMessage/delta", {"delta": "hi"})
+    drv.handle_notification("th", s, "item/started", {"item": {"type": "commandExecution", "id": "x", "command": "ls"}})
+    drv.handle_notification("th", s, "item/completed", {"item": {"type": "commandExecution", "id": "x", "status": "declined", "exitCode": None}})
+    drv.handle_notification("th", s, "turn/completed", {"turn": {"status": "completed"}})
+    kinds = [e.type for e in events]
+    assert kinds == ["content.delta", "item.started", "item.completed", "turn.completed"]
+    assert events[2].data["ok"] is False and events[3].data["ok"] is True and s.settled
+
+
+async def test_codex_approval_goes_to_the_broker(tmp_path):
+    from botteam.drivers.codex_app import CodexAppDriver, Session
+
+    class Proc:
+        class stdin:
+            written = []
+            @staticmethod
+            def write(b): Proc.stdin.written.append(b)
+            @staticmethod
+            async def drain(): return None
+
+    b, opened, _ = make_broker(tmp_path, mode="ask")
+    drv = CodexAppDriver("codex", broker=b)
+    s = Session(proc=Proc, cwd=CWD, mode="ask")
+    t = asyncio.create_task(drv._server_request("th", s, {"id": 7, "method": "item/commandExecution/requestApproval",
+                                                          "params": {"command": "make build", "cwd": CWD}}))
+    await settle()
+    assert opened and opened[0][1]["command"] == "make build" and opened[0][1]["cwd"] == CWD
+    await b.resolve(opened[0][1]["id"], "deny")
+    await t
+    assert json.loads(Proc.stdin.written[-1])["result"] == {"decision": "decline"}

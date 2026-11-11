@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS messages(
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, parent_id TEXT, role TEXT,
   at INTEGER NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sections(id TEXT PRIMARY KEY, name TEXT NOT NULL, pos INTEGER NOT NULL, collapsed INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, updated_at INTEGER NOT NULL);
 CREATE VIRTUAL TABLE IF NOT EXISTS msg_fts USING fts5(text, message_id UNINDEXED, bot_id UNINDEXED, thread_id UNINDEXED, tokenize='unicode61 remove_diacritics 2');
 """
 
@@ -127,6 +128,7 @@ class Store:
         cur = await self.db.execute("DELETE FROM bots WHERE id=?", (bot_id,))
         await self.db.execute("DELETE FROM messages WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM msg_fts WHERE bot_id=?", (bot_id,))
+        await self.db.execute("DELETE FROM notes WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM threads WHERE bot_id=?", (bot_id,))
         await self.db.commit()
         return cur.rowcount > 0
@@ -349,3 +351,29 @@ class Store:
             setattr(bot, k, getattr(src, k))
         await self.save_bot(bot)
         return bot
+
+    # ---- library notes ------------------------------------------------------------
+    async def list_notes(self, bot_id: str) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, title, text, updated_at FROM notes WHERE bot_id=? ORDER BY updated_at DESC", (bot_id,))
+        return [{"id": r[0], "title": r[1], "text": r[2], "updatedAt": r[3]} for r in await cur.fetchall()]
+
+    async def create_note(self, bot_id: str, title: str, text: str) -> dict[str, Any]:
+        nid = new_id("note")
+        await self.db.execute("INSERT INTO notes(id,bot_id,title,text,updated_at) VALUES(?,?,?,?,?)", (nid, bot_id, title, text, now_ms()))
+        await self.db.commit()
+        return {"id": nid, "title": title, "text": text, "updatedAt": now_ms()}
+
+    async def patch_note(self, bot_id: str, note_id: str, title: Optional[str], text: Optional[str]) -> bool:
+        cur = await self.db.execute("SELECT title, text FROM notes WHERE id=? AND bot_id=?", (note_id, bot_id))
+        row = await cur.fetchone()
+        if not row:
+            return False
+        await self.db.execute("UPDATE notes SET title=?, text=?, updated_at=? WHERE id=?",
+                              (row[0] if title is None else title, row[1] if text is None else text, now_ms(), note_id))
+        await self.db.commit()
+        return True
+
+    async def delete_note(self, bot_id: str, note_id: str) -> bool:
+        cur = await self.db.execute("DELETE FROM notes WHERE id=? AND bot_id=?", (note_id, bot_id))
+        await self.db.commit()
+        return cur.rowcount > 0

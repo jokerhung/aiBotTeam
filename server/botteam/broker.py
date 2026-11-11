@@ -89,6 +89,8 @@ class Broker:
         if req_id in self.open:  # a duplicate id is refused; the first stays open
             return {"behavior": "deny", "message": "Duplicate request id.", "source": "system"}
         pol = await self.policy(thread_id) or Policy("ask", None)
+        if isinstance(inp, dict) and isinstance(inp.get("cwd"), str) and os.path.isabs(inp["cwd"]):
+            pol = Policy(pol.mode, inp["cwd"], pol.instance)  # an engine that names the folder it runs in (Codex) is believed
         auto = None if kind == "question" else self._auto(pol, tool, inp)
         if auto:
             return auto
