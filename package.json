@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.18.0",
   "scripts": {
+    "seed:team": "node scripts/seed-team.mjs",
     "setup": "pnpm install && pnpm setup:server",
     "setup:server": "uv sync --project server",
     "dev": "concurrently -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
