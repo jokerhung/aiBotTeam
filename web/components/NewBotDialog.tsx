@@ -34,6 +34,8 @@ export function NewBotDialog() {
   const [saveDefaults, setSaveDefaults] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [presets, setPresets] = useState<{ id: string; name: string; title: string; description: string; color: MausColor; instructions: string }[]>([]);
+  const [soul, setSoul] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -42,6 +44,8 @@ export function NewBotDialog() {
     setDescription("");
     setColor(COLORS[state.bots.length % 8]);
     setError("");
+    setSoul("");
+    api<{ presets: typeof presets }>("/api/presets").then((r) => setPresets(r.presets)).catch(() => {});
     api<Defaults>("/api/bot-defaults").then((d) => {
       setSel(d.modelSelection);
       setMode(d.approvalMode);
@@ -65,6 +69,7 @@ export function NewBotDialog() {
         body: JSON.stringify({ name: name.trim(), title: title.trim(), description: description.trim(), color, modelSelection: sel ?? undefined, approvalMode: mode, cwd: cwd.trim() || undefined }),
       });
       if (saveDefaults) await api("/api/bot-defaults", { method: "PUT", body: JSON.stringify({ modelSelection: sel, approvalMode: mode, cwd: cwd.trim() || null }) });
+      if (soul) await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ soul }) });
       dispatch({ type: "select", id: bot.id });
       close();
     } catch (e) {
@@ -90,6 +95,15 @@ export function NewBotDialog() {
           <Mascot color={color} size={48} />
           <h2 className="text-[18px] font-semibold text-ink">New bot</h2>
         </div>
+        <label className={label} htmlFor="nb-preset">Starting role</label>
+        <select id="nb-preset" defaultValue="" onChange={(e) => {
+          const p = presets.find((x) => x.id === e.target.value);
+          if (!p) return;
+          setName(p.name); setTitle(p.title); setDescription(p.description); setColor(p.color); setSoul(p.instructions);
+        }} className={cn(field, "mb-3 w-full border border-input px-2 text-ink outline-none")}>
+          <option value="">Blank</option>
+          {presets.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+        </select>
         <label className={label} htmlFor="nb-name">Name</label>
         <div className="flex gap-2">
           <Input id="nb-name" autoFocus value={name} placeholder="Name" onChange={(e) => setName(e.target.value)}

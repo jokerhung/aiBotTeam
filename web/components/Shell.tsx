@@ -8,6 +8,7 @@ import { GroupPanelHost, GroupView } from "./GroupView";
 import { InboxPanel, NotificationsPanel } from "./NotificationsPanel";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { ConnectedApps } from "./ConnectedApps";
+import { ImportTeamDialog, ShareTeamDialog } from "./TeamShare";
 import { McpServersPanel } from "./McpServers";
 import { BotPanel } from "./BotPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -85,6 +86,8 @@ export function Shell() {
       </div>
       <NewGroupDialog />
       <ConnectedApps />
+      <ShareTeamDialog />
+      <ImportTeamDialog />
       <McpServersPanel />
       <NewBotDialog />
       <SettingsModal />

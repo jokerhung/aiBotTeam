@@ -48,6 +48,8 @@ export interface AppState {
   notifPinned: boolean;
   inboxOpen: boolean;
   appsOpen: boolean;
+  shareSection: string | null;
+  importOpen: boolean;
   mcpOpen: boolean;
   /** Bumped when a custom MCP server changes (the panels refetch). */
   mcpTick: number;
@@ -88,6 +90,8 @@ export type Action =
   | { type: "notifPanel"; open?: boolean; pinned?: boolean }
   | { type: "inboxPanel"; open: boolean }
   | { type: "apps"; open: boolean }
+  | { type: "shareTeam"; id: string | null }
+  | { type: "importTeam"; open: boolean }
   | { type: "mcp"; open: boolean }
   | { type: "teamData"; groups?: Group[]; routines?: Routine[]; runs?: RoutineRun[]; webhooks?: Webhook[]; notifications?: Notification[]; inbox?: InboxItem[] }
   | { type: "attempts"; webhookId: string; attempts: WebhookAttempt[] }
@@ -96,7 +100,7 @@ export type Action =
 export const initialState: AppState = {
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
-  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, mcpOpen: false, mcpTick: 0,
+  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, shareSection: null, importOpen: false, mcpOpen: false, mcpTick: 0,
   routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
   settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
@@ -147,6 +151,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, teamMapOpen: action.open, automationsOpen: false, drawerOpen: false };
     case "notifPanel":
       return { ...state, notifOpen: action.open ?? state.notifOpen, notifPinned: action.pinned ?? state.notifPinned };
+    case "shareTeam":
+      return { ...state, shareSection: action.id };
+    case "importTeam":
+      return { ...state, importOpen: action.open };
     case "apps":
       return { ...state, appsOpen: action.open };
     case "mcp":

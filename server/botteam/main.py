@@ -25,6 +25,7 @@ from .host import RuntimeHost
 from .notifications import Notifications
 from .routines import RoutineService
 from .apps_catalog import CATALOG, by_id as catalog_app
+from . import teams as teamlib
 from .memory import Memory, redact
 from .skills import SkillError, Skills
 from .mcp_servers import McpServers, SpecError, from_desktop_json, public as mcp_public
@@ -763,6 +764,49 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         config.data["decider"] = groups.decider
         config.save()
         return {"decider": groups.decider}
+
+    # ---- sharing a team ------------------------------------------------------------------------------------------------------------
+    async def team_text(body: dict) -> str:
+        """The text of a team file: pasted, or fetched from a public address."""
+        if isinstance(body.get("text"), str) and body["text"].strip():
+            return body["text"]
+        if isinstance(body.get("url"), str) and body["url"].strip():
+            try:
+                return await teamlib.fetch(body["url"])
+            except teamlib.PackageError as e:
+                raise HTTPException(400, str(e))
+        raise HTTPException(400, "give the file's text or a public address")
+
+    @app.post("/api/teams/export")
+    async def export_team(body: dict):
+        try:
+            return await teamlib.export_team(store, mcp, skills, memory, str(body.get("sectionId") or ""), body.get("options"))
+        except teamlib.PackageError as e:
+            raise HTTPException(404, str(e))
+
+    @app.post("/api/teams/import/preview")
+    async def import_preview(body: dict):
+        try:
+            return teamlib.review(teamlib.parse(await team_text(body)))
+        except teamlib.PackageError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/teams/import", status_code=201)
+    async def import_team(body: dict):
+        try:
+            pkg = teamlib.parse(await team_text(body))
+        except teamlib.PackageError as e:
+            raise HTTPException(400, str(e))
+        defaults = config.data.get("botDefaults", {})
+        sel = defaults.get("modelSelection") or registry.default_selection()
+        try:
+            return await teamlib.apply_import(store, bus, mcp, skills, memory, groups, routines, turns, pkg, sel)
+        except Exception as e:  # everything it made has been removed again
+            raise HTTPException(500, f"the import failed and nothing was added: {e}")
+
+    @app.get("/api/presets")
+    async def list_presets():
+        return {"presets": [*config.data.get("presets", []), *teamlib.BUILTIN_PRESETS]}
 
     # ---- memory and skills ------------------------------------------------------------------------------------------------------
     @app.get("/api/bots/{bot_id}/memory")

@@ -17,8 +17,8 @@ def _addresses(host: str, port: int) -> list[ipaddress._BaseAddress]:
         pass
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except OSError as e:
-        raise BlockedAddress(f"cannot resolve {host}") from e
+    except OSError:
+        return []  # no answer now (offline, or a name that does not exist yet): it cannot reach anything, and the connection itself will fail
     return [ipaddress.ip_address(i[4][0].split("%")[0]) for i in infos]
 
 

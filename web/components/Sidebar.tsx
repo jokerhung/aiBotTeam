@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, Bell, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Archive, Bell, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -168,6 +168,7 @@ function NewMenu({ icons }: { icons: boolean }) {
       <PopoverTrigger title="New or share" aria-label="New or share" className={PILL}><Plus size={18} /></PopoverTrigger>
       <PopoverContent side="bottom" align={icons ? "start" : "end"} className="w-[230px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
         <button type="button" className={item} onClick={() => { setOpen(false); dispatch({ type: "newBot", open: true }); }}><UserPlus size={15} /> {tr("New bot")}</button>
+        <button type="button" data-testid="import-team-item" className={item} onClick={() => { setOpen(false); dispatch({ type: "importTeam", open: true }); }}><FileUp size={15} /> {tr("Import team")}</button>
         <button type="button" data-testid="new-group-item" className={item} onClick={() => { setOpen(false); dispatch({ type: "newGroup", open: true }); }}><Users size={15} /> {tr("New group chat")}</button>
       </PopoverContent>
     </Popover>
@@ -175,6 +176,7 @@ function NewMenu({ icons }: { icons: boolean }) {
 }
 
 function SectionHeader({ section, count, drag }: { section: Section; count: number; drag: DragApi }) {
+  const { dispatch } = useStore();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(section.name);
   const [over, setOver] = useState(false);
@@ -202,6 +204,8 @@ function SectionHeader({ section, count, drag }: { section: Section; count: numb
         )}
         <span className="text-[11px] font-normal">{count}</span>
       </button>
+      <button type="button" title="Share section" aria-label={`Share ${section.name}`} data-testid="share-section" onClick={() => dispatch({ type: "shareTeam", id: section.id })}
+        className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-ink group-hover/sec:opacity-100 focus-visible:opacity-100 touch:opacity-100"><Share2 size={12} /></button>
       <button type="button" title="Rename section" aria-label={`Rename ${section.name}`} onClick={() => { setName(section.name); setRenaming(true); }}
         className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-ink group-hover/sec:opacity-100 focus-visible:opacity-100"><Pencil size={12} /></button>
       <button type="button" title="Delete section" aria-label={`Delete ${section.name}`}
