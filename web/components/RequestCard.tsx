@@ -1,5 +1,5 @@
 "use client";
-import { Check, ChevronDown, ShieldCheck, ShieldX, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, ShieldCheck, ShieldX, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -95,7 +95,7 @@ export function ApprovalDock({ m, thread, bot }: { m: Message; thread: string; b
   );
 }
 
-function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; active: boolean }) {
+function QuestionCard({ r, thread, active, bot }: { r: RequestInfo; thread: string; active: boolean; bot: Bot }) {
   const t = useT();
   const qs = useMemo(() => questionsOf(r), [r]);
   const single = qs.length === 1 && !qs[0].multiSelect;
@@ -142,48 +142,59 @@ function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; a
   }, [active, qs]);
 
   const ready = qs.every((_, i) => valueOf(i));
+  const asks = `${bot.name} asks`;
   return (
     <div role="group" aria-label="Question" data-testid="ask-card"
-      className="relative w-full max-w-[840px] rounded-[18px] border border-hairline bg-card px-[18px] pb-[17px] pt-[17px]">
+      className="relative w-full max-w-[560px] rounded-[18px] bg-composer px-4 pb-3.5 pt-3 text-start ring-[0.5px] ring-ink/10">
       <button type="button" aria-label="Dismiss question" title="Dismiss" onClick={dismiss}
-        className="absolute right-[14px] top-[14px] flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink">
+        className="absolute right-2.5 top-2.5 flex size-7 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink">
         <X size={15} />
       </button>
       {qs.map((q, qi) => (
-        <div key={qi} className={cn(qi > 0 && "mt-4 border-t border-hairline pt-4")}>
-          <div className="pr-8 text-[16px] font-semibold leading-6 text-ink">{q.header ? `${q.header}: ` : ""}{q.question}</div>
-          <div className="text-[14px] leading-5 text-ink-secondary">{t(q.multiSelect ? "Select all that apply" : "Pick whatever's closest, or type your own.")}</div>
-          <div className="mt-[15px] overflow-hidden rounded-lg border border-hairline" role="listbox" aria-label="Options">
+        <div key={qi} className={cn(qi > 0 && "mt-4 border-t border-hairline pt-3")}>
+          {qi === 0 && (
+            <div className="flex h-5 items-center gap-1.5 text-[13px] text-ink-secondary">
+              <Mascot color={bot.color} size={16} />
+              <span className="truncate">{asks}</span>
+            </div>
+          )}
+          <div className={cn("text-[15px] font-medium leading-[22px] text-ink", qi === 0 && "mt-1 pr-6")}>{q.header ? `${q.header}: ` : ""}{q.question}</div>
+          {q.multiSelect && <div className="text-[12.5px] leading-4 text-ink-tertiary">{t("Select all that apply")}</div>}
+          <div className="mt-3 flex flex-col gap-1.5" role="listbox" aria-label="Options">
             {(q.options ?? []).map((o, oi) => {
               const label = optionLabel(o);
               const on = (picked[qi] ?? []).includes(label) && !typed[qi]?.trim();
               return (
                 <button key={oi} type="button" role="option" aria-selected={on} disabled={busy} onClick={() => choose(qi, label)}
-                  className={cn("flex h-12 w-full items-center gap-3 px-3 text-left transition-colors hover:bg-ink/[0.05] disabled:opacity-60", oi > 0 && "border-t border-hairline", on && "bg-accent/15")}>
-                  <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md bg-control text-[12px] font-medium text-ink-secondary", on && "bg-accent text-[var(--color-accent-ink)]")}>
-                    {LETTERS[oi] ?? oi + 1}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[15px] text-ink">{label}</span>
+                  className={cn("flex min-h-10 w-full items-center gap-2.5 rounded-[12px] px-3.5 py-2 text-start text-[14px] leading-[18px] text-ink ring-[0.5px] ring-ink/15 transition-colors hover:bg-ink/[0.04] disabled:opacity-60", on && "bg-accent/12 ring-1 ring-accent/60")}>
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
                   {optionHint(o) && <span className="hidden min-w-0 truncate text-[12.5px] text-ink-tertiary sm:block">{optionHint(o)}</span>}
+                  <kbd aria-hidden className="shrink-0 rounded-[5px] bg-ink/[0.06] px-1.5 text-[11px] font-medium leading-[18px] text-ink-tertiary">{LETTERS[oi] ?? oi + 1}</kbd>
                 </button>
               );
             })}
           </div>
-          <input
-            value={typed[qi] ?? ""}
-            disabled={busy}
-            onChange={(e) => setTyped((t) => ({ ...t, [qi]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing && typed[qi]?.trim() && (single || ready)) { e.preventDefault(); void submit(); }
-            }}
-            placeholder={t("Type your own answer")}
-            aria-label="Type your own answer"
-            className="mt-[13px] h-[43px] w-full rounded-lg bg-inset px-3.5 text-[15px] text-ink outline-none placeholder:text-ink-secondary focus:ring-1 focus:ring-ink/25"
-          />
+          <div className="mt-2 flex h-10 items-center gap-2 rounded-2xl bg-ink/[0.045] pl-3 pr-1">
+            <input
+              value={typed[qi] ?? ""}
+              disabled={busy}
+              onChange={(e) => setTyped((t) => ({ ...t, [qi]: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && typed[qi]?.trim() && (single || ready)) { e.preventDefault(); void submit(); }
+              }}
+              placeholder={t("Type your own answer")}
+              aria-label="Type your own answer"
+              className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-tertiary"
+            />
+            {single && (
+              <button type="button" aria-label="Send answer" disabled={busy || !typed[qi]?.trim()} onClick={() => submit()}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink/10 text-ink-secondary enabled:bg-accent enabled:text-[var(--color-accent-ink)] disabled:opacity-60"><ArrowUp size={15} /></button>
+            )}
+          </div>
         </div>
       ))}
-      {(!single || Object.values(typed).some((v) => v.trim())) && (
-        <div className="mt-3.5 flex justify-end">
+      {!single && (
+        <div className="mt-3 flex justify-end">
           <button type="button" disabled={busy || !ready} onClick={() => submit()}
             className="rounded-full bg-accent px-4 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Submit")}</button>
         </div>
@@ -192,10 +203,10 @@ function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; a
   );
 }
 
-export function RequestCard({ m, thread, active }: { m: Message; thread: string; active: boolean }) {
+export function RequestCard({ m, thread, active, bot }: { m: Message; thread: string; active: boolean; bot: Bot }) {
   const r = m.request;
   if (!r) return null;
   if (r.status === "resolved") return <Decided r={r} />;
   if (r.type === "permission") return null; // shown in the dock above the composer while it is open
-  return <QuestionCard r={r} thread={thread} active={active} />;
+  return <QuestionCard r={r} thread={thread} active={active} bot={bot} />;
 }

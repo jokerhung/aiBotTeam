@@ -1,6 +1,9 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useStore } from "@/state/store";
+import { dictionaries, translate } from "./translate";
+
+export { dictionaries, translate };
 
 /** Interface languages. English is the source text; a missing entry simply shows the English. */
 export const LANGUAGES = [
@@ -8,48 +11,91 @@ export const LANGUAGES = [
   { id: "vi", label: "Tiếng Việt" },
 ] as const;
 
-const vi: Record<string, string> = {
-  // approvals and questions
-  "Allow once": "Cho phép lần này", Deny: "Từ chối", "Always allow": "Luôn cho phép",
-  "wants to run a command": "muốn chạy một lệnh", "wants to edit files": "muốn sửa tệp",
-  "Answer the approval above to continue": "Hãy trả lời yêu cầu duyệt phía trên để tiếp tục",
-  "Type your own answer": "Nhập câu trả lời của bạn", "Pick whatever's closest, or type your own.": "Chọn mục gần nhất hoặc tự nhập.",
-  "Select all that apply": "Chọn tất cả mục phù hợp", Submit: "Gửi", "Dismiss question": "Bỏ qua câu hỏi",
-  Allowed: "Đã cho phép", Denied: "Đã từ chối", Answered: "Đã trả lời", Skipped: "Đã bỏ qua",
-  "by you": "bởi bạn", automatically: "tự động", "by a saved rule": "theo quy tắc đã lưu",
-  // composer
-  "Attach file": "Đính kèm tệp", "Attach image": "Đính kèm ảnh", "Choose folder": "Chọn thư mục", Approval: "Duyệt quyền",
-  Send: "Gửi", Stop: "Dừng", Add: "Thêm",
-  // sidebar and menus
-  Pin: "Ghim", Unpin: "Bỏ ghim", "Make Chief of Staff": "Đặt làm Chief of Staff", "Move to new section": "Chuyển sang nhóm mới",
-  "Mark as Unread": "Đánh dấu chưa đọc", "Mark as Read": "Đánh dấu đã đọc", "Edit Profile": "Sửa hồ sơ", Duplicate: "Nhân bản",
-  "Copy conversation ID": "Sao chép mã cuộc trò chuyện", "Hide from sidebar": "Ẩn khỏi thanh bên", Delete: "Xóa",
-  Inbox: "Hộp thư", "+ New section": "+ Nhóm mới", Hidden: "Đã ẩn", Unhide: "Hiện lại", Messages: "Tin nhắn",
-  Settings: "Cài đặt", "Keyboard shortcuts": "Phím tắt", "Connect apps": "Kết nối ứng dụng", Undo: "Hoàn tác",
-  // settings
-  General: "Chung", Connections: "Kết nối", Engines: "Công cụ AI", Appearance: "Giao diện",
-  "Display name": "Tên hiển thị", Interface: "Giao diện người dùng", Language: "Ngôn ngữ", Font: "Phông chữ",
-  "Chat width": "Độ rộng cuộc trò chuyện", "Reduce motion": "Giảm chuyển động", Keys: "Khoá",
-  Save: "Lưu", Clear: "Xoá", Connected: "Đã kết nối", Optional: "Tùy chọn",
-  "Shared by all bots. Saving a key reloads providers instantly; keys are stored locally and never shown again.":
-    "Dùng chung cho mọi bot. Lưu khoá sẽ nạp lại nhà cung cấp ngay; khoá chỉ lưu trên máy và không hiện lại.",
-  // bot panel
-  Details: "Chi tiết", Library: "Thư viện", Computer: "Máy tính", Model: "Mô hình", Conversations: "Cuộc trò chuyện",
-  "New conversation": "Cuộc trò chuyện mới", "This conversation": "Cuộc trò chuyện này", "Find in conversation": "Tìm trong cuộc trò chuyện",
-  "Start fresh": "Bắt đầu lại", Activity: "Hoạt động", Inspector: "Trình kiểm tra", Back: "Quay lại",
-  // dialogs
-  "New bot": "Bot mới", Create: "Tạo", Cancel: "Hủy", Name: "Tên", Title: "Chức danh", Description: "Mô tả",
-};
-
-const dictionaries: Record<string, Record<string, string>> = { vi };
-
-export function translate(lang: string, text: string): string {
-  return dictionaries[lang]?.[text] ?? text;
-}
-
 /** `t("Allow once")` in the chosen language; the English text is the key, so a gap never breaks the screen. */
 export function useT() {
   const { state } = useStore();
   const lang = state.config.settings.language;
   return useCallback((text: string) => translate(lang, text), [lang]);
+}
+
+// ---- whole-document localizer ------------------------------------------------------------------------------------
+// Fixed interface strings are translated where they sit in the page: text nodes and the placeholder / title /
+// aria-label attributes whose whole text is a key of the dictionary. What people wrote (messages, bot names) lives in
+// elements marked data-no-i18n and is never touched; the original English is remembered so switching back restores it.
+
+const ATTRS = ["placeholder", "title", "aria-label"] as const;
+const SKIP = "script,style,textarea,input,code,pre,[data-no-i18n]";
+const originals = new WeakMap<Node, string>();
+
+function inSkipped(node: Node): boolean {
+  const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  return !el || !!el.closest(SKIP);
+}
+
+function translateText(node: Text, lang: string) {
+  if (inSkipped(node)) return;
+  const current = node.nodeValue ?? "";
+  const source = originals.get(node);
+  // a node we translated earlier whose text React has not touched since: translate from the remembered English
+  const english = source !== undefined && (current === translate(lang, source) || current === source) ? source : current;
+  const core = english.trim();
+  if (!core) return;
+  const out = lang === "en" ? english : english.replace(core, translate(lang, core));
+  if (out !== current) {
+    if (!originals.has(node)) originals.set(node, english);
+    node.nodeValue = out;
+  }
+  if (out !== english) originals.set(node, english);
+}
+
+function translateAttrs(el: Element, lang: string) {
+  if (inSkipped(el)) return;
+  for (const attr of ATTRS) {
+    const value = el.getAttribute(attr);
+    if (value === null) continue;
+    const key = `data-i18n-${attr}`;
+    const source = el.getAttribute(key);
+    const english = source !== null && (value === translate(lang, source) || value === source) ? source : value;
+    const out = lang === "en" ? english : translate(lang, english);
+    if (out !== value) el.setAttribute(attr, out);
+    if (out !== english) el.setAttribute(key, english);
+    else if (source !== null && lang === "en") el.removeAttribute(key);
+  }
+}
+
+export function localize(root: Node, lang: string) {
+  if (root.nodeType === Node.TEXT_NODE) return translateText(root as Text, lang);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n: Node | null = root; n; n = walker.nextNode()) {
+    if (n.nodeType === Node.TEXT_NODE) translateText(n as Text, lang);
+    else translateAttrs(n as Element, lang);
+  }
+}
+
+/** Keeps document.body in the chosen language, including content that renders later. */
+export function useLocalizer() {
+  const { state } = useStore();
+  const lang = state.config.settings.language;
+  useEffect(() => {
+    let own = false;
+    let queued = false;
+    const pending = new Set<Node>();
+    const run = () => {
+      queued = false;
+      own = true;
+      for (const n of pending) if (n.isConnected) localize(n, lang);
+      pending.clear();
+      own = false;
+    };
+    const obs = new MutationObserver((records) => {
+      if (own) return;
+      for (const r of records) pending.add(r.type === "childList" ? r.target : r.target);
+      if (!queued) { queued = true; requestAnimationFrame(run); }
+    });
+    own = true;
+    localize(document.body, lang);
+    own = false;
+    obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: [...ATTRS] });
+    return () => obs.disconnect();
+  }, [lang]);
 }

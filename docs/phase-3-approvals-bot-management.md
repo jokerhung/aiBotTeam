@@ -87,9 +87,14 @@ Theo `SettingsModal.tsx` và `app-settings.png`:
 - **Menu chuột phải hàng bot** (ảnh `context-menu.png`) vẫn đúng, nhưng hàng bot Simple dùng nút "Actions for {bot}" (`size-7`, hiện khi rê chuột/chạm) mở cùng menu.
 - Thẻ Allow/Deny và thẻ câu hỏi A/B/C: giữ như đã mô tả.
 
-## Đối chiếu giao diện (ghi lại cách làm, phase 3)
+## Đối chiếu giao diện (phase 3)
 
-- Thẻ duyệt lệnh: so với bộ thẻ mẫu của chính bản gốc (`localhost:5199/question-cards-preview.html?state=approval`) bằng `pnpm test:cards`: thẻ rộng 960, cao 136/137, nút Deny 65,5x36 và "Allow once" 103,9x36 khớp, đầu thẻ + khối lệnh lệch 5,2% điểm ảnh (ngưỡng 8%). Thẻ gắn phía trên composer như bản gốc; composer hiện "Answer the approval above to continue".
-- Thẻ câu hỏi, menu chuột phải, modal cài đặt: bộ thẻ mẫu và app đang chạy ở 5199 là bản mới hơn ảnh trong `docs/screenshots` (thẻ câu hỏi dạng viên thuốc không có ô chữ, menu 207 px với mục theo phòng ban, modal cao theo cửa sổ). Tài liệu này mô tả đúng các ảnh `approval-card.png`, `context-menu.png`, `app-settings.png` và mục "Cập nhật sau đối chiếu" giữ nguyên thẻ A/B/C và menu 228 px, nên hình học của ba phần này được đo theo ảnh (`pnpm test:reference-shots`, lệch ≤ 2 px).
-- "Đổi skin tức thì": `pnpm test:instant` bấm từng skin trong Cài đặt và đo từ lúc bấm đến khi `<html data-skin>` và màu nền đổi: 31–52 ms, không tải lại trang (cập nhật lạc quan, không chờ server).
-- Ngôn ngữ: khung i18n (`web/lib/i18n.ts`, tiếng Anh là khoá, thiếu mục thì hiện tiếng Anh) đã nối vào Cài đặt, thẻ duyệt/câu hỏi, composer, menu chuột phải, bot panel, sidebar; `pnpm test:instant` chuyển sang Tiếng Việt và đọc lại các màn hình đó. Phần còn lại của bản dịch thuộc phase 5.
+Mọi so sánh dưới đây chạy với bản gốc đang chạy ở `localhost:5199` (và bộ thẻ mẫu của nó), cùng skin, cùng chữ; số liệu lệch cho phép ≤ 3 px (hình học) hoặc ngưỡng % điểm ảnh nêu rõ.
+
+- `pnpm test:reference-shots`: thẻ câu hỏi (560 px, hàng 40 px bước 46, ô nhập 40 px; lệch 0 px), menu chuột phải (hàng 30 px, bước 34, đệm 7 px, rộng tối thiểu 207 px; lệch 0 px), modal cài đặt (860x700, cột trái 198 px, thẻ nội dung 596 px cách mép 231 px; lệch 0 px).
+- `pnpm test:cards`: thẻ duyệt lệnh gắn phía trên composer (rộng 960, cao 136/137, nút Deny 65,5x36 và Allow once 103,9x36 khớp; đầu thẻ và khối lệnh lệch 5,2% điểm ảnh, ngưỡng 8%) và thẻ câu hỏi (cùng chữ, lệch 0,5% điểm ảnh, ngưỡng 10%).
+- `pnpm test:reference`: bố cục màn chính (lệch 0 px), các vùng không phụ thuộc dữ liệu trên cả 13 skin (≤ 3,2%, ngưỡng 3% và 4% cho dải logo), bot panel (rộng 320, thanh tab, nút tròn) và bộ chọn skin (13 ô 122x78, 4 cột, bước cột 152 px, bước hàng 170 px: lệch 0 px).
+- `pnpm test:noflash`: không nháy skin khi tải lại, kể cả lần mở đầu tiên của trình duyệt chưa lưu gì (layout đọc skin từ backend lúc render).
+- `pnpm test:instant`: bấm từng skin trong Cài đặt, đo 28–43 ms đến khi `<html data-skin>` và màu nền đổi, không tải lại trang; rồi chuyển sang Tiếng Việt và duyệt 17 màn hình (chat, 4 trang cài đặt, bot panel gồm Activity/Inspector/Settings/Library/Computer, hộp thoại bot mới, bảng lệnh, tìm trong chat, menu +, phím tắt, menu chuột phải) để chắc không còn chuỗi giao diện tiếng Anh nào có trong từ điển.
+- Ngôn ngữ: `web/lib/i18n.ts` (khung: tiếng Anh là khoá, `useT()` cho chuỗi động, `useLocalizer()` dịch toàn bộ văn bản và placeholder/title/aria-label cố định, bỏ qua vùng `data-no-i18n` như nội dung tin nhắn và tên bot) và `web/lib/i18n-vi.ts` (bản dịch). `web/lib/i18n.test.ts` đọc mã nguồn các component, trích mọi chuỗi giao diện cố định và yêu cầu có bản dịch; hiện đủ 169 chuỗi.
+- `pnpm test:visual` chỉ là kiểm tra hồi quy với ảnh gốc do chính ứng dụng sinh ra.

@@ -8,12 +8,14 @@ import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { NewBotDialog } from "./NewBotDialog";
 import { SettingsModal } from "./SettingsModal";
 import { Toaster } from "./Toaster";
+import { useLocalizer } from "@/lib/i18n";
 import { useGlobalBehaviors } from "./useGlobalBehaviors";
 import { Sidebar } from "./Sidebar";
 
 export function Shell() {
   const { state, dispatch } = useStore();
   useGlobalBehaviors();
+  useLocalizer();
   const bot = state.bots.find((b) => b.id === state.selectedId);
   const noRealEngine = !state.instances.some((i) => i.driver !== "echo" && i.snapshot.state === "available" && i.snapshot.signedIn !== false);
   return (

@@ -80,7 +80,7 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
   if (m.kind === "error") return <ChatErrorBanner bot={bot} m={m} />;
   if (m.kind === "request") {
     const lastOpen = [...list].reverse().find((x) => x.kind === "request" && x.request?.status === "open");
-    return <RequestCard m={m} thread={bot.threadId} active={lastOpen?.id === m.id} />;
+    return <RequestCard m={m} thread={bot.threadId} active={lastOpen?.id === m.id} bot={bot} />;
   }
   if (m.kind === "stopped" || m.kind === "notice") {
     return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;
@@ -275,7 +275,7 @@ export function ChatView({ bot }: { bot: Bot }) {
           }}
           className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 pt-14 [overflow-anchor:none]", openApproval ? "pb-72" : "pb-32")}
         >
-          <div role="log" aria-label={`Conversation with ${bot.name}`} className="chat-column relative flex w-full flex-col gap-3">
+          <div role="log" data-no-i18n="" aria-label={`Conversation with ${bot.name}`} className="chat-column relative flex w-full flex-col gap-3">
             {hasMore && <div className="py-2 text-center text-[13px] text-ink-tertiary">Loading earlier messages…</div>}
             {messages.length > 0 && (
               <div className="pb-1 pt-5 text-center text-[13px] leading-[18px] text-ink-secondary">{dayLabel(messages[0].at)}</div>

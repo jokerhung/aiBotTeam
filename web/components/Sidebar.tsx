@@ -78,6 +78,7 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
         <div
           role="button"
           tabIndex={0}
+          data-no-i18n=""
           title={bot.name}
           onClick={() => (state.selecting ? dispatch({ type: "pick", id: bot.id }) : onSelect())}
           onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), state.selecting ? dispatch({ type: "pick", id: bot.id }) : onSelect())}
@@ -99,14 +100,14 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
           </span>
           <div className={cn("min-w-0 flex-1", icons && "sr-only")}>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 grow truncate text-[14px] font-medium leading-5 text-ink">
+              <span data-no-i18n="" className="min-w-0 grow truncate text-[14px] font-medium leading-5 text-ink">
                 {bot.name}
                 {bot.chief && <span className="ml-1.5 rounded bg-ink/[0.08] px-1 text-[10px] font-semibold uppercase tracking-wide text-ink-secondary">Chief</span>}
               </span>
               <span className="hidden shrink-0 text-[12px] tabular-nums text-ink-secondary max-md:inline">{clock(bot.lastAt)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className={cn("min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary", waiting && "font-medium text-warning")}>
+              <span data-no-i18n={waiting || bot.busy ? undefined : ""} className={cn("min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary", waiting && "font-medium text-warning")}>
                 {waiting ? "Needs your answer" : bot.busy ? "Working…" : bot.lastText || bot.description || "New bot"}
               </span>
               {waiting ? (
@@ -149,7 +150,7 @@ function SectionHeader({ section, count, drag }: { section: Section; count: numb
             onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") save(); if (e.key === "Escape") { setName(section.name); setRenaming(false); } }}
             aria-label="Section name" className="min-w-0 flex-1 rounded bg-inset px-1 text-[12px] normal-case text-ink outline-none" />
         ) : (
-          <span className="truncate">{section.name}</span>
+          <span data-no-i18n="" className="truncate">{section.name}</span>
         )}
         <span className="text-[11px] font-normal">{count}</span>
       </button>
@@ -379,10 +380,10 @@ export function Sidebar() {
                   {hits.map((h) => (
                     <button key={h.messageId} type="button" onClick={() => openHit(h)} className="flex w-full flex-col rounded-lg px-2 py-1.5 text-left hover:bg-raised/60">
                       <span className="flex items-baseline justify-between gap-2">
-                        <span className="truncate text-[13px] font-medium text-ink">{h.botName}</span>
+                        <span data-no-i18n="" className="truncate text-[13px] font-medium text-ink">{h.botName}</span>
                         <span className="shrink-0 text-[11px] text-ink-tertiary">{new Date(h.at).toLocaleDateString([], { day: "numeric", month: "short" })}</span>
                       </span>
-                      <span className="line-clamp-2 text-[12.5px] leading-4 text-ink-secondary"
+                      <span data-no-i18n="" className="line-clamp-2 text-[12.5px] leading-4 text-ink-secondary"
                         dangerouslySetInnerHTML={{ __html: escapeSnippet(h.snippet) }} />
                     </button>
                   ))}
@@ -398,7 +399,7 @@ export function Sidebar() {
                   {showArchived && archived.map((b) => (
                     <div key={b.id} className="flex items-center gap-2 rounded-lg px-2 py-1">
                       <Mascot color={b.color} size={28} />
-                      <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{b.name}</span>
+                      <span data-no-i18n="" className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{b.name}</span>
                       <button type="button" onClick={() => api(`/api/bots/${b.id}`, { method: "PATCH", body: JSON.stringify({ hidden: false }) })} className="rounded-full px-2 py-0.5 text-[12px] text-accent-text hover:bg-ink/10">Unhide</button>
                     </div>
                   ))}

@@ -186,7 +186,7 @@ const [rm, om] = [metric(rt), metric(ot)];
 console.log("  skin selector: reference", JSON.stringify(rm), "\n                 ours     ", JSON.stringify(om));
 for (const k of Object.keys(rm)) {
   const d = Math.abs(rm[k] - om[k]);
-  const ok = d <= (k === "rowPitch" ? 14 : 3);  // row pitch follows how many lines each description wraps to
+  const ok = d <= 3;  // row pitch follows how many lines each description wraps to
   console.log(`  ${ok ? "ok  " : "FAIL"} skin selector ${k}: reference ${rm[k].toFixed(0)}  ours ${om[k].toFixed(0)}`);
   if (!ok) failures.push(`skin selector ${k}: ${om[k]} vs ${rm[k]}`);
 }

@@ -5,7 +5,8 @@
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+const { vi: VI } = await import(pathToFileURL(join(fileURLToPath(new URL("..", import.meta.url)), "web", "lib", "i18n-vi.ts")).href);
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { chromium } = createRequire(join(root, "web", "package.json"))("playwright-core");
@@ -69,11 +70,11 @@ const expect = async (label, loc) => {
 await expect("settings nav 'Kết nối'", page.getByTestId("settings-modal").getByRole("button", { name: "Kết nối", exact: true }));
 await expect("settings nav 'Giao diện'", page.getByRole("button", { name: "Giao diện", exact: true }));
 await page.getByTestId("settings-modal").getByRole("button", { name: "Kết nối", exact: true }).click();
-await expect("keys heading 'Khoá'", page.getByRole("heading", { name: "Khoá" }));
+await expect("keys section 'Khoá'", page.getByTestId("settings-modal").getByText("Khoá", { exact: true }));
 await page.keyboard.press("Escape");
 await expect("sidebar 'Hộp thư'", page.getByText("Hộp thư", { exact: true }));
 await expect("composer placeholder", page.getByPlaceholder("Instant").or(page.getByLabel(/Message Instant/)));
-await page.locator("nav[aria-label=Bots] [role=button][title=Instant]").click({ button: "right" });
+await page.locator("[role=button][title=Instant]").click({ button: "right" });
 await expect("menu 'Ghim'", page.getByRole("menuitem", { name: "Ghim" }));
 await expect("menu 'Nhân bản'", page.getByRole("menuitem", { name: "Nhân bản" }));
 await page.keyboard.press("Escape");
@@ -87,6 +88,73 @@ await expect("approval 'muốn chạy một lệnh'", page.getByText("muốn ch�
 await expect("blocked composer text", page.getByPlaceholder("Hãy trả lời yêu cầu duyệt phía trên để tiếp tục"));
 await page.getByRole("button", { name: "Từ chối", exact: true }).click();
 await expect("decided line 'Đã từ chối'", page.getByTestId("request-decided").filter({ hasText: "Đã từ chối" }));
+
+// ---- every screen in Vietnamese: nothing the dictionary knows may be left in English ----
+const untranslated = (pg) => pg.evaluate((dict) => {
+  const bad = [];
+  const skip = "script,style,textarea,input,code,pre,[data-no-i18n]";
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n = w.currentNode; n; n = w.nextNode()) {
+    if (n.nodeType === 3) {
+      const el = n.parentElement; if (!el || el.closest(skip)) continue;
+      const t = n.nodeValue.trim();
+      if (t && dict[t] && dict[t] !== t) bad.push(`text: ${t}`);
+    } else if (!n.closest?.(skip)) {
+      for (const a of ["placeholder", "title", "aria-label"]) { const v = n.getAttribute?.(a); if (v && dict[v] && dict[v] !== v) bad.push(`${a}: ${v}`); }
+    }
+  }
+  return [...new Set(bad)];
+}, VI);
+const screens = [];
+const check = async (name) => {
+  await page.waitForTimeout(350);
+  const bad = await untranslated(page);
+  screens.push(name);
+  console.log(`  ${bad.length ? "FAIL" : "ok  "} no English left on: ${name}${bad.length ? " -> " + bad.slice(0, 6).join(" | ") : ""}`);
+  if (bad.length) failures.push(`${name}: ${bad.join(" | ")}`);
+};
+await check("chat with the approval card answered");
+await page.getByLabel("Hồ sơ và cài đặt").click();
+await page.getByText("Cài đặt", { exact: true }).click();
+for (const label of ["Chung", "Kết nối", "Công cụ AI", "Giao diện"]) {
+  await page.getByTestId("settings-modal").getByRole("button", { name: label, exact: true }).click();
+  await check(`settings: ${label}`);
+}
+await page.keyboard.press("Escape");
+await page.getByLabel("Chi tiết bot").click();
+await check("bot panel: details");
+for (const row of ["Hoạt động", "Trình kiểm tra"]) {
+  await page.getByTestId("panel-overview").getByRole("button", { name: row }).click();
+  await check(`bot panel: ${row}`);
+  await page.getByRole("button", { name: "Quay lại" }).click();
+}
+await page.getByRole("button", { name: "Cài đặt bot" }).click();
+await check("bot panel: bot settings");
+for (const tab of ["Thư viện", "Máy tính"]) {
+  await page.getByRole("tab", { name: tab }).click();
+  await check(`bot panel: ${tab}`);
+}
+await page.getByLabel("Đóng bảng").click();
+await page.getByTitle("Bot mới").click();
+await check("new bot dialog");
+await page.keyboard.press("Escape");
+await page.keyboard.press("Control+k");
+await check("command palette");
+await page.keyboard.press("Escape");
+await page.keyboard.press("Control+f");
+await check("find bar");
+await page.keyboard.press("Escape");
+await page.getByLabel("Thêm", { exact: true }).click();
+await check("composer plus menu");
+await page.keyboard.press("Escape");
+await page.getByLabel("Hồ sơ và cài đặt").click();
+await page.getByText("Phím tắt", { exact: true }).click();
+await check("keyboard shortcuts");
+await page.keyboard.press("Escape");
+await page.locator("[role=button][title=Instant]").click({ button: "right" });
+await check("bot menu");
+await page.keyboard.press("Escape");
+console.log(`  checked ${screens.length} screens`);
 
 await j("DELETE", `/api/bots/${bot.id}`);
 await j("PUT", "/api/config", { skin: before.skin, language: before.language });

@@ -73,8 +73,8 @@ export function useBotMenu(bot: Bot) {
   return entries;
 }
 
-const MENU = "w-[228px] rounded-xl border border-hairline bg-menu p-1.5 text-ink";
-const ITEM = "h-[37px] gap-3 px-[9px] text-[15px] [&_svg]:size-4";
+const MENU = "flex w-max! min-w-[207px] flex-col gap-1 rounded-xl border border-hairline/50 bg-menu p-1.5 text-ink";
+const ITEM = "min-h-[30px] gap-2 rounded-md px-2 py-1.5 text-[14px] leading-[18px] [&_svg]:size-4";
 
 export function BotContextMenu({ bot, children }: { bot: Bot; children: ReactNode }) {
   const entries = useBotMenu(bot);
@@ -84,7 +84,7 @@ export function BotContextMenu({ bot, children }: { bot: Bot; children: ReactNod
       <ContextMenuContent className={MENU}>
         {entries.map((e, i) =>
           e === "sep" ? (
-            <ContextMenuSeparator key={`s${i}`} />
+            <ContextMenuSeparator key={`s${i}`} className="mx-1.5 my-0" />
           ) : (
             <ContextMenuItem key={e.key} className={cn(ITEM, e.danger && "text-danger focus:text-danger")} onClick={e.run}>
               <e.icon />
@@ -112,7 +112,7 @@ export function BotActionsButton({ bot, className }: { bot: Bot; className?: str
       <DropdownMenuContent align="end" className={MENU}>
         {entries.map((e, i) =>
           e === "sep" ? (
-            <DropdownMenuSeparator key={`s${i}`} />
+            <DropdownMenuSeparator key={`s${i}`} className="mx-1.5 my-0" />
           ) : (
             <DropdownMenuItem key={e.key} className={cn(ITEM, e.danger && "text-danger focus:text-danger")} onClick={e.run}>
               <e.icon />

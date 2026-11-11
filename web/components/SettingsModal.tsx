@@ -16,9 +16,19 @@ const PAGES: { id: SettingsPage; label: string; icon: typeof Cpu }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
 ];
 
+/** A labelled group: small heading, then one rounded card holding its rows (as in the reference's settings pages). */
+function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <section className="mb-6">
+      <div className="mb-2 text-[13px] font-semibold text-ink-secondary">{title}</div>
+      <div data-testid={testId} className="rounded-xl bg-card px-4 ring-[0.5px] ring-ink/10">{children}</div>
+    </section>
+  );
+}
+
 function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-hairline/60 py-3.5 last:border-0 max-sm:flex-col max-sm:items-stretch max-sm:gap-2">
+    <div className="flex items-center justify-between gap-6 border-b border-hairline/60 py-3 last:border-0 max-sm:flex-col max-sm:items-stretch max-sm:gap-2">
       <div className="min-w-0">
         <div className="text-[14px] font-medium text-ink">{title}</div>
         {hint && <div className="text-[12.5px] leading-4 text-ink-tertiary">{hint}</div>}
@@ -50,21 +60,27 @@ function General() {
   useEffect(() => setName(s.displayName), [s.displayName]);
   return (
     <>
+      <Section title={t("Account")}>
       <Row title={t("Display name")} hint="Shown in your profile menu.">
         <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={() => name !== s.displayName && void save({ displayName: name })}
           aria-label="Display name" className={cn(SELECT, "w-56")} />
       </Row>
+      </Section>
+      <Section title={t("Appearance")}>
       <Row title={t("Interface")} hint="Simple hides advanced controls.">
         <select aria-label="Interface mode" value={s.uiMode} onChange={(e) => void save({ uiMode: e.target.value as AppSettings["uiMode"] })} className={SELECT}>
           <option value="simple">Simple</option>
           <option value="advanced">Advanced</option>
         </select>
       </Row>
+      </Section>
+      <Section title={t("Language and typing")}>
       <Row title={t("Language")} hint="More languages arrive in a later release.">
         <select aria-label="Language" value={s.language} onChange={(e) => void save({ language: e.target.value })} className={SELECT}>
           {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
         </select>
       </Row>
+      </Section>
     </>
   );
 }
@@ -126,11 +142,10 @@ function Connections() {
   const t = useT();
   const { keyCatalog, keys } = state.config;
   return (
-    <section className="rounded-xl bg-card p-4" data-testid="keys-card">
-      <h3 className="text-[16px] font-semibold leading-6 text-ink">{t("Keys")}</h3>
-      <p className="pb-1 text-[14px] leading-5 text-ink-secondary">{t("Shared by all bots. Saving a key reloads providers instantly; keys are stored locally and never shown again.")}</p>
+    <Section title={t("Keys")} testId="keys-card">
+      <p className="pt-3 text-[13px] leading-[18px] text-ink-secondary">{t("Shared by all bots. Saving a key reloads providers instantly; keys are stored locally and never shown again.")}</p>
       {keyCatalog.map((k) => <KeyRow key={k.id} id={k.id} label={k.label} purpose={k.purpose} configured={!!keys[k.id]?.configured} />)}
-    </section>
+    </Section>
   );
 }
 
@@ -237,7 +252,7 @@ function Engines() {
 function SkinTile({ id, name, tagline, selected, onPick }: { id: string; name: string; tagline: string; selected: boolean; onPick: () => void }) {
   return (
     <button type="button" role="radio" aria-checked={selected} aria-label={name} onClick={onPick} data-testid="skin-tile"
-      className={cn("flex w-[140px] flex-col rounded-xl border border-hairline p-[9px] text-left transition-colors hover:bg-ink/[0.04]", selected && "border-accent bg-raised")}>
+      className={cn("flex w-[140px] flex-col rounded-xl p-[9px] text-left ring-1 ring-inset ring-hairline transition-colors hover:bg-ink/[0.04]", selected && "bg-raised ring-accent")}>
       <div data-skin={id} data-skin-preview="" className="flex h-[78px] w-[122px] overflow-hidden rounded-md bg-app text-ink ring-1 ring-ink/10">
         <div className="w-[34%] bg-panel p-1.5"><div className="mb-1 size-2 rounded-full bg-raised" /><div className="mb-0.5 h-[3px] w-[70%] rounded bg-raised" /><div className="h-[3px] w-[50%] rounded bg-raised" /></div>
         <div className="flex flex-1 flex-col justify-end gap-1 p-1.5">
@@ -246,11 +261,11 @@ function SkinTile({ id, name, tagline, selected, onPick }: { id: string; name: s
           <div className="mt-0.5 flex h-4 items-center justify-end rounded-full bg-composer px-1 ring-1 ring-ink/10"><span className="size-2.5 rounded-full bg-accent" /></div>
         </div>
       </div>
-      <div className="mt-[9px] flex items-center text-[14px] font-medium leading-5 text-ink">
+      <div className="mx-0.5 mt-[10px] flex items-center text-[13px] font-medium leading-[19.5px] text-ink">
         <span className="min-w-0 flex-1 truncate">{name}</span>
         {selected && <Check size={14} className="shrink-0 text-accent" />}
       </div>
-      <div className="text-[11px] leading-[14px] text-ink-secondary">{tagline}</div>
+      <div className="mx-0.5 mt-0.5 text-[11px] leading-[15.125px] text-ink-secondary">{tagline}</div>
     </button>
   );
 }
@@ -297,19 +312,18 @@ export function SettingsModal() {
   return (
     <div role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onMouseDown={(e) => e.target === e.currentTarget && close()} onKeyDown={(e) => e.key === "Escape" && close()}>
-      <div ref={ref} tabIndex={-1} data-testid="settings-modal" className="flex h-[559px] max-h-[92vh] w-[860px] max-w-[96vw] animate-pop-in overflow-hidden rounded-2xl border border-hairline bg-app shadow-2xl outline-none max-sm:flex-col">
-        <nav aria-label="Settings sections" className="flex w-[190px] shrink-0 flex-col gap-0.5 border-r border-hairline bg-app p-3 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0">
-          <div className="px-2 pb-2 pt-1 text-[15px] font-semibold text-ink max-sm:hidden">{t("Settings")}</div>
+      <div ref={ref} tabIndex={-1} data-testid="settings-modal" className="flex h-[min(700px,calc(100vh-100px))] max-h-[92vh] w-[860px] max-w-[96vw] animate-pop-in overflow-hidden rounded-2xl border border-hairline/70 bg-app shadow-2xl outline-none max-sm:flex-col">
+        <nav aria-label="Settings sections" className="flex w-[198px] shrink-0 flex-col gap-0.5 border-r border-hairline/60 bg-app px-3 py-4 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0">
           {PAGES.map((p) => (
             <button key={p.id} type="button" aria-current={page === p.id ? "page" : undefined} onClick={() => dispatch({ type: "settings", open: true, page: p.id })}
-              className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[14px] max-sm:shrink-0", page === p.id ? "bg-raised font-medium text-ink" : "text-ink-secondary hover:bg-raised/60 hover:text-ink")}>
+              className={cn("flex h-8 shrink-0 items-center gap-[9px] rounded-lg px-[9px] text-left text-[13px]", page === p.id ? "bg-ink/[0.07] text-ink" : "text-ink hover:bg-ink/[0.06]")}>
               <p.icon size={15} /> {t(p.label)}
             </button>
           ))}
         </nav>
-        <div className="relative min-w-0 flex-1 overflow-y-auto px-5 pb-5 pt-[17px]">
+        <div className="relative min-w-0 flex-1 overflow-y-auto px-8 pb-6 pt-[22px]">
           <button type="button" aria-label="Close settings" onClick={close} className="absolute right-3 top-3 rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><X size={16} /></button>
-          <h2 className="mb-[13px] text-[17px] font-semibold leading-6 text-ink">{t(PAGES.find((p) => p.id === page)?.label ?? "")}</h2>
+          <h2 className="mb-[18px] text-[17px] font-medium leading-6 tracking-[-0.008em] text-ink">{t(PAGES.find((p) => p.id === page)?.label ?? "")}</h2>
           {page === "general" && <General />}
           {page === "connections" && <Connections />}
           {page === "engines" && <Engines />}

@@ -80,7 +80,7 @@ export function CommandPalette() {
             <button key={it.id} type="button" role="option" aria-selected={i === cursor} data-index={i} onMouseMove={() => setCursor(i)} onClick={it.run}
               className={cn("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] text-ink", i === cursor && "bg-menu-hover")}>
               {it.face ?? (it.icon && <it.icon size={16} className="text-ink-secondary" />)}
-              <span className="min-w-0 flex-1 truncate">{it.label}</span>
+              <span data-no-i18n={it.id.startsWith("bot-") ? "" : undefined} className="min-w-0 flex-1 truncate">{it.label}</span>
               {it.hint && <span className="shrink-0 text-[12px] text-ink-tertiary">{it.hint}</span>}
             </button>
           ))}

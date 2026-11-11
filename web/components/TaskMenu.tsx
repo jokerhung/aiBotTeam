@@ -26,7 +26,7 @@ export function TaskMenu({ bot, face }: { bot: Bot; face: ReactNode }) {
         className={cn("group flex min-w-0 max-w-full items-center gap-2 rounded-full py-[7.5px] pl-[7.5px] pr-[13.5px] text-ink", FLOAT_PILL)}
       >
         {face}
-        <span dir="auto" className="min-w-0 truncate text-[14px] font-medium leading-5">{bot.name}</span>
+        <span dir="auto" data-no-i18n="" className="min-w-0 truncate text-[14px] font-medium leading-5">{bot.name}</span>
         {away && <span className="min-w-0 max-w-[10rem] truncate text-[13px] text-ink-secondary">· {active.title || "New task"}</span>}
         <ChevronRight size={14} className={cn("-ml-0.5 shrink-0 text-ink-secondary transition-transform", open && "rotate-90")} />
       </PopoverTrigger>

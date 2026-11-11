@@ -216,8 +216,8 @@ export function BotPanel({ bot }: { bot: Bot }) {
       <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
         <div className="flex flex-col items-center px-6 pb-3 pt-[10px] text-center">
           <Mascot color={bot.color} size={52} busy={bot.busy} />
-          <div className="mt-[15px] max-w-full truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
-          {(bot.title || bot.description) && <div className="max-w-full truncate text-[14px] text-ink-secondary">{bot.title || bot.description}</div>}
+          <div data-no-i18n="" className="mt-[15px] max-w-full truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
+          {(bot.title || bot.description) && <div data-no-i18n="" className="max-w-full truncate text-[14px] text-ink-secondary">{bot.title || bot.description}</div>}
           <div role="tablist" className="mt-[22px] flex h-8 items-center rounded-full bg-raised p-[3px]" data-testid="panel-tabs">
             {tabs.map((x) => (
               <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} onClick={() => { setTab(x.id); setView("overview"); }}
