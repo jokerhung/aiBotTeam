@@ -481,7 +481,8 @@ export function Sidebar() {
               {!icons && (
                 <button
                   type="button"
-                  onClick={() => dispatch({ type: "settings", open: true, page: "connections" })}
+                  data-testid="connect-apps"
+                  onClick={() => dispatch({ type: "apps", open: true })}
                   className="group/apps flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-composer pl-4 pr-3 text-[14px] font-medium leading-5 text-ink ring-1 ring-inset ring-ink/[0.07] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]"
                 >
                   <span className="min-w-0 truncate">{t("Connect apps")}</span>

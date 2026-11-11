@@ -7,6 +7,8 @@ import { TeamMapPage } from "./TeamMapPage";
 import { GroupPanelHost, GroupView } from "./GroupView";
 import { InboxPanel, NotificationsPanel } from "./NotificationsPanel";
 import { NewGroupDialog } from "./NewGroupDialog";
+import { ConnectedApps } from "./ConnectedApps";
+import { McpServersPanel } from "./McpServers";
 import { BotPanel } from "./BotPanel";
 import { CommandPalette } from "./CommandPalette";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
@@ -82,6 +84,8 @@ export function Shell() {
         <NotificationsPanel />
       </div>
       <NewGroupDialog />
+      <ConnectedApps />
+      <McpServersPanel />
       <NewBotDialog />
       <SettingsModal />
       <CommandPalette />

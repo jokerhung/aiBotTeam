@@ -30,6 +30,7 @@ class Session:
     model: str | None
     system: str | None
     mode: str = "full"
+    mcp: tuple = ()  # the custom servers this process was started with
     turn_id: str | None = None
     cursor: str | None = None
     saw_stream_delta: bool = False
@@ -64,7 +65,7 @@ class ClaudeDriver(Emitter):
         turn_id = new_turn_id()
         model = None if inp.model in (None, "", "default") else inp.model
         s = self.sessions.get(inp.thread_id)
-        if s and (inp.session_reset or s.proc.returncode is not None or s.model != model or s.system != inp.system or s.mode != inp.approval_mode):
+        if s and (inp.session_reset or s.proc.returncode is not None or s.model != model or s.system != inp.system or s.mode != inp.approval_mode or s.mcp != tuple(sorted(inp.custom_mcp))):
             await self._close(inp.thread_id)
             s = None
         if s is None:
@@ -121,8 +122,8 @@ class ClaudeDriver(Emitter):
                 "command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
                 "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_BROKER_PORT": str(self.broker.port),
                         "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id},
-            }}}
-            args += ["--mcp-config", json.dumps(cfg), "--permission-prompt-tool", "mcp__bt__approve"]
+            }, **inp.custom_mcp}}
+            args += ["--mcp-config", self._config_file(inp.thread_id, cfg), "--permission-prompt-tool", "mcp__bt__approve"]
         if model:
             args += ["--model", model]
         if inp.effort:
@@ -133,9 +134,22 @@ class ClaudeDriver(Emitter):
             args += ["--append-system-prompt", inp.system]
         return args
 
+    def _config_file(self, thread_id: str, cfg: dict) -> str:
+        """The MCP configuration in a file only this user can read (it holds the broker token and the custom servers' paths), not on argv."""
+        import os
+        import tempfile
+
+        d = __import__("pathlib").Path(tempfile.gettempdir()) / "botteam-mcp"
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / (re.sub(r"[^\w-]", "_", thread_id) + ".json")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf8") as f:
+            json.dump(cfg, f)
+        return str(path)
+
     async def _start(self, inp: SendTurnInput, model: str | None) -> Session:
         proc = await spawn(self.build_args(inp, model), cwd=inp.cwd, env=self.env)
-        s = Session(proc=proc, model=model, system=inp.system, mode=inp.approval_mode, cursor=inp.resume_cursor)
+        s = Session(proc=proc, model=model, system=inp.system, mode=inp.approval_mode, cursor=inp.resume_cursor, mcp=tuple(sorted(inp.custom_mcp)))
         self.sessions[inp.thread_id] = s
         s.tasks = [
             asyncio.create_task(self._read(inp.thread_id, s)),

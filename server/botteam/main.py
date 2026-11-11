@@ -24,6 +24,8 @@ from .groups import Groups
 from .host import RuntimeHost
 from .notifications import Notifications
 from .routines import RoutineService
+from .apps_catalog import CATALOG, by_id as catalog_app
+from .mcp_servers import McpServers, SpecError, from_desktop_json, public as mcp_public
 from .runtime import Runtime
 from .webhooks import WebhookService, make_hook_app
 from .store import Store, data_dir, now_ms
@@ -73,6 +75,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     webhooks = WebhookService(store, turns, bus, port=hook_port)
     webhooks.notify = notify
     hook_state: dict = {}
+    mcp = McpServers(store, bus, home)
+    turns.mcp = mcp
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
@@ -249,6 +253,15 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                 raise HTTPException(404, "section not found")
         if "threadId" in fields:
             fields["threadId"] = await need_thread(bot, fields["threadId"])
+        if fields.get("mcpServers") is not None:
+            known = {i for i, _ in await mcp.list()}
+            if any(x not in known for x in fields["mcpServers"]):
+                raise HTTPException(404, "server not found")
+        if fields.get("mcpAccess") is not None:
+            for sid, acc in fields["mcpAccess"].items():
+                if not isinstance(acc, dict) or acc.get("scope", "read") not in ("read", "write") or acc.get("outbound", "ask") not in ("ask", "allow"):
+                    raise HTTPException(400, "access is a scope (read or write) and a policy for sending out (ask or allow)")
+            fields["mcpAccess"] = {sid: {"scope": a.get("scope", "read"), "outbound": a.get("outbound", "ask")} for sid, a in fields["mcpAccess"].items()}
         if fields.get("reportsTo"):
             boss, seen = fields["reportsTo"], {bot.id}
             while boss:  # the target must exist and the chain must not come back to this bot
@@ -743,6 +756,103 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         config.save()
         return {"decider": groups.decider}
 
+    # ---- custom MCP servers -----------------------------------------------------------------------------------------------------
+    @app.get("/api/mcp/servers")
+    async def list_mcp():
+        return {"servers": [mcp_public(i, s, mcp.status.get(i)) for i, s in await mcp.list()]}
+
+    @app.post("/api/mcp/servers", status_code=201)
+    async def create_mcp(body: dict):
+        try:
+            sid, spec = await mcp.create(body)
+        except SpecError as e:
+            raise HTTPException(400, str(e))
+        return mcp_public(sid, spec)
+
+    @app.post("/api/mcp/import", status_code=201)
+    async def import_mcp(body: dict):
+        """Several servers at once from pasted Claude Desktop JSON; nothing is made unless every entry is valid."""
+        try:
+            specs = from_desktop_json(body.get("json"))
+            from .mcp_servers import clean
+            for s in specs:
+                clean(s)
+        except SpecError as e:
+            raise HTTPException(400, str(e))
+        made = []
+        for s in specs:
+            sid, spec = await mcp.create(s)
+            made.append(mcp_public(sid, spec))
+        return {"servers": made}
+
+    @app.post("/api/mcp/test")
+    async def test_mcp_spec(body: dict):
+        """Try a server that is not saved yet (the editor's Test button)."""
+        from .mcp_servers import clean
+        try:
+            spec = clean(body)
+        except SpecError as e:
+            raise HTTPException(400, str(e))
+        return await mcp.test(spec)
+
+    @app.patch("/api/mcp/servers/{sid}")
+    async def patch_mcp(sid: str, body: dict):
+        try:
+            spec = await mcp.update(sid, body)
+        except SpecError as e:
+            raise HTTPException(400, str(e))
+        if spec is None:
+            raise HTTPException(404, "server not found")
+        return mcp_public(sid, spec, mcp.status.get(sid))
+
+    @app.delete("/api/mcp/servers/{sid}")
+    async def delete_mcp(sid: str):
+        if not await mcp.delete(sid):
+            raise HTTPException(404, "server not found")
+        return {"ok": True}
+
+    @app.post("/api/mcp/servers/{sid}/test")
+    async def test_mcp(sid: str):
+        spec = await mcp.get(sid)
+        if spec is None:
+            raise HTTPException(404, "server not found")
+        return await mcp.test(spec, sid)
+
+    # ---- connected apps: the catalog, and a server made from an entry of it ------------------------------------------------------
+    @app.get("/api/apps")
+    async def apps():
+        have = {s.get("appId"): i for i, s in await mcp.list() if s.get("appId")}
+        return {"apps": [{**a, "connected": a["id"] in have, "serverId": have.get(a["id"]), "status": mcp.status.get(have.get(a["id"], ""))} for a in CATALOG]}
+
+    @app.post("/api/apps/{app_id}/connect", status_code=201)
+    async def connect_app(app_id: str, body: dict):
+        entry = catalog_app(app_id)
+        if not entry:
+            raise HTTPException(404, "app not found")
+        token = str(body.get("token") or "").strip()
+        if entry["tokenLabel"] and not token:
+            raise HTTPException(400, f"paste {entry['tokenLabel'].lower()} to connect {entry['name']}")
+        spec = {"name": entry["name"], "transport": entry["transport"], "url": entry["url"], "appId": app_id,
+                "headers": {"Authorization": f"Bearer {token}"} if token else {}}
+        existing = next((i for i, s in await mcp.list() if s.get("appId") == app_id), None)
+        try:
+            if existing:
+                await mcp.update(existing, spec)
+                sid = existing
+            else:
+                sid, _ = await mcp.create(spec)
+        except SpecError as e:
+            raise HTTPException(400, str(e))
+        status = await mcp.test(await mcp.get(sid), sid)  # say at once whether the token works
+        return {"serverId": sid, "status": status}
+
+    @app.delete("/api/apps/{app_id}")
+    async def disconnect_app(app_id: str):
+        sid = next((i for i, s in await mcp.list() if s.get("appId") == app_id), None)
+        if not sid or not await mcp.delete(sid):
+            raise HTTPException(404, "app is not connected")
+        return {"ok": True}
+
     # ---- webhooks (management; the receiver is a separate app on its own port) ---------------------------------------------------
     async def need_webhook(wid: str):
         w = await store.get_webhook(wid)
@@ -942,6 +1052,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.scheduler = app.state.routines = routines
     app.state.webhooks, app.state.hook_app = webhooks, make_hook_app(webhooks)
     app.state.runtime, app.state.host, app.state.agents, app.state.groups, app.state.notify = runtime, host, agents, groups, notify
+    app.state.mcp = mcp
     _ = now_ms
     return app
 

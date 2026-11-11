@@ -121,6 +121,8 @@ export interface Bot {
   chief: boolean;
   managedSections?: string[];
   reportsTo?: string | null;
+  mcpServers?: string[];
+  mcpAccess?: Record<string, { scope: "read" | "write"; outbound: "ask" | "allow" }>;
   fallbackSelection: ModelSelection | null;
   lastText: string;
   lastAt: number | null;
@@ -239,6 +241,41 @@ export interface InboxItem {
   groupName: string | null;
 }
 
+export interface McpStatus {
+  state: "unknown" | "ok" | "failed";
+  at?: number;
+  tools: { name: string; description: string }[];
+  error?: string | null;
+  server?: { name?: string; version?: string };
+}
+
+export interface McpServer {
+  id: string;
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  enabled: boolean;
+  outputBudget: number;
+  appId?: string;
+  status: McpStatus;
+}
+
+export interface AppEntry {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  tokenLabel: string;
+  tokenUrl: string;
+  connected: boolean;
+  serverId: string | null;
+  status: McpStatus | null;
+}
+
 export interface ToolInfo {
   name: string;
   itemId?: string | null;
@@ -300,6 +337,7 @@ export type ServerFrame =
   | { kind: "webhook.attempt"; attempt: WebhookAttempt }
   | { kind: "notify"; notification: Notification }
   | { kind: "notifications.read"; ids: string[]; cleared?: boolean }
+  | { kind: "mcp.changed"; serverId: string; deleted?: boolean }
   | { kind: "assignment"; [k: string]: unknown };
 
 export interface ModelOption {

@@ -21,6 +21,7 @@ class Policy:
     mode: str
     cwd: Optional[str]
     instance: str = ""
+    allow_prefixes: tuple = ()  # tools of an app the person chose to let send without asking (Connected apps: write + allow)
 
 
 PolicyFn = Callable[[str], Awaitable[Optional[Policy]]]
@@ -130,6 +131,8 @@ class Broker:
             return {"behavior": "allow", "source": source}
 
         if tool in OWN_TOOLS or tool.startswith(OWN_PREFIX) or pol.mode == "full":
+            return allow("auto")
+        if pol.allow_prefixes and any(tool.startswith(p) for p in pol.allow_prefixes):
             return allow("auto")
         if tool == "Read" and isinstance(inp, dict) and isinstance(inp.get("file_path"), str) and self._in_read_dirs(inp["file_path"]):
             return allow("auto")

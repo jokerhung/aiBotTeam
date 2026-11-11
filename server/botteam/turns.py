@@ -67,6 +67,7 @@ class Turns:
         self.host = None  # the runtime's host: keeps the names it needs in step with the bots
         self.groups = None  # rooms: told when a room turn ends so the next responder can start
         self.routines = None  # routine runs: told when their turn ends
+        self.mcp = None  # custom MCP servers (their entries for a turn)
         self.notify = None  # the notification log
         self.delegated: dict[str, asyncio.Future] = {}  # work thread -> the runtime's wait for that turn's result
         self.attachments_dir = attachments_dir or data_dir() / "attachments"
@@ -118,8 +119,9 @@ class Turns:
         if not bot:
             return None
         run = self.runs.get(thread_id)
+        prefixes = await self.mcp.allowed_prefixes(bot) if self.mcp else ()
         return Policy(mode=normalize_mode(run.level if run and run.level else bot.approvalMode), cwd=(run.inp.cwd if run else None) or bot.cwd or os.getcwd(),
-                      instance=bot.modelSelection.instanceId)
+                      instance=bot.modelSelection.instanceId, allow_prefixes=prefixes)
 
     async def _request_opened(self, thread_id: str, req: dict) -> None:
         bot = await self._bot_for(thread_id)
@@ -272,6 +274,7 @@ class Turns:
             session_reset=session_reset, cwd=cwd or bot.cwd, transcript=transcript, approval_mode=normalize_mode(level or bot.approvalMode),
             attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or []],
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
+            custom_mcp=await self.mcp.entries_for(bot.mcpServers, thread_id, bot.mcpAccess) if self.mcp and bot.mcpServers else {},
         )
         self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id, routine_run_id=routine_run_id)
         await self.publish_bot(bot)
@@ -489,6 +492,8 @@ class Turns:
                 u["cost"] = round(u.get("cost", 0) + d["cost"], 6)
             await self.store.patch_thread(thread_id, usage=u)
         self.runs.pop(thread_id, None)
+        if self.mcp:
+            self.mcp.cleanup(thread_id)  # the private spec files of this turn's custom servers
         await self._after_turn(thread_id, run, d)
         if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
             grp = await self.store.group_of_thread(thread_id)

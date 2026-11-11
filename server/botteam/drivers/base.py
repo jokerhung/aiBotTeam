@@ -38,6 +38,8 @@ class SendTurnInput:
     attachments: list[str] = field(default_factory=list)  # absolute paths inside the attachment store
     image_attachments: list[str] = field(default_factory=list)
     transcript: list[tuple[str, str]] = field(default_factory=list)  # (role, text) for replay drivers
+    custom_mcp: dict = field(default_factory=dict)  # integrations.custom: mcpServers entries for this bot's custom servers (a driver that cannot speak MCP ignores it)
+    skills_dir: str | None = None  # a directory of skills for this turn (the Claude CLI reads it through --add-dir)
 
 
 class ProviderAdapter(Protocol):

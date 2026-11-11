@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
 import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Bot, MausColor, ModelSelection } from "@/lib/wire";
+import type { Bot, MausColor, McpServer, ModelSelection } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
@@ -69,6 +69,49 @@ function ModelPicker({ value, onChange, allowNone }: { value: ModelSelection | n
   );
 }
 
+/** Which custom MCP servers and connected apps this bot may use, read or write, and whether sending out asks first. */
+function AppsField({ bot }: { bot: Bot }) {
+  const { state } = useStore();
+  const [servers, setServers] = useState<McpServer[]>([]);
+  useEffect(() => { api<{ servers: McpServer[] }>("/api/mcp/servers").then((r) => setServers(r.servers)).catch(() => {}); }, [state.mcpTick]);
+  const used = bot.mcpServers ?? [];
+  const access = bot.mcpAccess ?? {};
+  const setUsed = (id: string, on: boolean) => void queuePatch(bot.id, { mcpServers: on ? [...used, id] : used.filter((x) => x !== id) });
+  const setAccess = (id: string, patch: Partial<{ scope: "read" | "write"; outbound: "ask" | "allow" }>) =>
+    void queuePatch(bot.id, { mcpAccess: { ...access, [id]: { ...(access[id] ?? { scope: "read" as const, outbound: "ask" as const }), ...patch } } });
+  return (
+    <Field label="Apps and servers" hint="What this bot may use. Read lets it look; Write lets it change things, and Ask makes it check with you before it sends anything out.">
+      {servers.length === 0 && <div className="text-[13px] text-ink-tertiary">No apps are connected yet. Use “Connect apps” at the bottom of the sidebar.</div>}
+      <div className="flex flex-col gap-1.5" data-testid="bot-apps">
+        {servers.map((s) => {
+          const on = used.includes(s.id);
+          const acc = access[s.id] ?? { scope: "read", outbound: "ask" };
+          return (
+            <div key={s.id} className="rounded-lg bg-inset px-3 py-2 ring-1 ring-inset ring-ink/[0.07]">
+              <label className="flex items-center gap-2 text-[14px] text-ink">
+                <input type="checkbox" checked={on} onChange={(e) => setUsed(s.id, e.target.checked)} aria-label={`Use ${s.name}`} />
+                <span data-no-i18n="" className="min-w-0 flex-1 truncate">{s.name}</span>
+              </label>
+              {on && (
+                <div className="mt-1.5 flex gap-2 pl-6 text-[12.5px]">
+                  <select value={acc.scope} onChange={(e) => setAccess(s.id, { scope: e.target.value as "read" | "write" })} aria-label={`${s.name} access`} className="rounded-md bg-raised px-2 py-1 text-ink">
+                    <option value="read">Read</option><option value="write">Write</option>
+                  </select>
+                  {acc.scope === "write" && (
+                    <select value={acc.outbound} onChange={(e) => setAccess(s.id, { outbound: e.target.value as "ask" | "allow" })} aria-label={`${s.name} sending out`} className="rounded-md bg-raised px-2 py-1 text-ink">
+                      <option value="ask">Ask before sending</option><option value="allow">Send without asking</option>
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Field>
+  );
+}
+
 function SettingsForm({ bot }: { bot: Bot }) {
   const { state } = useStore();
   const name = useSaved(bot, "name", bot.name);
@@ -115,6 +158,7 @@ function SettingsForm({ bot }: { bot: Bot }) {
           {state.bots.filter((b) => b.id !== bot.id && !b.hidden).map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
         </select>
       </Field>
+      <AppsField bot={bot} />
       <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">
         <label className="flex items-center gap-2 text-[14px] text-ink">
           <input type="checkbox" checked={bot.chief} onChange={(e) => void queuePatch(bot.id, { chief: e.target.checked })} /> Chief of Staff
