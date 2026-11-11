@@ -230,3 +230,12 @@ class ConfigPatch(BaseModel):
 class NoteBody(BaseModel):
     title: Optional[str] = Field(default=None, max_length=120)
     text: Optional[str] = Field(default=None, max_length=200_000)
+
+
+class RoutineBody(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=120)
+    text: Optional[str] = Field(default=None, min_length=1, max_length=20_000)
+    kind: Optional[Literal["interval", "daily"]] = None
+    everyMin: Optional[int] = None
+    at: Optional[str] = Field(default=None, max_length=5)
+    enabled: Optional[bool] = None

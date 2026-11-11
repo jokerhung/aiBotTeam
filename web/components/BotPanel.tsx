@@ -1,9 +1,9 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Bug, CalendarPlus, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
+import { Bug, CalendarPlus, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Play, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
-import { useT } from "@/lib/i18n";
+import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, MausColor, ModelSelection } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -112,7 +112,7 @@ function SettingsForm({ bot }: { bot: Bot }) {
   );
 }
 
-type View = "overview" | "settings" | "activity" | "inspector";
+type View = "overview" | "settings" | "activity" | "inspector" | "routines";
 
 function Row({ icon: Icon, label, right, onClick, chevron }: { icon: typeof Search; label: string; right?: React.ReactNode; onClick?: () => void; chevron?: boolean }) {
   return (
@@ -152,9 +152,9 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
       <Row icon={Bug} label={t("Inspector")} chevron onClick={() => go("inspector")} />
       <div className="mt-4 flex items-center justify-between text-[14px] font-medium text-ink-secondary">
         <span>{t("Routines")}</span>
-        <span className="text-[13px] font-normal text-ink-tertiary" title={t("Routines arrive with automations in phase 4")}>{t("Automations")}</span>
+        <button type="button" onClick={() => go("routines")} className="text-[13px] font-normal text-ink-tertiary hover:text-ink">{t("Manage")}</button>
       </div>
-      <Row icon={CalendarPlus} label={t("Add a routine")} />
+      <Row icon={CalendarPlus} label={t("Add a routine")} onClick={() => go("routines")} />
     </div>
   );
 }
@@ -241,10 +241,85 @@ export function BotPanel({ bot }: { bot: Bot }) {
         {tab === "details" && view === "settings" && <SettingsForm bot={bot} />}
         {tab === "details" && view === "activity" && <Activity bot={bot} />}
         {tab === "details" && view === "inspector" && <Inspector bot={bot} />}
+        {tab === "details" && view === "routines" && <Routines bot={bot} />}
         {tab === "computer" && <Computer bot={bot} />}
         {tab === "library" && <LibraryTab bot={bot} />}
       </div>
     </aside>
+  );
+}
+
+interface Routine { id: string; title: string; text: string; kind: "interval" | "daily"; everyMin: number | null; at: string | null; enabled: boolean; lastRun: number | null; nextRun: number }
+
+const schedule = (r: Pick<Routine, "kind" | "everyMin" | "at">) => (r.kind === "daily" ? `Daily at ${r.at}` : `Every ${r.everyMin} min`);
+
+/** Messages the bot is sent on a schedule: an interval, or a time every day. */
+function Routines({ bot }: { bot: Bot }) {
+  const t = useT();
+  const [items, setItems] = useState<Routine[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState("");
+  const [kind, setKind] = useState<"interval" | "daily">("daily");
+  const [every, setEvery] = useState("60");
+  const [at, setAt] = useState("09:00");
+  const [error, setError] = useState("");
+  const load = () => api<{ routines: Routine[] }>(`/api/bots/${bot.id}/routines`).then((r) => setItems(r.routines)).catch(() => {});
+  useEffect(() => { void load(); }, [bot.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = `/api/bots/${bot.id}/routines`;
+  const save = async () => {
+    setError("");
+    try {
+      await api(base, { method: "POST", body: JSON.stringify({ text: text.trim(), kind, everyMin: kind === "interval" ? Number(every) : null, at: kind === "daily" ? at : null }) });
+      setText("");
+      setAdding(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    }
+  };
+  const act = async (fn: () => Promise<unknown>) => { try { await fn(); } catch (e) { toast(e instanceof Error ? e.message : "Could not do that"); } await load(); };
+  return (
+    <div className="px-6 pb-6" data-testid="routines-view">
+      {items.length === 0 && !adding && <div className="py-8 text-center text-[13px] text-ink-tertiary">{t("No routines yet. A routine sends this bot a message on a schedule.")}</div>}
+      {items.map((r) => (
+        <div key={r.id} className="mb-2 rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10" data-testid="routine-row">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" aria-label={t("Enabled")} checked={r.enabled} onChange={(e) => { const enabled = e.target.checked; setItems((xs) => xs.map((x) => (x.id === r.id ? { ...x, enabled } : x))); void act(() => api(`${base}/${r.id}`, { method: "PATCH", body: JSON.stringify({ enabled }) })); }} />
+            <span data-no-i18n="" className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{r.title}</span>
+            <button type="button" title={t("Run now")} aria-label={t("Run now")} onClick={() => void act(() => api(`${base}/${r.id}/run`, { method: "POST" }))} className="rounded-full p-1 text-ink-secondary hover:bg-ink/10 hover:text-ink"><Play size={13} /></button>
+            <button type="button" title={t("Delete routine")} aria-label={t("Delete routine")} onClick={() => void act(() => api(`${base}/${r.id}`, { method: "DELETE" }))} className="rounded-full p-1 text-ink-tertiary hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
+          </div>
+          <div className="mt-0.5 pl-6 text-[12.5px] text-ink-tertiary">{`${t(schedule(r))} · ${t("Next run")} ${new Date(r.nextRun).toLocaleString([locale()], { weekday: "short", hour: "numeric", minute: "2-digit" })}`}</div>
+        </div>
+      ))}
+      {adding ? (
+        <div className="rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10" data-testid="routine-form">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} aria-label={t("Routine message")} placeholder={t("What should the bot be asked?")}
+            className="w-full resize-none rounded-lg bg-inset px-2.5 py-2 text-[13.5px] text-ink outline-none placeholder:text-ink-tertiary" />
+          <div className="mt-2 flex items-center gap-2 text-[13px] text-ink-secondary">
+            <select aria-label={t("Repeat")} value={kind} onChange={(e) => setKind(e.target.value as "interval" | "daily")} className="h-8 rounded-lg bg-inset px-2 text-ink">
+              <option value="daily">{t("Every day at")}</option>
+              <option value="interval">{t("Every")}</option>
+            </select>
+            {kind === "daily" ? (
+              <input type="time" aria-label={t("Time of day")} value={at} onChange={(e) => setAt(e.target.value)} className="h-8 rounded-lg bg-inset px-2 text-ink" />
+            ) : (
+              <>
+                <input type="number" min={1} aria-label={t("Minutes")} value={every} onChange={(e) => setEvery(e.target.value)} className="h-8 w-20 rounded-lg bg-inset px-2 text-ink" />
+                <span>{t("minutes")}</span>
+              </>
+            )}
+          </div>
+          {error && <div role="alert" className="mt-2 text-[12.5px] text-danger">{error}</div>}
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={() => { setAdding(false); setError(""); }} className="rounded-full px-3 py-1 text-[13px] text-ink-secondary hover:bg-ink/10">{t("Cancel")}</button>
+            <button type="button" disabled={!text.trim()} onClick={save} className="rounded-full bg-accent px-3.5 py-1 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Save routine")}</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-full bg-raised px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-raised-hover"><Plus size={13} /> {t("Add a routine")}</button>
+      )}
+    </div>
   );
 }
 

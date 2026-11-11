@@ -98,3 +98,7 @@ Mọi so sánh dưới đây chạy với bản gốc đang chạy ở `localhos
 - `pnpm test:instant`: bấm từng skin trong Cài đặt, đo 28–43 ms đến khi `<html data-skin>` và màu nền đổi, không tải lại trang; rồi chuyển sang Tiếng Việt và duyệt 17 màn hình (chat, 4 trang cài đặt, bot panel gồm Activity/Inspector/Settings/Library/Computer, hộp thoại bot mới, bảng lệnh, tìm trong chat, menu +, phím tắt, menu chuột phải) để chắc không còn chuỗi giao diện tiếng Anh nào có trong từ điển.
 - Ngôn ngữ: `web/lib/i18n.ts` (khung: tiếng Anh là khoá, `useT()` cho chuỗi động, `useLocalizer()` dịch toàn bộ văn bản và placeholder/title/aria-label cố định, bỏ qua vùng `data-no-i18n` như nội dung tin nhắn và tên bot) và `web/lib/i18n-vi.ts` (bản dịch). `web/lib/i18n.test.ts` đọc mã nguồn các component, trích mọi chuỗi giao diện cố định và yêu cầu có bản dịch; hiện đủ 169 chuỗi.
 - `pnpm test:visual` chỉ là kiểm tra hồi quy với ảnh gốc do chính ứng dụng sinh ra.
+
+### Bổ sung: quy trình định kỳ (Routines)
+
+Bot panel có khối Routines như bản gốc và hoạt động thật (`server/botteam/routines.py`, `/api/bots/{id}/routines`): thêm quy trình gửi cho bot một tin nhắn mỗi N phút hoặc mỗi ngày lúc HH:MM, bật/tắt, chạy ngay, xoá. Bộ lập lịch kiểm tra mỗi 15 giây; bot đang bận thì quy trình vẫn "đến hạn" và chạy ở lượt sau (không bị bỏ). kiểm thử bằng `node scripts/routines.mjs` (chạy cả trong `pnpm test:ui`); phase 4 mở rộng thành tự động hóa đầy đủ.

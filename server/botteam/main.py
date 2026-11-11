@@ -19,10 +19,11 @@ from .broker import Broker
 from .bus import Bus
 from .config import ConfigStore
 from .registry import KEY_CATALOG, KEY_IDS, Registry
+from .routines import Scheduler, next_run_after, valid_schedule
 from .store import Store, data_dir, now_ms
 from .turns import Turns
 from .wire import (
-    BotDefaults, ConfigPatch, CreateBot, NoteBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
+    BotDefaults, ConfigPatch, CreateBot, NoteBody, RoutineBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
     PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage,
 )
 
@@ -55,6 +56,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     registry.broker = broker
     turns = Turns(store, bus, registry, home / "threads", broker=broker, attachments_dir=home / "attachments")
     turns_ref.append(turns)
+    scheduler = Scheduler(store, turns)
     attachments_dir = home / "attachments"
     broker.read_dirs.append(str(attachments_dir))
 
@@ -65,7 +67,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await broker.start()
         await registry.load()
         turns.start()
+        scheduler.start()
         yield
+        await scheduler.stop()
         await turns.stop()
         await broker.stop()
         await registry.stop_all()
@@ -444,6 +448,54 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             raise HTTPException(404, "note not found")
         return {"ok": True}
 
+    # ---- routines (a message sent to the bot on a schedule) --------------------------------------------
+    @app.get("/api/bots/{bot_id}/routines")
+    async def routines(bot_id: str):
+        await need(bot_id)
+        return {"routines": await store.list_routines(bot_id)}
+
+    @app.post("/api/bots/{bot_id}/routines", status_code=201)
+    async def add_routine(bot_id: str, body: RoutineBody):
+        await need(bot_id)
+        kind = body.kind or "interval"
+        why = valid_schedule(kind, body.everyMin, body.at)
+        if why or not body.text:
+            raise HTTPException(400, why or "a routine needs a message")
+        nxt = next_run_after(kind, body.everyMin, body.at, now_ms())
+        return await store.create_routine(bot_id, (body.title or body.text)[:60], body.text, kind, body.everyMin, body.at, nxt)
+
+    @app.patch("/api/bots/{bot_id}/routines/{routine_id}")
+    async def patch_routine(bot_id: str, routine_id: str, body: RoutineBody):
+        cur = await store.get_routine(bot_id, routine_id)
+        if not cur:
+            raise HTTPException(404, "routine not found")
+        f = body.model_dump(exclude_unset=True)
+        kind, every, at = f.get("kind", cur["kind"]), f.get("everyMin", cur["everyMin"]), f.get("at", cur["at"])
+        if {"kind", "everyMin", "at"} & f.keys():
+            why = valid_schedule(kind, every, at)
+            if why:
+                raise HTTPException(400, why)
+            f["nextRun"] = next_run_after(kind, every, at, now_ms())
+        if f.get("enabled") is True and not cur["enabled"]:
+            f["nextRun"] = next_run_after(kind, every, at, now_ms())
+        await store.update_routine(bot_id, routine_id, **f)
+        return await store.get_routine(bot_id, routine_id)
+
+    @app.delete("/api/bots/{bot_id}/routines/{routine_id}")
+    async def delete_routine(bot_id: str, routine_id: str):
+        if not await store.delete_routine(bot_id, routine_id):
+            raise HTTPException(404, "routine not found")
+        return {"ok": True}
+
+    @app.post("/api/bots/{bot_id}/routines/{routine_id}/run")
+    async def run_routine(bot_id: str, routine_id: str):
+        cur = await store.get_routine(bot_id, routine_id)
+        if not cur:
+            raise HTTPException(404, "routine not found")
+        if not await scheduler.fire(cur):
+            raise HTTPException(409, "the bot is still answering")
+        return await store.get_routine(bot_id, routine_id)
+
     # ---- search -------------------------------------------------------------------------------
     @app.get("/api/search")
     async def search(q: str = "", limit: int = 30):
@@ -540,6 +592,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         return EventSourceResponse(gen(), ping=None)
 
     app.state.turns, app.state.registry, app.state.store, app.state.broker = turns, registry, store, broker
+    app.state.scheduler = scheduler
     _ = now_ms
     return app
 

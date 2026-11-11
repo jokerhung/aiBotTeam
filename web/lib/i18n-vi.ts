@@ -93,10 +93,38 @@ export const vi: Record<string, string> = {
   "Link copied": "Đã sao chép liên kết", "Needs your answer": "Cần bạn trả lời", "Working…": "Đang làm việc…",
   Routines: "Quy trình định kỳ", Automations: "Tự động hóa", "Add a routine": "Thêm quy trình định kỳ", "Routines arrive with automations in phase 4": "Quy trình định kỳ sẽ có cùng tự động hóa ở phase 4",
   Today: "Hôm nay",
+  // routines
+  Manage: "Quản lý", "No routines yet. A routine sends this bot a message on a schedule.": "Chưa có quy trình định kỳ. Quy trình định kỳ gửi cho bot này một tin nhắn theo lịch.",
+  Enabled: "Bật", "Run now": "Chạy ngay", "Delete routine": "Xóa quy trình định kỳ", "Next run": "Lần chạy kế", "Routine message": "Nội dung quy trình định kỳ",
+  "What should the bot be asked?": "Bot cần được yêu cầu điều gì?", Repeat: "Lặp lại", "Every day at": "Mỗi ngày lúc", Every: "Mỗi", "Time of day": "Giờ trong ngày",
+  Minutes: "Số phút", minutes: "phút", "Save routine": "Lưu quy trình định kỳ", "Could not save": "Không thể lưu", "Could not do that": "Không thể thực hiện",
+  // messages from the server
+  "that path is outside the working folder": "đường dẫn đó nằm ngoài thư mục làm việc", "the file is empty": "tệp trống",
+  "the main conversation cannot be deleted": "không thể xóa cuộc trò chuyện chính", "unknown approval mode": "mức duyệt không hợp lệ",
+  "that folder cannot be read": "không đọc được thư mục đó", "attachment not found": "không tìm thấy tệp đính kèm", "bot not found": "không tìm thấy bot",
+  "conversation not found": "không tìm thấy cuộc trò chuyện", "engine not found": "không tìm thấy công cụ AI", "folder not found": "không tìm thấy thư mục",
+  "message not found": "không tìm thấy tin nhắn", "note not found": "không tìm thấy ghi chú", "rule not found": "không tìm thấy quy tắc",
+  "section not found": "không tìm thấy nhóm", "routine not found": "không tìm thấy quy trình định kỳ", "that message is not waiting": "tin nhắn đó không còn trong hàng chờ",
+  "that request is no longer open": "yêu cầu đó không còn mở", "that request was already answered": "yêu cầu đó đã được trả lời",
+  "the bot is still answering": "bot vẫn đang trả lời", "this engine cannot read images": "công cụ AI này không đọc được ảnh",
+  "a routine needs a message": "quy trình định kỳ cần có nội dung", "a daily routine needs a time like 09:30": "quy trình hằng ngày cần giờ dạng 09:30",
+  "unknown schedule kind": "kiểu lịch không hợp lệ", "The turn failed.": "Lượt trả lời thất bại.", "Simulated failure": "Lỗi giả lập",
+  "The bot is still answering. Stop it first.": "Bot vẫn đang trả lời. Hãy dừng nó trước.", Stopped: "Đã dừng",
+  "No answer was given in time.": "Không có câu trả lời kịp thời.",
 };
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */
 export const viPatterns: [RegExp, string][] = [
+  [/^Daily at (.+)$/, "Hằng ngày lúc $1"],
+  [/^Every (\d+) min$/, "Mỗi $1 phút"],
+  [/^unknown key: (.+)$/, "khoá không hợp lệ: $1"],
+  [/^files are limited to (\d+) MB$/, "tệp bị giới hạn $1 MB"],
+  [/^an interval must be between (\d+) and (\d+) minutes$/, "khoảng lặp phải từ $1 đến $2 phút"],
+  [/^Could not start (Claude Code|Codex|the turn): (.+)$/, "Không thể khởi động $1: $2"],
+  [/^(Claude Code|Codex) exited unexpectedly(.*)$/, "$1 thoát đột ngột$2"],
+  [/^Endpoint error: (.+)$/, "Lỗi điểm cuối: $1"],
+  [/^(.+) is unavailable: (.+)$/, "$1 không khả dụng: $2"],
+  [/^Could not retry: (.+)$/, "Không thể thử lại: $1"],
   [/^Deleted (.+)$/, "Đã xóa $1"],
   [/^Move to (.+)$/, "Chuyển tới $1"],
   [/^Actions for (.+)$/, "Thao tác cho $1"],

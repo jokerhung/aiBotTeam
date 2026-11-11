@@ -128,6 +128,17 @@ for (const row of ["Hoạt động", "Trình kiểm tra"]) {
   await check(`bot panel: ${row}`);
   await page.getByRole("button", { name: "Quay lại" }).click();
 }
+await page.getByTestId("panel-overview").getByRole("button", { name: "Thêm quy trình định kỳ" }).click();
+await check("bot panel: routines (empty)");
+await page.getByTestId("routines-view").getByRole("button", { name: "Thêm quy trình định kỳ" }).click();
+await page.getByLabel("Nội dung quy trình định kỳ").fill("thử");
+await page.getByLabel("Lặp lại").selectOption("interval");
+await page.getByLabel("Số phút").fill("0");
+await page.getByRole("button", { name: "Lưu quy trình định kỳ" }).click();
+await expect("server error in Vietnamese", page.getByTestId("routine-form").getByText("khoảng lặp phải từ 1 đến 10080 phút"));
+await check("bot panel: routines form");
+await page.getByRole("button", { name: "Hủy" }).click();
+await page.getByRole("button", { name: "Quay lại" }).click();
 await page.getByRole("button", { name: "Cài đặt bot" }).click();
 await check("bot panel: bot settings");
 for (const tab of ["Thư viện", "Máy tính"]) {

@@ -46,4 +46,20 @@ describe("Vietnamese interface", () => {
     ];
     for (const [en, out] of cases) expect(translate("vi", en), en).toBe(out);
   });
+
+  it("knows every fixed message the server can send", () => {
+    const serverDir = join(__dirname, "..", "..", "server", "botteam");
+    const found = new Set<string>();
+    const grab = (file: string, re: RegExp) => { for (const m of readFileSync(join(serverDir, file), "utf8").matchAll(re)) found.add(m[1]); };
+    grab("main.py", /HTTPException\(\d+, "([^"{}]+)"\)/g);
+    grab("routines.py", /return "([^"{}]+)"/g);
+    grab("turns.py", /_add_error\([^"\n]*"([^"{}]+)"/g);
+    grab("drivers/echo.py", /message="([^"{}]+)"/g);
+    const missing = [...found].filter((m) => /\s/.test(m) && translate("vi", m) === m); // words alone are keys, not sentences
+    expect(missing).toEqual([]);
+    // messages with a value inside
+    for (const sample of ["unknown key: groq", "files are limited to 100 MB", "Could not start Codex: boom", "Claude Code exited unexpectedly: x", "Endpoint error: 500", "an interval must be between 1 and 10080 minutes"]) {
+      expect(translate("vi", sample), sample).not.toBe(sample);
+    }
+  });
 });
