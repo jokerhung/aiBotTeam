@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +18,8 @@ from .turns import Turns
 from .wire import (
     CreateBot, CreateInstance, CreateTask, LeafBody, OrderBody, PatchBot, PatchInstance, PatchTask, SendMessage,
 )
+
+WEB_PORT = os.environ.get("WEB_PORT", "5299")
 
 CONFIG_FRAME = {"kind": "config", "version": "0.2.0", "needsSetup": False}
 
@@ -41,7 +44,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     app = FastAPI(title="BotTeam", lifespan=lifespan)
     app.add_middleware(
-        CORSMiddleware, allow_origins=["http://127.0.0.1:5299", "http://localhost:5299"],
+        CORSMiddleware, allow_origins=[f"http://127.0.0.1:{WEB_PORT}", f"http://localhost:{WEB_PORT}"],
         allow_methods=["*"], allow_headers=["*"],
     )
 
