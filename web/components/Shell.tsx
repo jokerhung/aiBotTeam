@@ -2,6 +2,11 @@
 import { Loader2 } from "lucide-react";
 import { useStore } from "@/state/store";
 import { ChatView } from "./ChatView";
+import { AutomationsPage } from "./AutomationsPage";
+import { TeamMapPage } from "./TeamMapPage";
+import { GroupPanelHost, GroupView } from "./GroupView";
+import { InboxPanel, NotificationsPanel } from "./NotificationsPanel";
+import { NewGroupDialog } from "./NewGroupDialog";
 import { BotPanel } from "./BotPanel";
 import { CommandPalette } from "./CommandPalette";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
@@ -10,13 +15,16 @@ import { SettingsModal } from "./SettingsModal";
 import { Toaster } from "./Toaster";
 import { useLocalizer } from "@/lib/i18n";
 import { useGlobalBehaviors } from "./useGlobalBehaviors";
+import { useTeamBehaviors } from "./useTeamBehaviors";
 import { Sidebar } from "./Sidebar";
 
 export function Shell() {
   const { state, dispatch } = useStore();
   useGlobalBehaviors();
+  useTeamBehaviors();
   useLocalizer();
   const bot = state.bots.find((b) => b.id === state.selectedId);
+  const group = state.groups.find((g) => g.id === state.selectedGroupId);
   const noRealEngine = !state.instances.some((i) => i.driver !== "echo" && i.snapshot.state === "available" && i.snapshot.signedIn !== false);
   return (
     <div className="flex h-full flex-col">
@@ -32,7 +40,18 @@ export function Shell() {
       )}
       <div className="relative flex min-h-0 flex-1">
         <Sidebar />
-        {bot ? (
+        {state.teamMapOpen ? (
+          <TeamMapPage />
+        ) : state.automationsOpen ? (
+          <AutomationsPage />
+        ) : state.inboxOpen ? (
+          <InboxPanel />
+        ) : group ? (
+          <>
+            <GroupView key={group.id} group={group} />
+            <GroupPanelHost group={group} />
+          </>
+        ) : bot ? (
           <>
             <ChatView key={bot.id} bot={bot} />
             {state.panelBotId === bot.id && <BotPanel key={`panel-${bot.id}`} bot={bot} />}
@@ -61,7 +80,9 @@ export function Shell() {
             )}
           </main>
         )}
+        <NotificationsPanel />
       </div>
+      <NewGroupDialog />
       <NewBotDialog />
       <SettingsModal />
       <CommandPalette />

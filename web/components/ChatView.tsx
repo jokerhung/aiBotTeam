@@ -17,6 +17,7 @@ import { ModelMenu } from "./ModelMenu";
 import { TaskMenu } from "./TaskMenu";
 import { ToolChip } from "./ToolChip";
 import { TurnPresence } from "./TurnPresence";
+import { RoutineCard, ThreadRefCard, WaitingForTeammates } from "./TeamCards";
 
 const FLOAT_PILL =
   "bg-composer ring-[0.5px] ring-ink/10 shadow-(--shadow-float) transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]";
@@ -84,6 +85,8 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
     const lastOpen = [...list].reverse().find((x) => x.kind === "request" && x.request?.status === "open");
     return <RequestCard m={m} thread={bot.threadId} active={lastOpen?.id === m.id} bot={bot} />;
   }
+  if (m.kind === "routine" && m.routine) return <RoutineCard m={m} />;
+  if (m.threadRef) return <ThreadRefCard m={m} />;
   if (m.kind === "stopped" || m.kind === "notice") {
     return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;
   }
@@ -138,6 +141,9 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
               (m.pending || m.queued) && "opacity-60",
             )}
           >
+            {m.sender && (
+              <div data-no-i18n="" className="mb-0.5 text-[11.5px] font-medium opacity-80">{m.sender}</div>
+            )}
             {mine ? (
               <>
                 {m.attachments && m.attachments.length > 0 && <AttachmentGallery items={m.attachments} />}
@@ -304,7 +310,8 @@ export function ChatView({ bot }: { bot: Bot }) {
                 </div>
               );
             })}
-            {bot.threadBusy && <TurnPresence bot={bot} hasLiveText={liveText} />}
+            {bot.threadBusy && !bot.waitingFor?.length && <TurnPresence bot={bot} hasLiveText={liveText} />}
+            <WaitingForTeammates bot={bot} />
           </div>
         </div>
         {!atBottom && (

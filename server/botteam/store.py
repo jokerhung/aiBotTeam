@@ -114,7 +114,7 @@ class Store:
 
     async def save_bot(self, bot: WireBot) -> None:
         body = bot.model_copy(update={"tasks": [], "busy": False, "threadBusy": False, "statusLine": None, "turnStartedAt": None,
-                                      "activity": "idle", "usage": {}}).model_dump_json()
+                                      "activity": "idle", "usage": {}, "waitingFor": []}).model_dump_json()
         cur = await self.db.execute("SELECT pos FROM bots WHERE id=?", (bot.id,))
         if await cur.fetchone():
             await self.db.execute("UPDATE bots SET body=? WHERE id=?", (body, bot.id))
@@ -574,68 +574,6 @@ class Store:
         await self.db.execute("DROP TABLE routines")
         await self.db.commit()
         return n
-
-    # ---- notifications --------------------------------------------------------------------------------------------------
-    @staticmethod
-    def _note(r) -> dict[str, Any]:
-        return {"id": r[0], "at": r[1], "kind": r[2], "title": r[3], "body": r[4], "targetKind": r[5], "targetId": r[6], "threadId": r[7], "read": bool(r[8])}
-
-    async def add_notification(self, kind: str, title: str, body: str, target_kind: str, target_id: str, thread_id: Optional[str]) -> dict[str, Any]:
-        nid = new_id("nt")
-        await self.db.execute("INSERT INTO notifications(id, at, kind, title, body, target_kind, target_id, thread_id) VALUES(?,?,?,?,?,?,?,?)",
-                              (nid, now_ms(), kind, title, body, target_kind, target_id, thread_id))
-        await self.db.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY at DESC LIMIT 300)")  # the log is bounded
-        await self.db.commit()
-        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications WHERE id=?", (nid,))
-        return self._note(await cur.fetchone())
-
-    async def list_notifications(self, limit: int = 100) -> list[dict[str, Any]]:
-        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications ORDER BY at DESC, id DESC LIMIT ?", (limit,))
-        return [self._note(r) for r in await cur.fetchall()]
-
-    async def mark_notifications_read(self, ids: Optional[list[str]]) -> list[str]:
-        if ids is None:
-            cur = await self.db.execute("SELECT id FROM notifications WHERE read=0")
-            ids = [r[0] for r in await cur.fetchall()]
-        for i in ids:
-            await self.db.execute("UPDATE notifications SET read=1 WHERE id=?", (i,))
-        await self.db.commit()
-        return ids
-
-    async def clear_notifications(self) -> None:
-        await self.db.execute("DELETE FROM notifications")
-        await self.db.commit()
-
-    # ---- notifications --------------------------------------------------------------------------------------------------
-    @staticmethod
-    def _note(r) -> dict[str, Any]:
-        return {"id": r[0], "at": r[1], "kind": r[2], "title": r[3], "body": r[4], "targetKind": r[5], "targetId": r[6], "threadId": r[7], "read": bool(r[8])}
-
-    async def add_notification(self, kind: str, title: str, body: str, target_kind: str, target_id: str, thread_id: Optional[str]) -> dict[str, Any]:
-        nid = new_id("nt")
-        await self.db.execute("INSERT INTO notifications(id, at, kind, title, body, target_kind, target_id, thread_id) VALUES(?,?,?,?,?,?,?,?)",
-                              (nid, now_ms(), kind, title, body, target_kind, target_id, thread_id))
-        await self.db.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY at DESC LIMIT 300)")  # the log is bounded
-        await self.db.commit()
-        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications WHERE id=?", (nid,))
-        return self._note(await cur.fetchone())
-
-    async def list_notifications(self, limit: int = 100) -> list[dict[str, Any]]:
-        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications ORDER BY at DESC, id DESC LIMIT ?", (limit,))
-        return [self._note(r) for r in await cur.fetchall()]
-
-    async def mark_notifications_read(self, ids: Optional[list[str]]) -> list[str]:
-        if ids is None:
-            cur = await self.db.execute("SELECT id FROM notifications WHERE read=0")
-            ids = [r[0] for r in await cur.fetchall()]
-        for i in ids:
-            await self.db.execute("UPDATE notifications SET read=1 WHERE id=?", (i,))
-        await self.db.commit()
-        return ids
-
-    async def clear_notifications(self) -> None:
-        await self.db.execute("DELETE FROM notifications")
-        await self.db.commit()
 
     # ---- notifications --------------------------------------------------------------------------------------------------
     @staticmethod

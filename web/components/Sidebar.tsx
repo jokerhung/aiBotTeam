@@ -1,14 +1,15 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Hash, Trash2, User } from "lucide-react";
+import { Archive, Bell, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Bot, SearchHit, Section } from "@/lib/wire";
+import type { Bot, Group, SearchHit, Section } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { BotActionsButton, BotContextMenu, deleteBotWithUndo } from "./BotContextMenu";
+import { GroupAvatar } from "./GroupAvatar";
 import { Mascot } from "./Mascot";
 
 const MIN_W = 240;
@@ -126,6 +127,53 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
   );
 }
 
+function GroupRow({ group, selected, icons, onSelect }: { group: Group; selected: boolean; icons: boolean; onSelect: () => void }) {
+  const waiting = group.activity === "waiting-on-you";
+  return (
+    <div className="group relative">
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid="group-row"
+        data-no-i18n=""
+        title={group.name}
+        onClick={onSelect}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect())}
+        className={cn("flex w-full cursor-pointer items-center gap-2 rounded-[8px] py-2 pl-2 pr-2 text-left transition-colors duration-150 md:h-[54px] md:py-0", selected ? "bg-raised" : "hover:bg-raised/50", icons && "justify-center px-0")}
+      >
+        <GroupAvatar members={group.memberInfo} size={40} />
+        <div className={cn("min-w-0 flex-1", icons && "sr-only")}>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="min-w-0 grow truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+            <span className="shrink-0 text-[11px] tabular-nums text-ink-tertiary">{group.memberInfo.length}</span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className={cn("min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary", waiting && "font-medium text-warning")}>
+              {waiting ? tr("Needs your answer") : group.busy ? tr("Working…") : group.lastText || group.memberInfo.map((m) => m.name).join(", ")}
+            </span>
+            {waiting ? <span aria-label="Needs your attention" className="ms-auto size-2 shrink-0 rounded-full bg-warning" /> : group.unread && <span aria-label="Unread" className="ms-auto size-2 shrink-0 rounded-full bg-accent" />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewMenu({ icons }: { icons: boolean }) {
+  const { dispatch } = useStore();
+  const [open, setOpen] = useState(false);
+  const item = "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[14px] hover:bg-menu-hover";
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger title="New or share" aria-label="New or share" className={PILL}><Plus size={18} /></PopoverTrigger>
+      <PopoverContent side="bottom" align={icons ? "start" : "end"} className="w-[230px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
+        <button type="button" className={item} onClick={() => { setOpen(false); dispatch({ type: "newBot", open: true }); }}><UserPlus size={15} /> {tr("New bot")}</button>
+        <button type="button" data-testid="new-group-item" className={item} onClick={() => { setOpen(false); dispatch({ type: "newGroup", open: true }); }}><Users size={15} /> {tr("New group chat")}</button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function SectionHeader({ section, count, drag }: { section: Section; count: number; drag: DragApi }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(section.name);
@@ -178,6 +226,8 @@ function ProfileMenu({ icons }: { icons: boolean }) {
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-[230px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
         <div className="px-2.5 pb-1.5 pt-1 text-[13px] font-medium text-ink-secondary">{name}</div>
+        <button type="button" data-testid="open-automations" onClick={() => { setOpen(false); dispatch({ type: "automations", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><CalendarClock size={15} /> Automations</button>
+        <button type="button" data-testid="open-team-map" onClick={() => { setOpen(false); dispatch({ type: "teamMap", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Network size={15} /> Team map</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "settings", open: true, page: "general" }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Settings size={15} /> Settings</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "shortcuts", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Keyboard size={15} /> Keyboard shortcuts</button>
       </PopoverContent>
@@ -263,6 +313,12 @@ export function Sidebar() {
   const sectionIds = new Set(state.sections.map((s) => s.id));
   const loose = unpinned.filter((b) => !b.section || !sectionIds.has(b.section));
 
+  const visibleGroups = useMemo(() => state.groups.filter((g) => !g.hidden && (!needle || g.name.toLowerCase().includes(needle))), [state.groups, needle]);
+  const selectGroup = (g: Group) => {
+    dispatch({ type: "selectGroup", id: g.id });
+    if (g.unread) api(`/api/groups/${g.id}/read`, { method: "POST" }).catch(() => {});
+  };
+  const groupRow = (g: Group) => <GroupRow key={g.id} group={g} icons={icons} selected={g.id === state.selectedGroupId} onSelect={() => selectGroup(g)} />;
   const select = (b: Bot) => {
     dispatch({ type: "select", id: b.id });
     if (b.unread) api(`/api/bots/${b.id}/read`, { method: "POST" }).catch(() => {});
@@ -286,7 +342,7 @@ export function Sidebar() {
     },
   };
 
-  const row = (b: Bot) => <BotRow key={b.id} bot={b} icons={icons} selected={b.id === state.selectedId} onSelect={() => select(b)} drag={drag} />;
+  const row = (b: Bot) => <BotRow key={b.id} bot={b} icons={icons} selected={b.id === state.selectedId && !state.selectedGroupId && !state.automationsOpen && !state.teamMapOpen && !state.inboxOpen} onSelect={() => select(b)} drag={drag} />;
   const addSection = async () => {
     const name = window.prompt(tr("Name of the new section"));
     if (name?.trim()) await api("/api/sidebar-sections", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
@@ -315,9 +371,11 @@ export function Sidebar() {
               <button type="button" title="Search bots and messages" aria-expanded={searching} onClick={() => setSearching((v) => !v)} className={PILL}>
                 <Search size={16} />
               </button>
-              <button type="button" title="New bot" onClick={() => dispatch({ type: "newBot", open: true })} className={PILL}>
-                <Plus size={18} />
+              <button type="button" title="Notifications" aria-label="Notifications" aria-pressed={state.notifOpen} onClick={() => dispatch({ type: "notifPanel", open: !state.notifOpen })} className={cn(PILL, "relative")}>
+                <Bell size={16} />
+                {state.notifications.some((n) => !n.read) && <span data-testid="notif-dot" className="absolute right-1.5 top-1.5 size-2 rounded-full bg-accent ring-2 ring-composer" />}
               </button>
+              <NewMenu icons={icons} />
             </div>
           </div>
           {searching && !icons && (
@@ -338,12 +396,16 @@ export function Sidebar() {
             <button
               type="button"
               title="Inbox"
-              className={cn("flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none hover:bg-raised/60", icons && "justify-center")}
+              data-testid="inbox-button"
+              onClick={() => dispatch({ type: "inboxPanel", open: !state.inboxOpen })}
+              className={cn("flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none hover:bg-raised/60", icons && "justify-center", state.inboxOpen && "bg-raised")}
             >
               <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-raised text-ink-secondary">
                 <Inbox size={16} />
+                {state.inbox.length > 0 && icons && <span className="absolute right-0 top-0 size-3 rounded-full bg-warning ring-2 ring-panel" />}
               </span>
               {!icons && <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-ink">{t("Inbox")}</span>}
+              {!icons && state.inbox.length > 0 && <span data-testid="inbox-count" className="mr-9 rounded-full bg-warning px-1.5 text-[11.5px] font-semibold leading-5 text-[var(--color-danger-ink)]">{state.inbox.length}</span>}
             </button>
             {!icons && (
               <button type="button" title="Select bots" aria-label="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })}
@@ -358,19 +420,22 @@ export function Sidebar() {
             onDragOver={(e) => { if (dragging) e.preventDefault(); }}
             onDrop={(e) => { e.preventDefault(); if (dragging) drag.drop(dragging, null, null); }}>
             <div className="flex flex-col gap-0.5 pb-2">
+              {visibleGroups.filter((g) => g.pinned).map(groupRow)}
               {pinned.map(row)}
+              {visibleGroups.filter((g) => !g.pinned && (!g.section || !sectionIds.has(g.section))).map(groupRow)}
               {loose.map(row)}
               {!icons && state.sections.map((s) => {
                 const inSection = unpinned.filter((b) => b.section === s.id);
-                if (needle && !inSection.length) return null;
+                const groupsIn = visibleGroups.filter((g) => !g.pinned && g.section === s.id);
+                if (needle && !inSection.length && !groupsIn.length) return null;
                 return (
                   <div key={s.id}>
-                    <SectionHeader section={s} count={inSection.length} drag={drag} />
-                    {!s.collapsed && <div className="flex flex-col gap-0.5">{inSection.map(row)}</div>}
+                    <SectionHeader section={s} count={inSection.length + groupsIn.length} drag={drag} />
+                    {!s.collapsed && <div className="flex flex-col gap-0.5">{groupsIn.map(groupRow)}{inSection.map(row)}</div>}
                   </div>
                 );
               })}
-              {needle && !visible.length && hits.length === 0 && <div className="px-2 py-6 text-center text-[13px] text-ink-tertiary">{`No bots match “${q.trim()}”.`}</div>}
+              {needle && !visible.length && !visibleGroups.length && hits.length === 0 && <div className="px-2 py-6 text-center text-[13px] text-ink-tertiary">{`No bots match “${q.trim()}”.`}</div>}
               {!icons && !needle && (
                 <button type="button" onClick={addSection} className="mt-2 self-start rounded-md px-2 py-1 text-[12px] text-ink-tertiary hover:bg-raised/60 hover:text-ink">{t("+ New section")}</button>
               )}

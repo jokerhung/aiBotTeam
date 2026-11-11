@@ -9,10 +9,12 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const serverPort = process.env.SERVER_PORT || "8899";
 const webPort = process.env.WEB_PORT || "5299";
+const hookPort = process.env.WEBHOOK_PORT || "8900";
 const env = {
   ...process.env,
   SERVER_PORT: serverPort,
   WEB_PORT: webPort,
+  WEBHOOK_PORT: hookPort,
   BOTTEAM_API: process.env.BOTTEAM_API || `http://127.0.0.1:${serverPort}`,
 };
 

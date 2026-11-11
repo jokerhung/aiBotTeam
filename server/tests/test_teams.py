@@ -55,7 +55,10 @@ async def test_handing_work_to_an_ancestor_or_stranger_is_refused_not_thrown(ctx
     await c.post(f"/api/bots/{a['id']}/messages", json={"text": "/coordinate Alpha, Nobody | circular"})
     reply = await wait_until(lambda: _bot_text(c, a, "Handed out:"))
     assert "refused (ancestor)" in reply and "refused (unknown_bot)" in reply
-    assert await app.state.runtime.check_invariants() == []
+
+    async def clean():  # the turn that printed the reply is still closing its root for a moment
+        return await app.state.runtime.check_invariants() == []
+    await wait_until(clean)
 
 
 async def _bot_text(c, bot, needle):
@@ -108,3 +111,24 @@ async def test_the_team_tools_answer_from_the_bridge_over_the_broker_socket(ctx)
     bad = json.loads(await asyncio.wait_for(r.readline(), 3))
     assert bad["agent"]["ok"] is False and bad["agent"]["reason"] == "unknown_tool"
     w.close()
+
+
+async def test_a_chief_with_sections_hands_work_only_inside_them(ctx):
+    c, app = ctx
+    a, b, cc = await make_bot(c, "Chiefy"), await make_bot(c, "Inside"), await make_bot(c, "Outside")
+    sec = (await c.post("/api/sidebar-sections", json={"name": "Ship"})).json()
+    await c.patch(f"/api/bots/{b['id']}", json={"section": sec["id"]})
+    shown = (await c.patch(f"/api/bots/{a['id']}", json={"chief": True, "managedSections": [sec["id"]]})).json()
+    assert shown["managedSections"] == [sec["id"]]
+    app.state.turns.runs["tx"] = type("R", (), {"bot_id": a["id"], "group_id": None, "assignment_id": None, "origin": "person", "level": None, "started_at": 0, "label": None})()
+    out = await app.state.agents.call("tx", "coordinate_bots", {"bot_ids": [b["id"], cc["id"]], "message": "write the notes", "reply": "none"})
+    app.state.turns.runs.pop("tx")
+    by = {r["bot"]: r for r in out["results"]}
+    assert by["Inside"]["ok"] is True
+    assert by["Outside"]["ok"] is False and by["Outside"]["reason"] == "outside_scope"
+    await wait_until(lambda: _idle(c, b))
+
+
+async def _idle(c, bot):
+    bots = (await c.get("/api/bots")).json()["bots"]
+    return not next(x for x in bots if x["id"] == bot["id"])["busy"]

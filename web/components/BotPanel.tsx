@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Bug, CalendarPlus, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Play, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
+import { Bug, CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Play, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
 import { locale, useT } from "@/lib/i18n";
@@ -70,6 +70,7 @@ function ModelPicker({ value, onChange, allowNone }: { value: ModelSelection | n
 }
 
 function SettingsForm({ bot }: { bot: Bot }) {
+  const { state } = useStore();
   const name = useSaved(bot, "name", bot.name);
   const title = useSaved(bot, "title", bot.title);
   const desc = useSaved(bot, "description", bot.description);
@@ -107,6 +108,22 @@ function SettingsForm({ bot }: { bot: Bot }) {
             if (e.target.checked && typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
           }} /> Notify me
         </label>
+      </Field>
+      <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">
+        <label className="flex items-center gap-2 text-[14px] text-ink">
+          <input type="checkbox" checked={bot.chief} onChange={(e) => void queuePatch(bot.id, { chief: e.target.checked })} /> Chief of Staff
+        </label>
+        {bot.chief && state.sections.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1" role="group" aria-label="Sections it manages">
+            {state.sections.map((sec) => (
+              <label key={sec.id} className="flex items-center gap-2 text-[13.5px] text-ink-secondary">
+                <input type="checkbox" checked={bot.managedSections?.includes(sec.id) ?? false}
+                  onChange={(e) => void queuePatch(bot.id, { managedSections: e.target.checked ? [...(bot.managedSections ?? []), sec.id] : (bot.managedSections ?? []).filter((x) => x !== sec.id) })} />
+                <span data-no-i18n="">{sec.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </Field>
     </div>
   );
@@ -155,6 +172,7 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
         <button type="button" onClick={() => go("routines")} className="text-[13px] font-normal text-ink-tertiary hover:text-ink">{t("Manage")}</button>
       </div>
       <Row icon={CalendarPlus} label={t("Add a routine")} onClick={() => go("routines")} />
+      <Row icon={CalendarClock} label={t("Automations")} chevron onClick={() => dispatch({ type: "automations", open: true })} />
     </div>
   );
 }

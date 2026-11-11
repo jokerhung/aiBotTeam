@@ -118,12 +118,123 @@ export interface Bot {
   approvalMode: ApprovalMode;
   soul: string;
   chief: boolean;
+  managedSections?: string[];
   fallbackSelection: ModelSelection | null;
   lastText: string;
   lastAt: number | null;
   readAt: number;
   tasks: Task[];
   usage: { input?: number; output?: number; turns?: number; cost?: number };
+  waitingFor?: string[];
+}
+
+export interface MemberInfo { id: string; name: string; color: MausColor; title: string }
+export interface QueueEntry { id: string; botId: string; name: string; state: "waiting" | "running"; reason: string; text: string }
+export type Responder = "leader" | "auto" | "mention";
+
+export interface Group {
+  id: string;
+  threadId: string;
+  mainThreadId: string;
+  name: string;
+  members: string[];
+  memberInfo: MemberInfo[];
+  leader: string | null;
+  instructions: string;
+  cwd: string | null;
+  responder: Responder;
+  section: string | null;
+  pinned: boolean;
+  hidden: boolean;
+  unread: boolean;
+  busy: boolean;
+  activity: "working" | "waiting-on-you" | "idle";
+  queue: QueueEntry[];
+  lastText: string;
+  lastAt: number | null;
+  readAt: number;
+  tasks: Task[];
+}
+
+export interface Routine {
+  id: string;
+  name: string;
+  title: string;
+  prompt: string;
+  text: string;
+  targetKind: "bot" | "group";
+  targetId: string;
+  botId: string | null;
+  kind: "interval" | "daily" | "weekly" | "once";
+  everyMin: number | null;
+  at: string | null;
+  days: number[] | null;
+  runAt: number | null;
+  tz: string | null;
+  maxRunMin: number | null;
+  enabled: boolean;
+  nextRun: number | null;
+  lastRun: number | null;
+  schedule: string;
+  createdBy?: string;
+}
+
+export interface RoutineRun {
+  id: string;
+  routineId: string;
+  status: "running" | "done" | "failed" | "skipped" | "cancelled" | "timeout" | "stopped";
+  startedAt: number;
+  finishedAt: number | null;
+  threadId: string | null;
+  detail: string;
+  durationMs: number | null;
+}
+
+export interface Webhook {
+  id: string;
+  name: string;
+  targetId: string;
+  prompt: string;
+  auth: "bearer" | "url";
+  enabled: boolean;
+  url: string;
+  hasSecret: boolean;
+  awaitingReveal: boolean;
+  lastAt: number | null;
+  createdBy?: string;
+}
+
+export interface WebhookAttempt { id: string; webhookId: string; at: number; status: number; result: string; size: number; ip: string }
+
+export interface Notification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  at: number;
+  read: boolean;
+  targetKind: "bot" | "group";
+  targetId: string;
+  threadId: string | null;
+}
+
+export interface InboxItem {
+  requestId: string;
+  type: "permission" | "question";
+  tool: string;
+  summary: string;
+  command?: string | null;
+  cwd?: string | null;
+  canAlways: boolean;
+  choices: string[];
+  questions: RequestQuestion[];
+  openedAt: number;
+  threadId: string;
+  botId: string | null;
+  botName: string;
+  botColor: MausColor;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 export interface ToolInfo {
@@ -145,7 +256,7 @@ export interface ErrorInfo {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "activity" | "error" | "stopped" | "notice" | "request";
+  kind: "text" | "activity" | "error" | "stopped" | "notice" | "request" | "routine";
   text: string;
   at: number;
   sendId?: string | null;
@@ -159,6 +270,11 @@ export interface Message {
   attachments?: Attachment[];
   siblings?: string[];
   pending?: boolean;
+  sender?: string | null;
+  author?: string | null;
+  mentions?: string[];
+  threadRef?: { botId: string; bot: string; threadId?: string | null; assignmentId?: string } | null;
+  routine?: { id: string; name: string; schedule: string; enabled: boolean; webhook?: boolean } | null;
 }
 
 export type ServerFrame =
@@ -171,7 +287,18 @@ export type ServerFrame =
   | { kind: "thread"; botId: string; threadId: string; activeLeafId: string }
   | { kind: "message"; botId: string; threadId: string; message: Message }
   | { kind: "message.patch"; botId: string; threadId: string; message: Partial<Message> & { id: string } }
-  | { kind: "message.deleted"; botId: string; threadId: string; messageId: string };
+  | { kind: "message.deleted"; botId: string; threadId: string; messageId: string }
+  | { kind: "group"; group: Group }
+  | { kind: "group.deleted"; groupId: string }
+  | { kind: "routine"; routine: Routine }
+  | { kind: "routine.deleted"; routineId: string }
+  | { kind: "routine.run"; run: RoutineRun }
+  | { kind: "webhook"; webhook: Webhook }
+  | { kind: "webhook.deleted"; webhookId: string }
+  | { kind: "webhook.attempt"; attempt: WebhookAttempt }
+  | { kind: "notify"; notification: Notification }
+  | { kind: "notifications.read"; ids: string[]; cleared?: boolean }
+  | { kind: "assignment"; [k: string]: unknown };
 
 export interface ModelOption {
   id: string;

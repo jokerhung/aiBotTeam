@@ -103,6 +103,10 @@ class Turns:
             return await self.store.get_bot(run.bot_id)
         return await self.store.bot_of_thread(thread_id)
 
+    def _owner_for(self, thread_id: str, bot_id: str) -> str:
+        run = self.runs.get(thread_id)
+        return run.group_id if run and run.group_id else bot_id
+
     def _owner(self, bot: WireBot, thread_id: str) -> str:
         """Whose messages these are in the store: the bot's own, or the room's when a room turn is running."""
         run = self.runs.get(thread_id)
@@ -129,14 +133,6 @@ class Turns:
         self.req_msgs[req["id"]] = m.id
         self._frame("message", bot.id, thread_id, m)
         await self.publish_bot(bot)
-        if self.notify:
-            grp = await self.store.group_of_thread(thread_id)
-            await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
-                                  target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
-        if self.notify:
-            grp = await self.store.group_of_thread(thread_id)
-            await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
-                                  target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
         if self.notify:
             grp = await self.store.group_of_thread(thread_id)
             await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
@@ -170,10 +166,23 @@ class Turns:
         out = bot.model_copy(update={
             "tasks": tasks, "busy": bool(runs), "threadBusy": active is not None,
             "activity": "waiting-on-you" if waiting else ("working" if runs else "idle"),
-            "turnStartedAt": min((r.started_at for r in runs), default=None),
+            "turnStartedAt": min((r.started_at for r in runs), default=None), "waitingFor": await self._waiting_for(bot),
             "statusLine": active.label if active else None, "usage": usage,
         })
         return out.model_dump()
+
+    async def _waiting_for(self, bot: WireBot) -> list[str]:
+        """Teammates the conversation on screen is waiting on, from the job runtime."""
+        if not self.runtime or not self.host:
+            return []
+        try:
+            node = await self.runtime.node_for_thread(bot.threadId)
+            if not node or node["status"] not in ("waiting", "running", "needs_input"):
+                return []
+            kids = [k for k in await self.runtime.children(node["id"]) if k["reply"] != "none" and k["status"] in ("queued", "running", "waiting", "needs_input", "resume")]
+            return [self.host.bot_name(k["assignee_bot"]) for k in kids]
+        except Exception:
+            return []
 
     async def publish_bot(self, bot: WireBot) -> None:
         if self.host:
@@ -477,12 +486,6 @@ class Turns:
             await self.store.patch_thread(thread_id, usage=u)
         self.runs.pop(thread_id, None)
         await self._after_turn(thread_id, run, d)
-        if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
-            grp = await self.store.group_of_thread(thread_id)
-            await self.notify.add("turn_done", f"{bot.name} finished", (run.final_text or "")[:160], target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
-        if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
-            grp = await self.store.group_of_thread(thread_id)
-            await self.notify.add("turn_done", f"{bot.name} finished", (run.final_text or "")[:160], target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
         if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
             grp = await self.store.group_of_thread(thread_id)
             await self.notify.add("turn_done", f"{bot.name} finished", (run.final_text or "")[:160], target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)

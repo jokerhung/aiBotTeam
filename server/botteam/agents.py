@@ -91,6 +91,15 @@ class AgentTools:
                 ids.append(bid)
             else:
                 results.append({"bot": str(ref), "ok": False, "reason": "unknown_bot", "detail": "no such bot; list_bots shows the team"})
+        if self.host.is_chief(node["assignee_bot"]):  # a Chief with sections of its own stays inside them
+            kept = []
+            for bid in ids:
+                if self.host.in_scope(node["assignee_bot"], bid):
+                    kept.append(bid)
+                else:
+                    results.append({"bot": self.host.bot_name(bid), "ok": False, "reason": "outside_scope",
+                                    "detail": "that bot is not in a section you manage; ask the person or hand it to a bot you manage"})
+            ids = kept
         reply = args.get("reply") or "resume"
         if reply not in ("resume", "none"):
             reply = "resume"
@@ -99,6 +108,17 @@ class AgentTools:
         for g in got:
             results.append({"bot": self.host.bot_name(g["bot"]), **{k: v for k, v in g.items() if k != "bot"}})
         accepted = [r for r in results if r.get("ok")]
+        run = self.turns.runs.get(thread_id)
+        if run and accepted:
+            from .store import new_id, now_ms
+            from .wire import WireMessage
+
+            for r in accepted:  # a reference to each teammate's thread, shown in this conversation
+                m = WireMessage(id=new_id("msg"), role="bot", kind="notice", author=run.bot_id, at=now_ms(), text=f"Handed work to {r['bot']}",
+                                threadRef={"botId": next((b for b in ids if self.host.bot_name(b) == r["bot"]), ""), "bot": r["bot"], "threadId": r.get("threadId"),
+                                           "assignmentId": r.get("id")})
+                await self.store.add_message(self.turns._owner_for(thread_id, run.bot_id), thread_id, m)
+                self.turns._frame("message", run.bot_id, thread_id, m)
         note = ("Work was handed out. Finish your turn now and say what you handed to whom; you will be woken once with every result."
                 if accepted and reply == "resume" else ("Notice sent; it is not awaited." if accepted else "Nothing was handed out."))
         return {"ok": bool(accepted), "results": results, "note": note}

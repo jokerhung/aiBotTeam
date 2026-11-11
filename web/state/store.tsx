@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from "react";
 import { api } from "./api";
-import type { AppConfig, AppSettings, Bot, InstanceInfo, Message, Section, ServerFrame } from "@/lib/wire";
+import type { AppConfig, AppSettings, Bot, Group, InboxItem, InstanceInfo, Message, Notification, Routine, RoutineRun, Section, ServerFrame, Webhook, WebhookAttempt } from "@/lib/wire";
 
 export type SettingsPage = "general" | "connections" | "engines" | "appearance";
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -37,6 +37,22 @@ export interface AppState {
   picked: string[];
   /** When the person last read the selected bot, captured as it was opened: the unread divider sits after it. */
   dividerAt: Record<string, number>;
+  groups: Group[];
+  /** A room on screen (instead of a bot) when set. */
+  selectedGroupId: string;
+  groupPanelId: string | null;
+  newGroupOpen: boolean;
+  automationsOpen: boolean;
+  teamMapOpen: boolean;
+  notifOpen: boolean;
+  notifPinned: boolean;
+  inboxOpen: boolean;
+  routines: Routine[];
+  runs: RoutineRun[];
+  webhooks: Webhook[];
+  attempts: Record<string, WebhookAttempt[]>;
+  notifications: Notification[];
+  inbox: InboxItem[];
 }
 
 export type Action =
@@ -60,11 +76,22 @@ export type Action =
   | { type: "focusMessage"; target: AppState["focusMessage"] }
   | { type: "selecting"; on: boolean }
   | { type: "pick"; id: string }
+  | { type: "selectGroup"; id: string }
+  | { type: "groupPanel"; id: string | null }
+  | { type: "newGroup"; open: boolean }
+  | { type: "automations"; open: boolean }
+  | { type: "teamMap"; open: boolean }
+  | { type: "notifPanel"; open?: boolean; pinned?: boolean }
+  | { type: "inboxPanel"; open: boolean }
+  | { type: "teamData"; groups?: Group[]; routines?: Routine[]; runs?: RoutineRun[]; webhooks?: Webhook[]; notifications?: Notification[]; inbox?: InboxItem[] }
+  | { type: "attempts"; webhookId: string; attempts: WebhookAttempt[] }
   | { type: "frame"; frame: ServerFrame };
 
 export const initialState: AppState = {
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
+  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false,
+  routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
   settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
@@ -98,9 +125,29 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, connected: action.connected };
     case "select": {
       const bot = state.bots.find((b) => b.id === action.id);
-      return { ...state, selectedId: action.id, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
+      return { ...state, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, inboxOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
         dividerAt: { ...state.dividerAt, [action.id]: bot?.readAt ?? 0 } };
     }
+    case "selectGroup":
+      return { ...state, selectedGroupId: action.id, automationsOpen: false, teamMapOpen: false, inboxOpen: false, drawerOpen: false, findOpen: false, groupPanelId: state.groupPanelId === action.id ? action.id : null,
+        dividerAt: { ...state.dividerAt, [action.id]: state.groups.find((g) => g.id === action.id)?.readAt ?? 0 } };
+    case "groupPanel":
+      return { ...state, groupPanelId: action.id };
+    case "newGroup":
+      return { ...state, newGroupOpen: action.open };
+    case "automations":
+      return { ...state, automationsOpen: action.open, teamMapOpen: false, inboxOpen: false, drawerOpen: false };
+    case "teamMap":
+      return { ...state, teamMapOpen: action.open, automationsOpen: false, inboxOpen: false, drawerOpen: false };
+    case "notifPanel":
+      return { ...state, notifOpen: action.open ?? state.notifOpen, notifPinned: action.pinned ?? state.notifPinned };
+    case "inboxPanel":
+      return { ...state, inboxOpen: action.open, automationsOpen: false, teamMapOpen: false, drawerOpen: false };
+    case "teamData":
+      return { ...state, groups: action.groups ?? state.groups, routines: action.routines ?? state.routines, runs: action.runs ?? state.runs,
+        webhooks: action.webhooks ?? state.webhooks, notifications: action.notifications ?? state.notifications, inbox: action.inbox ?? state.inbox };
+    case "attempts":
+      return { ...state, attempts: { ...state.attempts, [action.webhookId]: action.attempts } };
     case "drawer":
       return { ...state, drawerOpen: action.open };
     case "newBot":
@@ -174,6 +221,35 @@ export function reducer(state: AppState, action: Action): AppState {
           return { ...state, messages: { ...state.messages, [f.threadId]: patchMessage(state.messages[f.threadId] ?? [], f.message) } };
         case "message.deleted":
           return { ...state, messages: { ...state.messages, [f.threadId]: (state.messages[f.threadId] ?? []).filter((m) => m.id !== f.messageId) } };
+        case "group": {
+          const exists = state.groups.some((g) => g.id === f.group.id);
+          return { ...state, groups: exists ? state.groups.map((g) => (g.id === f.group.id ? f.group : g)) : [...state.groups, f.group] };
+        }
+        case "group.deleted":
+          return { ...state, groups: state.groups.filter((g) => g.id !== f.groupId), selectedGroupId: state.selectedGroupId === f.groupId ? "" : state.selectedGroupId,
+            groupPanelId: state.groupPanelId === f.groupId ? null : state.groupPanelId };
+        case "routine": {
+          const exists = state.routines.some((r) => r.id === f.routine.id);
+          return { ...state, routines: exists ? state.routines.map((r) => (r.id === f.routine.id ? f.routine : r)) : [...state.routines, f.routine] };
+        }
+        case "routine.deleted":
+          return { ...state, routines: state.routines.filter((r) => r.id !== f.routineId), runs: state.runs.filter((r) => r.routineId !== f.routineId) };
+        case "routine.run": {
+          const exists = state.runs.some((r) => r.id === f.run.id);
+          return { ...state, runs: exists ? state.runs.map((r) => (r.id === f.run.id ? f.run : r)) : [f.run, ...state.runs] };
+        }
+        case "webhook": {
+          const exists = state.webhooks.some((w) => w.id === f.webhook.id);
+          return { ...state, webhooks: exists ? state.webhooks.map((w) => (w.id === f.webhook.id ? f.webhook : w)) : [...state.webhooks, f.webhook] };
+        }
+        case "webhook.deleted":
+          return { ...state, webhooks: state.webhooks.filter((w) => w.id !== f.webhookId) };
+        case "webhook.attempt":
+          return { ...state, attempts: { ...state.attempts, [f.attempt.webhookId]: [f.attempt, ...(state.attempts[f.attempt.webhookId] ?? [])].slice(0, 100) } };
+        case "notify":
+          return { ...state, notifications: [f.notification, ...state.notifications.filter((n) => n.id !== f.notification.id)].slice(0, 300) };
+        case "notifications.read":
+          return { ...state, notifications: f.cleared ? [] : state.notifications.map((n) => (f.ids.includes(n.id) ? { ...n, read: true } : n)) };
         default:
           return state;
       }
@@ -201,6 +277,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "hydrate", bots: b.bots, instances: i.instances });
       dispatch({ type: "config", config: { settings: { ...DEFAULT_SETTINGS, ...c.settings }, keys: c.keys, keyCatalog: c.keyCatalog } });
       dispatch({ type: "sections", sections: sec.sections });
+      const [g, r, ru, w, n, ib] = await Promise.all([
+        api<{ groups: Group[] }>("/api/groups").catch(() => ({ groups: [] as Group[] })),
+        api<{ routines: Routine[] }>("/api/routines").catch(() => ({ routines: [] as Routine[] })),
+        api<{ runs: RoutineRun[] }>("/api/routine-runs").catch(() => ({ runs: [] as RoutineRun[] })),
+        api<{ webhooks: Webhook[] }>("/api/webhooks").catch(() => ({ webhooks: [] as Webhook[] })),
+        api<{ notifications: Notification[] }>("/api/notifications").catch(() => ({ notifications: [] as Notification[] })),
+        api<{ items: InboxItem[] }>("/api/inbox").catch(() => ({ items: [] as InboxItem[] })),
+      ]);
+      dispatch({ type: "teamData", groups: g.groups, routines: r.routines, runs: ru.runs, webhooks: w.webhooks, notifications: n.notifications, inbox: ib.items });
+    };
+    let inboxTimer: ReturnType<typeof setTimeout> | undefined;
+    const refreshInbox = () => {
+      clearTimeout(inboxTimer);
+      inboxTimer = setTimeout(() => api<{ items: InboxItem[] }>("/api/inbox").then((r) => dispatch({ type: "teamData", inbox: r.items })).catch(() => {}), 250);
     };
     const connect = () => {
       es = new EventSource("/api/events");
@@ -214,6 +304,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const frame = JSON.parse(e.data) as ServerFrame;
           if (frame.kind === "instances") api<{ instances: InstanceInfo[] }>("/api/instances").then((r) => dispatch({ type: "instances", instances: r.instances })).catch(() => {});
           dispatch({ type: "frame", frame });
+          // the inbox follows the cards: a frame that may open or close one refreshes it, lightly
+          if (["message", "message.patch", "bot", "group"].includes(frame.kind)) refreshInbox();
         } catch {
           /* ignore a malformed frame */
         }
@@ -245,6 +337,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [threadId, botId, generation, state.connected]);
+
+  const group = state.groups.find((g) => g.id === state.selectedGroupId);
+  const gThread = group?.threadId ?? "";
+  const gGeneration = (state.reload[gThread] ?? 0) + (state.connected ? 1 : 0) * 1000;
+  const gId = group?.id;
+  useEffect(() => {
+    if (!gThread || !gId || !state.connected) return;
+    let cancelled = false;
+    api<{ messages: Message[]; hasMore: boolean }>(`/api/groups/${gId}/messages?thread=${gThread}`)
+      .then((r) => !cancelled && dispatch({ type: "history", threadId: gThread, messages: r.messages, hasMore: r.hasMore, generation: gGeneration }))
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [gThread, gId, gGeneration, state.connected]);
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -70,10 +70,12 @@ class WireBot(BaseModel):
     pinned: bool = False
     hidden: bool = False
     section: Optional[str] = None
+    waitingFor: list[str] = Field(default_factory=list)  # teammates this conversation is waiting on (not stored)
     cwd: Optional[str] = None
     approvalMode: str = "full"
     soul: str = ""
     chief: bool = False
+    managedSections: list[str] = Field(default_factory=list)  # a Chief of Staff's own sections; empty means the whole team
     fallbackSelection: Optional[ModelSelection] = None
     lastText: str = ""
     lastAt: Optional[int] = None
@@ -112,6 +114,7 @@ class WireMessage(BaseModel):
     tool: Optional[ToolInfo] = None
     error: Optional[ErrorInfo] = None
     request: Optional[RequestInfo] = None
+    threadRef: Optional[dict[str, Any]] = None  # a hand-off: the teammate and the thread the work went to
     routine: Optional[dict[str, Any]] = None  # a routine a bot just made: the live card shows Edit, Pause, Undo
     mentions: list[str] = Field(default_factory=list)  # bot ids a message names with @
     sender: Optional[str] = None  # who this line came from when it is a teammate's or a routine's, not the person's
@@ -143,6 +146,7 @@ class PatchBot(BaseModel):
     approvalMode: Optional[str] = None
     soul: Optional[str] = None
     chief: Optional[bool] = None
+    managedSections: Optional[list[str]] = None
     notifications: Optional[bool] = None
     fallbackSelection: Optional[ModelSelection] = None
     modelSelection: Optional[ModelSelection] = None

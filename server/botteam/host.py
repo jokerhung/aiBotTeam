@@ -21,6 +21,8 @@ class RuntimeHost:
         self.mains: dict[str, str] = {}
         self.modes: dict[str, str] = {}
         self.chiefs: set[str] = set()
+        self.managed: dict[str, list[str]] = {}  # chief id -> the sections it manages
+        self.sections: dict[str, Optional[str]] = {}  # bot id -> its section
         self.instances: dict[str, str] = {}
         self.runtime = None
 
@@ -31,9 +33,11 @@ class RuntimeHost:
         self.modes[bot.id] = normalize_mode(bot.approvalMode)
         self.instances[bot.id] = bot.modelSelection.instanceId
         (self.chiefs.add if bot.chief else self.chiefs.discard)(bot.id)
+        self.managed[bot.id] = list(bot.managedSections)
+        self.sections[bot.id] = bot.section
 
     def forget(self, bot_id: str) -> None:
-        for d in (self.names, self.mains, self.modes, self.instances):
+        for d in (self.names, self.mains, self.modes, self.instances, self.managed, self.sections):
             d.pop(bot_id, None)
         self.chiefs.discard(bot_id)
 
@@ -57,6 +61,11 @@ class RuntimeHost:
 
     def is_chief(self, bot_id: str) -> bool:
         return bot_id in self.chiefs
+
+    def in_scope(self, chief_id: str, target_id: str) -> bool:
+        """A Chief of Staff with sections of its own may hand work only to bots in them (itself always); with none it manages the whole team."""
+        mine = self.managed.get(chief_id) or []
+        return not mine or target_id == chief_id or self.sections.get(target_id) in mine
 
     def standing_thread(self, bot_id: str) -> Optional[str]:
         return self.mains.get(bot_id)
@@ -91,12 +100,6 @@ class RuntimeHost:
         return await fut
 
     async def report(self, a: dict) -> None:
-        if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):
-            await self.turns.notify.add("assignment_failed", f"{self.bot_name(a['assignee_bot'])} could not finish a task", (a.get("outcome_detail") or a.get("outcome") or "")[:200],
-                                        target_id=a["assignee_bot"], thread_id=a["thread_id"])
-        if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):
-            await self.turns.notify.add("assignment_failed", f"{self.bot_name(a['assignee_bot'])} could not finish a task", (a.get("outcome_detail") or a.get("outcome") or "")[:200],
-                                        target_id=a["assignee_bot"], thread_id=a["thread_id"])
         if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):
             await self.turns.notify.add("assignment_failed", f"{self.bot_name(a['assignee_bot'])} could not finish a task", (a.get("outcome_detail") or a.get("outcome") or "")[:200],
                                         target_id=a["assignee_bot"], thread_id=a["thread_id"])
