@@ -2,22 +2,35 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import secrets
+import mimetypes
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
+from .approval import is_mode
+from .broker import Broker
 from .bus import Bus
 from .config import ConfigStore
-from .registry import Registry
+from .registry import KEY_CATALOG, KEY_IDS, Registry
 from .store import Store, data_dir, now_ms
 from .turns import Turns
 from .wire import (
-    CreateBot, CreateInstance, CreateTask, LeafBody, OrderBody, PatchBot, PatchInstance, PatchTask, SendMessage,
+    BotDefaults, ConfigPatch, CreateBot, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
+    PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage,
 )
+
+FILE_MAX_BYTES = 100 * 1024 * 1024
+DEFAULT_SETTINGS = {
+    "displayName": "", "uiMode": "simple", "skin": "daylight", "font": "inter", "chatWidth": "default",
+    "reduceMotion": False, "language": "en",
+}
 
 WEB_PORT = os.environ.get("WEB_PORT", "5299")
 
@@ -30,15 +43,31 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     bus = Bus()
     config = ConfigStore(home / "config.json")
     registry = Registry(config, with_echo=with_echo)
-    turns = Turns(store, bus, registry, home / "threads")
+    turns_ref: list[Turns] = []
+
+    async def policy(thread_id: str):
+        return await turns_ref[0].policy(thread_id)
+
+    async def _noop(_t: str, _r: dict) -> None:
+        return None
+
+    broker = Broker(config, policy, _noop, _noop)
+    registry.broker = broker
+    turns = Turns(store, bus, registry, home / "threads", broker=broker, attachments_dir=home / "attachments")
+    turns_ref.append(turns)
+    attachments_dir = home / "attachments"
+    broker.read_dirs.append(str(attachments_dir))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await store.open()
+        await store.expire_open_requests()
+        await broker.start()
         await registry.load()
         turns.start()
         yield
         await turns.stop()
+        await broker.stop()
         await registry.stop_all()
         await store.close()
 
@@ -62,9 +91,61 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         return tid
 
     # ---- config & instances -------------------------------------------------------
+    def public_config() -> dict:
+        """Settings and which keys are saved. Key values never leave the server."""
+        return {
+            **CONFIG_FRAME, "defaultSelection": registry.default_selection(),
+            "settings": {**DEFAULT_SETTINGS, **config.data.get("settings", {})},
+            "keys": registry.key_status(),
+            "keyCatalog": [{"id": k["id"], "label": k["label"], "purpose": k["purpose"]} for k in KEY_CATALOG],
+            "botDefaults": config.data.get("botDefaults", {}),
+        }
+
     @app.get("/api/config")
     async def get_config():
-        return {**CONFIG_FRAME, "defaultSelection": registry.default_selection()}
+        return public_config()
+
+    @app.put("/api/config")
+    async def put_config(body: ConfigPatch):
+        fields = body.model_dump(exclude_unset=True)
+        keys = fields.pop("keys", None) or {}
+        unknown = [k for k in keys if k not in KEY_IDS]
+        if unknown:
+            raise HTTPException(400, f"unknown key: {unknown[0]}")
+        settings = config.data.setdefault("settings", {})
+        settings.update({k: v for k, v in fields.items() if v is not None})
+        config.save()
+        for kid, value in keys.items():
+            await registry.set_key(kid, value)
+        if keys:
+            bus.publish({"kind": "instances"})
+        out = public_config()
+        bus.publish({"kind": "config", **out})
+        return out
+
+    @app.get("/api/bot-defaults")
+    async def get_bot_defaults():
+        return {**{"modelSelection": registry.default_selection(), "approvalMode": "full", "cwd": None},
+                **config.data.get("botDefaults", {})}
+
+    @app.put("/api/bot-defaults")
+    async def put_bot_defaults(body: BotDefaults):
+        fields = body.model_dump(exclude_unset=True)
+        if fields.get("approvalMode") is not None and not is_mode(fields["approvalMode"]):
+            raise HTTPException(400, "unknown approval mode")
+        config.data.setdefault("botDefaults", {}).update(fields)
+        config.save()
+        return await get_bot_defaults()
+
+    @app.get("/api/command-allowlist")
+    async def allowlist():
+        return {"rules": broker.rules, "supported": True}
+
+    @app.delete("/api/command-allowlist/{rule_id}")
+    async def delete_rule(rule_id: str):
+        if not broker.remove_rule(rule_id):
+            raise HTTPException(404, "rule not found")
+        return {"ok": True}
 
     @app.get("/api/instances")
     async def instances():
@@ -101,8 +182,15 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     @app.post("/api/bots", status_code=201)
     async def create_bot(body: CreateBot):
-        sel = (body.modelSelection.model_dump() if body.modelSelection else registry.default_selection())
+        defaults = config.data.get("botDefaults", {})
+        sel = (body.modelSelection.model_dump() if body.modelSelection
+               else defaults.get("modelSelection") or registry.default_selection())
+        mode = body.approvalMode or defaults.get("approvalMode") or "full"
+        if not is_mode(mode):
+            raise HTTPException(400, "unknown approval mode")
         bot = await store.create_bot(body.name.strip(), body.title, body.description, body.color, sel)
+        bot.approvalMode, bot.cwd = mode, body.cwd or defaults.get("cwd")
+        await store.save_bot(bot)
         await turns.publish_bot(bot)
         return await turns.bot_dict(bot)
 
@@ -110,14 +198,27 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def patch_bot(bot_id: str, body: PatchBot):
         bot = await need(bot_id)
         fields = body.model_dump(exclude_unset=True)
+        if fields.get("approvalMode") is not None and not is_mode(fields["approvalMode"]):
+            raise HTTPException(400, "unknown approval mode")
+        if fields.get("section"):
+            if not any(sec["id"] == fields["section"] for sec in await store.list_sections()):
+                raise HTTPException(404, "section not found")
         if "threadId" in fields:
             fields["threadId"] = await need_thread(bot, fields["threadId"])
         for k, v in fields.items():
-            if k != "modelSelection":
+            if k not in ("modelSelection", "fallbackSelection"):
                 setattr(bot, k, v)
         if body.modelSelection:
             bot.modelSelection = body.modelSelection
+        if "fallbackSelection" in fields:
+            bot.fallbackSelection = body.fallbackSelection
         await store.save_bot(bot)
+        if fields.get("chief"):  # one Chief of Staff at a time
+            for other in await store.list_bots():
+                if other.id != bot.id and other.chief:
+                    other.chief = False
+                    await store.save_bot(other)
+                    await turns.publish_bot(other)
         await turns.publish_bot(bot)
         return await turns.bot_dict(bot)
 
@@ -126,6 +227,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         bot = await need(bot_id)
         for t in await store.list_threads(bot_id):
             await turns.interrupt(bot, t["id"])
+            await broker.cancel_thread(t["id"])
         await store.delete_bot(bot_id)
         bus.publish({"kind": "bot.deleted", "botId": bot_id})
         return {"ok": True}
@@ -158,9 +260,12 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         bot = await need(bot_id)
         tid = await need_thread(bot, body.threadId)
         try:
-            msg = await turns.send(bot, tid, body.text, body.sendId, branch=body.branch, parent_id=body.parentId)
+            msg = await turns.send(bot, tid, body.text, body.sendId, branch=body.branch, parent_id=body.parentId,
+                                   attachments=body.attachments)
         except RuntimeError:
             raise HTTPException(409, "the bot is still answering")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         await turns.publish_bot(bot)
         return {"message": msg.model_dump()}
 
@@ -217,6 +322,119 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await turns.publish_bot(bot)
         return {"ok": True}
 
+    # ---- permission requests ------------------------------------------------------------
+    @app.post("/api/threads/{thread_id}/requests/{request_id}")
+    async def answer_request(thread_id: str, request_id: str, body: RequestAnswer):
+        t = await store.get_thread(thread_id)
+        if not t:
+            raise HTTPException(404, "conversation not found")
+        if not any(r["id"] == request_id for r in broker.open_for(thread_id)):
+            raise HTTPException(404, "that request is no longer open")
+        ok = await broker.resolve(request_id, body.behavior, body.message, body.always, body.answers)
+        if not ok:
+            raise HTTPException(409, "that request was already answered")
+        return {"ok": True}
+
+    # ---- bot management -------------------------------------------------------------------
+    @app.post("/api/bots/{bot_id}/duplicate", status_code=201)
+    async def duplicate_bot(bot_id: str):
+        await need(bot_id)
+        bot = await store.duplicate_bot(bot_id)
+        assert bot
+        await turns.publish_bot(bot)
+        return await turns.bot_dict(bot)
+
+    @app.get("/api/sidebar-sections")
+    async def sections():
+        return {"sections": await store.list_sections()}
+
+    async def publish_sections() -> dict:
+        out = {"sections": await store.list_sections()}
+        bus.publish({"kind": "sections", **out})
+        return out
+
+    @app.post("/api/sidebar-sections", status_code=201)
+    async def create_section(body: SectionBody):
+        sec = await store.create_section(body.name.strip())
+        await publish_sections()
+        return sec
+
+    @app.patch("/api/sidebar-sections/{sid}")
+    async def patch_section(sid: str, body: PatchSection):
+        if not await store.patch_section(sid, body.name.strip() if body.name else None, body.collapsed):
+            raise HTTPException(404, "section not found")
+        return await publish_sections()
+
+    @app.delete("/api/sidebar-sections/{sid}")
+    async def delete_section(sid: str):
+        if not await store.delete_section(sid):
+            raise HTTPException(404, "section not found")
+        for b in await store.list_bots():
+            await turns.publish_bot(b)
+        return await publish_sections()
+
+    @app.post("/api/bots/{bot_id}/move")
+    async def move_bot(bot_id: str, body: MoveBot):
+        bot = await need(bot_id)
+        if body.section and not any(sec["id"] == body.section for sec in await store.list_sections()):
+            raise HTTPException(404, "section not found")
+        bot.section = body.section
+        await store.save_bot(bot)
+        if body.botIds:
+            await store.set_order(body.botIds)
+            bus.publish({"kind": "bots.order", "botIds": body.botIds})
+        await turns.publish_bot(bot)
+        return await turns.bot_dict(bot)
+
+    # ---- search -------------------------------------------------------------------------------
+    @app.get("/api/search")
+    async def search(q: str = "", limit: int = 30):
+        results = await store.search(q, min(max(limit, 1), 100))
+        names = {b.id: b.name for b in await store.list_bots()}
+        return {"results": [{**r, "botName": names.get(r["botId"], "")} for r in results]}
+
+    # ---- attachments ---------------------------------------------------------------------------
+    @app.post("/api/attachments", status_code=201)
+    async def upload(request: Request):
+        raw = request.headers.get("x-filename", "file")
+        try:
+            from urllib.parse import unquote
+            filename = unquote(raw)
+        except Exception:
+            filename = raw
+        filename = re.sub(r"[\\/\x00-\x1f]", "_", filename)[:120] or "file"
+        mime = (request.headers.get("content-type") or mimetypes.guess_type(filename)[0] or "application/octet-stream").split(";")[0]
+        ext = re.sub(r"[^A-Za-z0-9]", "", Path(filename).suffix)[:8]
+        name = f"att_{secrets.token_hex(8)}" + (f".{ext}" if ext else "")
+        attachments_dir.mkdir(parents=True, exist_ok=True)
+        path, size = attachments_dir / name, 0
+        try:
+            with open(path, "wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > FILE_MAX_BYTES:
+                        raise HTTPException(413, f"files are limited to {FILE_MAX_BYTES // (1024 * 1024)} MB")
+                    f.write(chunk)
+            if size == 0:
+                raise HTTPException(400, "the file is empty")
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        (attachments_dir / f"{name}.json").write_text(json.dumps({"filename": filename, "mime": mime}), encoding="utf8")
+        info = turns.attachment_meta(name)
+        assert info
+        return info.model_dump()
+
+    @app.get("/api/attachments/{name}")
+    async def download(name: str):
+        info = turns.attachment_meta(name)  # only a plain name inside the store resolves
+        if not info:
+            raise HTTPException(404, "attachment not found")
+        safe_inline = info.mime in ("image/png", "image/jpeg", "image/gif", "image/webp")  # anything else downloads, never renders
+        return FileResponse(attachments_dir / name, media_type=info.mime if safe_inline else "application/octet-stream",
+                            filename=None if safe_inline else info.filename,
+                            headers={"x-content-type-options": "nosniff", "content-security-policy": "sandbox"})
+
     # ---- branches & inspector ---------------------------------------------------------
     @app.put("/api/threads/{thread_id}/leaf")
     async def set_leaf(thread_id: str, body: LeafBody):
@@ -263,7 +481,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
         return EventSourceResponse(gen(), ping=None)
 
-    app.state.turns, app.state.registry, app.state.store = turns, registry, store
+    app.state.turns, app.state.registry, app.state.store, app.state.broker = turns, registry, store, broker
     _ = now_ms
     return app
 

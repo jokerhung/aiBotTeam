@@ -1,0 +1,192 @@
+"""MCP stdio server the Claude CLI spawns (--mcp-config). It exposes `approve` (for --permission-prompt-tool) and
+`ask_user`, and forwards each call to the host's broker over a local socket. stdout is the MCP channel: never print to it.
+
+Environment: BT_BROKER_PORT, BT_BROKER_TOKEN, BT_THREAD_ID.
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import sys
+import threading
+import uuid
+
+PORT = int(os.environ.get("BT_BROKER_PORT", "0") or 0)
+TOKEN = os.environ.get("BT_BROKER_TOKEN", "")
+THREAD = os.environ.get("BT_THREAD_ID", "")
+ASK_USER_QUESTION = "AskUserQuestion"
+
+UNREACHABLE = {
+    "question": "The question service did not answer. Do not retry this tool. Ask in your reply instead: end it with the exact question and wait.",
+    "permission": "The approval service did not answer. Skip this step, and say in your reply what you wanted to do and why, so the person can decide.",
+}
+
+_out_lock = threading.Lock()
+_waiting: dict[str, tuple[threading.Event, dict]] = {}
+_sock: socket.socket | None = None
+_sock_lock = threading.Lock()
+
+
+def send(obj: object) -> None:
+    with _out_lock:
+        sys.stdout.write(json.dumps(obj) + "\n")
+        sys.stdout.flush()
+
+
+def _reader(sock: socket.socket) -> None:
+    buf = b""
+    try:
+        while chunk := sock.recv(65536):
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    continue
+                entry = _waiting.pop(str(msg.get("id")), None) if msg.get("t") == "answer" else None
+                if entry:
+                    entry[1].update(msg)
+                    entry[0].set()
+    except OSError:
+        pass
+    finally:  # connection gone: every ask still waiting is unanswerable
+        for ev, box in list(_waiting.values()):
+            box["unreachable"] = True
+            ev.set()
+        _waiting.clear()
+
+
+def connection() -> socket.socket | None:
+    global _sock
+    with _sock_lock:
+        if _sock is not None:
+            return _sock
+        try:
+            s = socket.create_connection(("127.0.0.1", PORT), timeout=5)
+            s.settimeout(None)
+            s.sendall((json.dumps({"t": "hello", "token": TOKEN, "thread": THREAD}) + "\n").encode())
+        except OSError:
+            return None
+        _sock = s
+        threading.Thread(target=_reader, args=(s,), daemon=True).start()
+        return s
+
+
+def ask_broker(kind: str, tool: str, inp: object) -> dict:
+    rid = uuid.uuid4().hex
+    conn = connection()
+    if conn is None:
+        return {"behavior": "deny", "message": UNREACHABLE[kind], "source": "system"}
+    ev, box = threading.Event(), {}
+    _waiting[rid] = (ev, box)
+    try:
+        conn.sendall((json.dumps({"t": "ask", "id": rid, "kind": kind, "tool": tool, "input": inp}) + "\n").encode())
+    except OSError:
+        _waiting.pop(rid, None)
+        return {"behavior": "deny", "message": UNREACHABLE[kind], "source": "system"}
+    ev.wait()
+    if box.get("unreachable"):
+        return {"behavior": "deny", "message": UNREACHABLE[kind], "source": "system"}
+    return box
+
+
+TOOLS = [
+    {
+        "name": "approve",
+        "description": "Ask the person whether a tool use is allowed",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"tool_name": {"type": "string"}, "input": {"type": "object"}, "tool_use_id": {"type": "string"}},
+            "required": ["tool_name", "input"],
+        },
+    },
+    {
+        "name": "ask_user",
+        "description": (
+            "Ask the human who owns this bot a question and wait for their answer. Use it when you need a decision, a "
+            "preference, missing information, or sign-off before doing something consequential. Returns the answer as text."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The question, with enough context to answer at a glance"},
+                "choices": {"type": "array", "items": {"type": "string"}, "description": "Optional 2-5 suggested answers"},
+                "multiSelect": {"type": "boolean", "description": "True when more than one choice may be picked"},
+            },
+            "required": ["question"],
+        },
+    },
+]
+
+
+def _answers_for(questions: list, ans: dict) -> dict:
+    """AskUserQuestion's `answers`: keyed by question text, one comma-joined string each."""
+    given = ans.get("answers")
+    if isinstance(given, dict):
+        return {str(k): str(v) for k, v in given.items()}
+    if isinstance(ans.get("message"), str) and questions:
+        return {str(questions[0].get("question", "")): ans["message"]}
+    return {}
+
+
+def tool_call(name: str, args: dict) -> tuple[str, bool]:
+    """(text, is_error) for one tools/call."""
+    if name == "ask_user":
+        ans = ask_broker("question", "ask_user", {"question": args.get("question"), "choices": args.get("choices"),
+                                                    "multiSelect": bool(args.get("multiSelect"))})
+        if ans.get("behavior") == "deny":
+            return str(ans.get("message") or UNREACHABLE["question"]), True
+        return str(ans.get("message") or "No answer was given — use your best judgment."), False
+    tool, inp = str(args.get("tool_name", "")), args.get("input") or {}
+    if tool == ASK_USER_QUESTION and isinstance(inp, dict):
+        questions = [q for q in (inp.get("questions") or []) if isinstance(q, dict) and q.get("question")]
+        if not questions:
+            return json.dumps({"behavior": "deny", "message": "This AskUserQuestion call had no answerable question."}), False
+        ans = ask_broker("question", ASK_USER_QUESTION, {"questions": questions})
+        if ans.get("behavior") == "deny":
+            return json.dumps({"behavior": "deny", "message": ans.get("message") or "Denied"}), False
+        return json.dumps({"behavior": "allow", "updatedInput": {**inp, "answers": _answers_for(questions, ans)}}), False
+    ans = ask_broker("permission", tool, inp)
+    if ans.get("behavior") == "allow":
+        return json.dumps({"behavior": "allow", "updatedInput": inp}), False
+    note = " The person said no; do not retry it unchanged. Try another approach or ask what they would prefer." if ans.get("source") == "user" else ""
+    return json.dumps({"behavior": "deny", "message": (ans.get("message") or "Denied") + note}), False
+
+
+def handle(msg: dict) -> None:
+    method, mid = msg.get("method"), msg.get("id")
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": mid, "result": {
+            "protocolVersion": (msg.get("params") or {}).get("protocolVersion", "2024-11-05"),
+            "capabilities": {"tools": {}}, "serverInfo": {"name": "botteam-permissions", "version": "1"}}})
+    elif method == "tools/list":
+        send({"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}})
+    elif method == "tools/call":
+        params = msg.get("params") or {}
+        text, is_error = tool_call(str(params.get("name")), params.get("arguments") or {})
+        result: dict = {"content": [{"type": "text", "text": text}]}
+        if is_error:
+            result["isError"] = True
+        send({"jsonrpc": "2.0", "id": mid, "result": result})
+    elif str(method or "").startswith("notifications/"):
+        return
+    elif mid is not None:
+        send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"method not found: {method}"}})
+
+
+def main() -> None:
+    connection()  # connect at start so a stale process never reaches a newer broker
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        threading.Thread(target=handle, args=(msg,), daemon=True).start()  # a call may wait minutes for a person
+
+
+if __name__ == "__main__":
+    main()

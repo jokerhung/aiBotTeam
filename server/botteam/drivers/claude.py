@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..approval import claude_permission_mode
 from .base import Capabilities, Emitter, SendTurnInput, SteerOutcome, new_turn_id, preview
 from .proc import kill_tree, spawn
 
@@ -26,6 +29,7 @@ class Session:
     proc: Any
     model: str | None
     system: str | None
+    mode: str = "full"
     turn_id: str | None = None
     cursor: str | None = None
     saw_stream_delta: bool = False
@@ -36,14 +40,22 @@ class Session:
     tasks: list[asyncio.Task] = field(default_factory=list)
 
 
+def with_attachments(inp: SendTurnInput) -> str:
+    if not inp.attachments:
+        return inp.text
+    listing = "\n".join(f"- {p}" for p in inp.attachments)
+    return f"{inp.text}\n\nAttached files (read them with your tools):\n{listing}"
+
+
 class ClaudeDriver(Emitter):
     provider = "claude"
-    capabilities = Capabilities(queueing=True, effortLevels=["low", "medium", "high"], strictResume=True)
+    capabilities = Capabilities(queueing=True, images=True, effortLevels=["low", "medium", "high"], strictResume=True)
 
-    def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None) -> None:
+    def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None, broker=None) -> None:
         super().__init__()
         self.cmd = [binary] if isinstance(binary, str) else list(binary)
         self.env = extra_env or {}
+        self.broker = broker  # supplies the port and token the MCP bridge connects back to
         self.sessions: dict[str, Session] = {}
 
     # ---- turn entry points -------------------------------------------------
@@ -51,7 +63,7 @@ class ClaudeDriver(Emitter):
         turn_id = new_turn_id()
         model = None if inp.model in (None, "", "default") else inp.model
         s = self.sessions.get(inp.thread_id)
-        if s and (inp.session_reset or s.proc.returncode is not None or s.model != model or s.system != inp.system):
+        if s and (inp.session_reset or s.proc.returncode is not None or s.model != model or s.system != inp.system or s.mode != inp.approval_mode):
             await self._close(inp.thread_id)
             s = None
         if s is None:
@@ -64,7 +76,7 @@ class ClaudeDriver(Emitter):
                 return turn_id
         s.turn_id, s.settled, s.explained, s.stop_requested, s.saw_stream_delta = turn_id, False, False, False, False
         self.emit("turn.started", inp.thread_id, turn_id)
-        await self._write(s, inp.text)
+        await self._write(s, with_attachments(inp))
         return turn_id
 
     async def steer(self, thread_id: str, text: str) -> SteerOutcome:
@@ -99,9 +111,17 @@ class ClaudeDriver(Emitter):
             "--output-format", "stream-json", "--input-format", "stream-json",
             "--verbose",  # required by stream-json output
             "--include-partial-messages",
-            "--permission-mode", "default",
+            "--permission-mode", claude_permission_mode(inp.approval_mode),
             "--strict-mcp-config",
         ]
+        if self.broker is not None and self.broker.port:
+            server_dir = str(__import__("pathlib").Path(__file__).resolve().parents[2])
+            cfg = {"mcpServers": {"bt": {
+                "command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
+                "env": {"PYTHONPATH": server_dir, "BT_BROKER_PORT": str(self.broker.port),
+                        "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id},
+            }}}
+            args += ["--mcp-config", json.dumps(cfg), "--permission-prompt-tool", "mcp__bt__approve"]
         if model:
             args += ["--model", model]
         if inp.effort:
@@ -114,7 +134,7 @@ class ClaudeDriver(Emitter):
 
     async def _start(self, inp: SendTurnInput, model: str | None) -> Session:
         proc = await spawn(self.build_args(inp, model), cwd=inp.cwd, env=self.env)
-        s = Session(proc=proc, model=model, system=inp.system, cursor=inp.resume_cursor)
+        s = Session(proc=proc, model=model, system=inp.system, mode=inp.approval_mode, cursor=inp.resume_cursor)
         self.sessions[inp.thread_id] = s
         s.tasks = [
             asyncio.create_task(self._read(inp.thread_id, s)),

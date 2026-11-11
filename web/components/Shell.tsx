@@ -2,11 +2,18 @@
 import { Loader2 } from "lucide-react";
 import { useStore } from "@/state/store";
 import { ChatView } from "./ChatView";
+import { BotPanel } from "./BotPanel";
+import { CommandPalette } from "./CommandPalette";
+import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { NewBotDialog } from "./NewBotDialog";
+import { SettingsModal } from "./SettingsModal";
+import { Toaster } from "./Toaster";
+import { useGlobalBehaviors } from "./useGlobalBehaviors";
 import { Sidebar } from "./Sidebar";
 
 export function Shell() {
   const { state, dispatch } = useStore();
+  useGlobalBehaviors();
   const bot = state.bots.find((b) => b.id === state.selectedId);
   const noRealEngine = !state.instances.some((i) => i.driver !== "echo" && i.snapshot.state === "available" && i.snapshot.signedIn !== false);
   return (
@@ -24,7 +31,10 @@ export function Shell() {
       <div className="relative flex min-h-0 flex-1">
         <Sidebar />
         {bot ? (
-          <ChatView key={bot.id} bot={bot} />
+          <>
+            <ChatView key={bot.id} bot={bot} />
+            {state.panelBotId === bot.id && <BotPanel key={`panel-${bot.id}`} bot={bot} />}
+          </>
         ) : (
           <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
             {!state.hydrated ? (
@@ -51,6 +61,10 @@ export function Shell() {
         )}
       </div>
       <NewBotDialog />
+      <SettingsModal />
+      <CommandPalette />
+      <KeyboardShortcutsModal />
+      <Toaster />
     </div>
   );
 }

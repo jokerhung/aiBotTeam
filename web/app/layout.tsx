@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "BotTeam", description: "Your own tea
 export const viewport: Viewport = { themeColor: "#070707", viewportFit: "cover" };
 
 // Applied before first paint so a saved skin never flashes.
-const BOOT = `try{var d=document.documentElement,s=localStorage.getItem("botteam-skin");if(!s||s==="system")s=matchMedia("(prefers-color-scheme: dark)").matches?"midnight":"daylight";d.dataset.skin=s;var w=localStorage.getItem("botteam-chat-width");if(w)d.dataset.chatWidth=w}catch(e){}`;
+const BOOT = `try{var d=document.documentElement,s=localStorage.getItem("botteam-skin");if(!s||s==="system")s=matchMedia("(prefers-color-scheme: dark)").matches?"midnight":"daylight";d.dataset.skin=s;var w=localStorage.getItem("botteam-chat-width");if(w)d.dataset.chatWidth=w;var f=localStorage.getItem("botteam-font");if(f)d.dataset.font=f;if(localStorage.getItem("botteam-reduce-motion"))d.dataset.reduceMotion=""}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

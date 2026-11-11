@@ -1,13 +1,16 @@
 "use client";
-import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, Monitor, Pencil, RotateCcw, X } from "lucide-react";
+import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Bot, Message } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { AttachmentGallery } from "./AttachmentGallery";
 import { ChatErrorBanner } from "./ChatErrorBanner";
+import { ChatFindBar } from "./ChatFindBar";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Composer } from "./Composer";
+import { RequestCard } from "./RequestCard";
 import { Mascot } from "./Mascot";
 import { ModelMenu } from "./ModelMenu";
 import { TaskMenu } from "./TaskMenu";
@@ -75,6 +78,10 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
 
   if (m.kind === "activity" && m.tool) return <ToolChip tool={m.tool} />;
   if (m.kind === "error") return <ChatErrorBanner bot={bot} m={m} />;
+  if (m.kind === "request") {
+    const lastOpen = [...list].reverse().find((x) => x.kind === "request" && x.request?.status === "open");
+    return <RequestCard m={m} thread={bot.threadId} active={lastOpen?.id === m.id} />;
+  }
   if (m.kind === "stopped" || m.kind === "notice") {
     return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;
   }
@@ -88,7 +95,7 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
   };
 
   return (
-    <div className={cn("group flex w-full flex-col", mine ? "items-end" : "items-start")}>
+    <div data-message-id={m.id} className={cn("group flex w-full flex-col rounded-xl transition-[background-color] duration-700", mine ? "items-end" : "items-start")}>
       <div className={cn("flex w-full items-center gap-1.5", mine ? "justify-end" : "justify-start")}>
         {mine && !editing && (
           <div className="flex items-center gap-0.5 self-end pb-0.5 opacity-0 transition-opacity group-hover:opacity-100 touch:opacity-100">
@@ -129,7 +136,10 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
             )}
           >
             {mine ? (
-              <div className="chat-text whitespace-pre-wrap break-words">{m.text}</div>
+              <>
+                {m.attachments && m.attachments.length > 0 && <AttachmentGallery items={m.attachments} />}
+                {m.text && <div className="chat-text whitespace-pre-wrap break-words">{m.text}</div>}
+              </>
             ) : (
               <>
                 <ChatMarkdown text={m.text} />
@@ -166,7 +176,8 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
 }
 
 function Header({ bot }: { bot: Bot }) {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
+  const panelOpen = state.panelBotId === bot.id;
   return (
     <div className="absolute inset-x-0 top-0 z-[25] bg-gradient-to-b from-app via-app/90 to-transparent">
       <div className="px-5 pb-2.5 pt-2.5 max-md:pl-14 max-md:pr-3">
@@ -180,6 +191,11 @@ function Header({ bot }: { bot: Bot }) {
           </div>
           <div className="col-start-3 flex shrink-0 items-center justify-self-end gap-2">
             <ModelMenu bot={bot} />
+            <button type="button" title="Bot details" aria-label="Bot details" aria-pressed={panelOpen}
+              onClick={() => dispatch({ type: "panel", botId: panelOpen ? null : bot.id })}
+              className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, panelOpen && "text-ink")}>
+              <PanelRight size={15} />
+            </button>
             <button type="button" title="Bot's screen" className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL)}>
               <Monitor size={15} />
             </button>
@@ -224,6 +240,19 @@ export function ChatView({ bot }: { bot: Bot }) {
     }
   }, [messages, bot.id, thread, dispatch]);
 
+  // A search hit scrolls its message into view and flashes it.
+  const focus = state.focusMessage;
+  useEffect(() => {
+    if (!focus || focus.threadId !== thread) return;
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${focus.messageId}"]`);
+    if (!el) return;
+    stick.current = false;
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("bg-accent/20");
+    const t = setTimeout(() => { el.classList.remove("bg-accent/20"); dispatch({ type: "focusMessage", target: null }); }, 2200);
+    return () => clearTimeout(t);
+  }, [focus, thread, messages.length, dispatch]);
+
   const dividerAt = state.dividerAt[bot.id] ?? 0;
   const dividerIndex = dividerAt > 0 ? messages.findIndex((m) => m.role === "bot" && m.at > dividerAt) : -1;
   const liveText = messages.some((m) => m.streaming);
@@ -232,6 +261,7 @@ export function ChatView({ bot }: { bot: Bot }) {
     <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
       <div className="relative min-h-0 flex-1">
         <Header bot={bot} />
+        {state.findOpen && <ChatFindBar scroller={scroller} messages={messages} />}
         <div
           ref={scroller}
           onScroll={(e) => {

@@ -34,6 +34,9 @@ class SendTurnInput:
     resume_cursor: str | None = None
     session_reset: bool = False
     cwd: str | None = None
+    approval_mode: str = "full"
+    attachments: list[str] = field(default_factory=list)  # absolute paths inside the attachment store
+    image_attachments: list[str] = field(default_factory=list)
     transcript: list[tuple[str, str]] = field(default_factory=list)  # (role, text) for replay drivers
 
 

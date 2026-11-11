@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..approval import codex_sandbox
 from .base import Capabilities, Emitter, SendTurnInput, new_turn_id, preview
 from .proc import kill_tree, spawn
 
@@ -37,10 +38,11 @@ class Run:
 
 class CodexDriver(Emitter):
     provider = "codex"
-    capabilities = Capabilities(effortLevels=["low", "medium", "high"], strictResume=True)
+    capabilities = Capabilities(images=True, effortLevels=["low", "medium", "high"], strictResume=True)
 
-    def __init__(self, binary: str | list[str]) -> None:
+    def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None) -> None:
         super().__init__()
+        self.env = extra_env if extra_env is not None else {}
         self.cmd = [binary] if isinstance(binary, str) else list(binary)
         self.runs: dict[str, Run] = {}
 
@@ -48,11 +50,13 @@ class CodexDriver(Emitter):
         args = [*self.cmd, "exec"]
         if inp.resume_cursor and not inp.session_reset:
             args += ["resume"]
-        args += ["--json", "--skip-git-repo-check", "-c", 'sandbox_mode="read-only"']
+        args += ["--json", "--skip-git-repo-check", "-c", f'sandbox_mode="{codex_sandbox(inp.approval_mode)}"']
         if inp.model and inp.model != "default":
             args += ["-m", inp.model]
         if inp.effort:
             args += ["-c", f'model_reasoning_effort="{inp.effort}"']
+        for path in inp.image_attachments:
+            args += ["-i", path]
         if inp.resume_cursor and not inp.session_reset:
             args += [inp.resume_cursor]
         args += ["-"]
@@ -62,10 +66,13 @@ class CodexDriver(Emitter):
         turn_id = new_turn_id()
         self.emit("turn.started", inp.thread_id, turn_id)
         prompt = inp.text
+        others = [p for p in inp.attachments if p not in inp.image_attachments]
+        if others:
+            prompt += "\n\nAttached files:\n" + "\n".join(f"- {p}" for p in others)
         if inp.system and not (inp.resume_cursor and not inp.session_reset):
             prompt = f"{inp.system}\n\n---\n\n{inp.text}"
         try:
-            proc = await spawn(self.build_args(inp), cwd=inp.cwd or os.getcwd())
+            proc = await spawn(self.build_args(inp), cwd=inp.cwd or os.getcwd(), env=self.env)
         except OSError as e:
             self.emit("runtime.error", inp.thread_id, turn_id, message=f"Could not start Codex: {e}", setup=True, terminal=True)
             self.emit("turn.completed", inp.thread_id, turn_id, ok=False)

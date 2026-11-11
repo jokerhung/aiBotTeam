@@ -1384,3 +1384,15 @@
 }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .thinking-shimmer { animation: none; color: var(--color-ink-secondary); background: none; } }
+
+/* Find in conversation (CSS Custom Highlight API). */
+::highlight(find) { background-color: color-mix(in srgb, var(--color-warning) 35%, transparent); }
+::highlight(find-current) { background-color: color-mix(in srgb, var(--color-warning) 75%, transparent); color: #000; }
+
+/* Appearance settings: font override and reduced motion. The extra attribute out-ranks a skin's own --font-sans. */
+html[data-font="inter"][data-skin] { --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+html[data-font="geist"][data-skin] { --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+html[data-font="system"][data-skin] { --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+html[data-reduce-motion] *, html[data-reduce-motion] *::before, html[data-reduce-motion] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+}

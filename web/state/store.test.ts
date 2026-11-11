@@ -6,7 +6,7 @@ const bot = (id: string, over: Partial<Bot> = {}): Bot => ({
   id, threadId: `t-${id}`, mainThreadId: `t-${id}`, name: id, title: "", description: "", color: "green",
   notifications: true, unread: false, busy: false, threadBusy: false, activity: "idle", turnStartedAt: null,
   statusLine: null, modelSelection: { instanceId: "echo", model: "echo-1" }, pinned: false, hidden: false,
-  section: null, cwd: null, lastText: "", lastAt: null, readAt: 0, tasks: [], usage: {}, ...over,
+  section: null, cwd: null, approvalMode: "full", soul: "", chief: false, fallbackSelection: null, lastText: "", lastAt: null, readAt: 0, tasks: [], usage: {}, ...over,
 });
 const msg = (id: string, over: Partial<Message> = {}): Message => ({ id, role: "bot", kind: "text", text: "", at: 1, ...over });
 const frame = (s: AppState, f: ServerFrame) => reducer(s, { type: "frame", frame: f });
@@ -91,5 +91,48 @@ describe("reducer", () => {
     let s = hydrated("a", "b", "c");
     s = frame(s, { kind: "bots.order", botIds: ["c", "a"] });
     expect(s.bots.map((b) => b.id)).toEqual(["c", "a", "b"]);
+  });
+});
+
+describe("phase 3 state", () => {
+  it("shows a request card and settles it in place when the server patches it", () => {
+    const open = { id: "r1", type: "permission" as const, tool: "Bash", summary: "mkdir x", canAlways: true, status: "open" as const, openedAt: 1, choices: [], questions: [] };
+    let s = hydrated("a");
+    s = frame(s, { kind: "message", botId: "a", threadId: "t-a", message: msg("m1", { kind: "request", request: open }) });
+    expect(s.messages["t-a"][0].request?.status).toBe("open");
+    s = frame(s, { kind: "message.patch", botId: "a", threadId: "t-a", message: { id: "m1", request: { ...open, status: "resolved", behavior: "allow", source: "user" } } });
+    expect(s.messages["t-a"]).toHaveLength(1);
+    expect(s.messages["t-a"][0].request).toMatchObject({ status: "resolved", behavior: "allow", source: "user" });
+  });
+
+  it("tracks sections and config frames", () => {
+    let s = hydrated("a");
+    s = frame(s, { kind: "sections", sections: [{ id: "s1", name: "Work", collapsed: false }] });
+    expect(s.sections.map((x) => x.name)).toEqual(["Work"]);
+    s = frame(s, { kind: "config", settings: { ...s.config.settings, skin: "midnight" }, keys: { groq: { configured: true } }, keyCatalog: [] });
+    expect(s.config.settings.skin).toBe("midnight");
+    expect(s.config.keys.groq.configured).toBe(true);
+  });
+
+  it("opens the bot panel and closes it when another bot is selected", () => {
+    let s = hydrated("a", "b");
+    s = reducer(s, { type: "panel", botId: "a" });
+    expect(s.panelBotId).toBe("a");
+    s = reducer(s, { type: "select", id: "b" });
+    expect(s.panelBotId).toBeNull();
+  });
+
+  it("picks bots in select mode and clears the picks when it ends", () => {
+    let s = reducer(hydrated("a", "b"), { type: "selecting", on: true });
+    s = reducer(s, { type: "pick", id: "a" });
+    s = reducer(s, { type: "pick", id: "b" });
+    s = reducer(s, { type: "pick", id: "a" });
+    expect(s.picked).toEqual(["b"]);
+    expect(reducer(s, { type: "selecting", on: false }).picked).toEqual([]);
+  });
+
+  it("opens settings on a page", () => {
+    const s = reducer(initialState, { type: "settings", open: true, page: "connections" });
+    expect(s).toMatchObject({ settingsOpen: true, settingsPage: "connections" });
   });
 });

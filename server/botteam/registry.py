@@ -17,6 +17,19 @@ from .drivers.proc import run_text
 from .store import new_id
 
 
+# Write-only API keys. `env` keys feed a CLI engine's environment; `base` keys light up an OpenAI-compatible endpoint.
+KEY_CATALOG: list[dict] = [
+    {"id": "anthropic", "label": "Anthropic", "purpose": "Claude API key for the Claude Code engine", "env": ("claude", "ANTHROPIC_API_KEY")},
+    {"id": "openai", "label": "OpenAI", "purpose": "OpenAI models and the Codex engine", "env": ("codex", "OPENAI_API_KEY"), "base": "https://api.openai.com/v1"},
+    {"id": "openrouter", "label": "OpenRouter", "purpose": "Many models behind one key", "base": "https://openrouter.ai/api/v1"},
+    {"id": "groq", "label": "Groq", "purpose": "Fast open-model inference", "base": "https://api.groq.com/openai/v1"},
+    {"id": "deepseek", "label": "DeepSeek", "purpose": "DeepSeek chat models", "base": "https://api.deepseek.com/v1"},
+    {"id": "mistral", "label": "Mistral", "purpose": "Mistral models", "base": "https://api.mistral.ai/v1"},
+    {"id": "xai", "label": "xAI", "purpose": "Grok models", "base": "https://api.x.ai/v1"},
+]
+KEY_IDS = {k["id"] for k in KEY_CATALOG}
+
+
 def claude_signed_in(code: int, out: str) -> bool | None:
     """`claude auth status` prints JSON with a loggedIn flag; None when the answer cannot be read."""
     if code == -1:
@@ -57,6 +70,7 @@ class Registry:
         self.with_echo = with_echo
         self.instances: dict[str, Instance] = {}
         self._listeners: list[Listener] = []
+        self.broker = None  # set by the app: drivers hand its port and token to the MCP bridge
 
     def on_event(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -87,6 +101,7 @@ class Registry:
                 await self._add(iid, "openai-compat", cfg.get("displayName") or iid)
         if self.with_echo:
             await self._add("echo", "echo", "Echo (demo)")
+        await self.sync_keys()
 
     async def check(self, instance_id: str) -> Optional[Instance]:
         old = self.instances.get(instance_id)
@@ -107,6 +122,11 @@ class Registry:
             for fn in self._listeners:
                 inst.driver.on_event(fn)
         self.instances[iid] = inst
+        for k in KEY_CATALOG:  # a re-detected CLI engine gets its saved key back
+            if "env" in k and k["env"][0] == iid and isinstance(getattr(inst.driver, "env", None), dict):
+                value = self.config.secret(f"key:{k['id']}")
+                if value:
+                    inst.driver.env[k["env"][1]] = value
         return inst
 
     async def _detect(self, inst: Instance, cfg: dict) -> None:
@@ -126,7 +146,7 @@ class Registry:
                 return
             inst.version = out.splitlines()[0] if out else None
             if kind == "claude":
-                inst.driver = ClaudeDriver(binary)
+                inst.driver = ClaudeDriver(binary, broker=self.broker)
                 inst.models = CLAUDE_MODELS
                 code, out = await run_text([binary, "auth", "status"], timeout=10)
                 inst.signed_in = claude_signed_in(code, out)
@@ -155,6 +175,43 @@ class Registry:
                 inst.models[0] = {**inst.models[0], "default": True}
         else:
             inst.state, inst.reason = "unavailable", f"Unknown driver {kind!r}"
+
+    # ---- api keys -------------------------------------------------------------
+    def key_status(self) -> dict[str, dict]:
+        """Which keys are saved. Never the value, not even a fragment of it."""
+        return {k["id"]: {"configured": bool(self.config.secret(f"key:{k['id']}"))} for k in KEY_CATALOG}
+
+    async def set_key(self, key_id: str, value: str | None) -> None:
+        self.config.set_secret(f"key:{key_id}", (value or "").strip() or None)
+        await self.sync_keys(only=key_id)
+
+    async def sync_keys(self, only: str | None = None) -> None:
+        """Apply saved keys now: CLI engines get them in their environment, endpoint keys become a live instance."""
+        for k in KEY_CATALOG:
+            if only and k["id"] != only:
+                continue
+            value = self.config.secret(f"key:{k['id']}")
+            if "env" in k:
+                inst = self.instances.get(k["env"][0])
+                drv_env = getattr(inst.driver, "env", None) if inst and inst.driver else None
+                if isinstance(drv_env, dict):
+                    if value:
+                        drv_env[k["env"][1]] = value
+                    else:
+                        drv_env.pop(k["env"][1], None)
+            if "base" in k:
+                iid = f"key-{k['id']}"
+                old = self.instances.pop(iid, None)
+                if old and old.driver:
+                    await old.driver.stop_all()
+                if value:
+                    self.config.instances[iid] = {"driver": "openai-compat", "displayName": k["label"], "baseUrl": k["base"], "keyId": k["id"]}
+                    self.config.set_secret(f"instance:{iid}", value)
+                    await self._add(iid, "openai-compat", k["label"])
+                else:
+                    self.config.instances.pop(iid, None)
+                    self.config.set_secret(f"instance:{iid}", None)
+                    self.config.save()
 
     # ---- user-configured endpoints ------------------------------------------
     async def add_openai_compat(self, name: str, base_url: str, api_key: str | None, models: list[str]) -> Instance:

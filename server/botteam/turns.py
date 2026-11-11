@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from .approval import normalize_mode
+from .broker import Broker, Policy
 from .bus import Bus
 from .drivers.base import SendTurnInput
 from .events import RuntimeEvent
 from .registry import Registry
 from .store import Store, data_dir, new_id, now_ms
-from .wire import ErrorInfo, ToolInfo, WireBot, WireMessage, WireTask
+from .wire import Attachment, ErrorInfo, RequestInfo, ToolInfo, WireBot, WireMessage, WireTask
 
 RETRY_DELAYS = (1.0, 3.0)
 LIVE_ONLY = {"content.delta", "item.output", "item.updated"}  # never written to the thread log
@@ -40,12 +43,20 @@ def persona(bot: WireBot) -> str:
         parts.append(f"Your role: {bot.title}.")
     if bot.description:
         parts.append(bot.description)
+    if bot.soul.strip():
+        parts.append(bot.soul.strip())
     return " ".join(parts)
 
 
 class Turns:
-    def __init__(self, store: Store, bus: Bus, registry: Registry, log_dir: Path | None = None) -> None:
+    def __init__(self, store: Store, bus: Bus, registry: Registry, log_dir: Path | None = None,
+                 broker: Optional[Broker] = None, attachments_dir: Path | None = None) -> None:
         self.store, self.bus, self.registry = store, bus, registry
+        self.broker = broker
+        self.req_msgs: dict[str, str] = {}  # request id -> the transcript message that shows it
+        self.attachments_dir = attachments_dir or data_dir() / "attachments"
+        if broker:
+            broker.on_open, broker.on_resolved = self._request_opened, self._request_resolved
         self.log_dir = log_dir or data_dir() / "threads"
         self.runs: dict[str, ThreadRun] = {}
         self.queues: dict[str, list[str]] = {}  # thread -> queued message ids
@@ -61,6 +72,40 @@ class Turns:
         if self._consumer:
             self._consumer.cancel()
 
+    # ---- permission requests ----------------------------------------------------------
+    async def policy(self, thread_id: str) -> Optional[Policy]:
+        bot = await self.store.bot_of_thread(thread_id)
+        if not bot:
+            return None
+        run = self.runs.get(thread_id)
+        return Policy(mode=normalize_mode(bot.approvalMode), cwd=(run.inp.cwd if run else None) or bot.cwd or os.getcwd(),
+                      instance=bot.modelSelection.instanceId)
+
+    async def _request_opened(self, thread_id: str, req: dict) -> None:
+        bot = await self.store.bot_of_thread(thread_id)
+        if not bot:
+            return
+        run = self.runs.get(thread_id)
+        if run:
+            await self._finalize_live(bot, thread_id, run)
+        m = WireMessage(id=new_id("msg"), role="bot", kind="request", at=now_ms(), request=RequestInfo(**req))
+        await self.store.add_message(bot.id, thread_id, m)
+        self.req_msgs[req["id"]] = m.id
+        self._frame("message", bot.id, thread_id, m)
+        await self.publish_bot(bot)
+
+    async def _request_resolved(self, thread_id: str, req: dict) -> None:
+        mid = self.req_msgs.pop(req["id"], None)
+        bot = await self.store.bot_of_thread(thread_id)
+        if not mid or not bot:
+            return
+        m = await self.store.get_message(mid)
+        if m:
+            m.request = RequestInfo(**req)
+            await self.store.update_message(m)
+            self._frame("message.patch", bot.id, thread_id, {"id": m.id, "request": m.request.model_dump()})
+        await self.publish_bot(bot)
+
     # ---- bot frames -----------------------------------------------------------
     async def bot_dict(self, bot: WireBot) -> dict[str, Any]:
         threads = await self.store.list_threads(bot.id)
@@ -70,11 +115,12 @@ class Turns:
             for t in threads
         ]
         runs = [self.runs[t["id"]] for t in threads if t["id"] in self.runs]
+        waiting = bool(self.broker and any(self.broker.open_for(t["id"]) for t in threads))
         active = self.runs.get(bot.threadId)
         usage = next((t["usage"] for t in threads if t["id"] == bot.threadId), {})
         out = bot.model_copy(update={
             "tasks": tasks, "busy": bool(runs), "threadBusy": active is not None,
-            "activity": "working" if runs else "idle",
+            "activity": "waiting-on-you" if waiting else ("working" if runs else "idle"),
             "turnStartedAt": min((r.started_at for r in runs), default=None),
             "statusLine": active.label if active else None, "usage": usage,
         })
@@ -88,11 +134,29 @@ class Turns:
         self.bus.publish({"kind": kind, "botId": bot_id, "threadId": thread_id, "message": payload})
 
     # ---- sending ----------------------------------------------------------------
+    def attachment_meta(self, name: str) -> Optional[Attachment]:
+        """The stored attachment for a name, or None: only plain names inside the attachments store resolve."""
+        if not name or name != os.path.basename(name) or name.startswith("."):
+            return None
+        path = self.attachments_dir / name
+        meta = self.attachments_dir / f"{name}.json"
+        try:
+            if not path.is_file() or path.resolve().parent != self.attachments_dir.resolve():
+                return None
+            info = json.loads(meta.read_text(encoding="utf8")) if meta.exists() else {}
+        except (OSError, ValueError):
+            return None
+        return Attachment(name=name, filename=info.get("filename", name), mime=info.get("mime", ""),
+                          size=path.stat().st_size, image=str(info.get("mime", "")).startswith("image/"))
+
     async def send(self, bot: WireBot, thread_id: str, text: str, send_id: Optional[str],
-                   branch: bool = False, parent_id: Optional[str] = None) -> WireMessage:
+                   branch: bool = False, parent_id: Optional[str] = None, attachments: Optional[list[str]] = None) -> WireMessage:
         async with self._lock:
             inst = self.registry.get(bot.modelSelection.instanceId)
-            msg = WireMessage(id=new_id("msg"), role="user", text=text, at=now_ms(), sendId=send_id, parentId=parent_id)
+            files = [a for a in (self.attachment_meta(n) for n in attachments or []) if a]
+            if any(a.image for a in files) and not (inst and inst.driver and inst.driver.capabilities.images):
+                raise ValueError("this engine cannot read images")
+            msg = WireMessage(id=new_id("msg"), role="user", text=text, at=now_ms(), sendId=send_id, parentId=parent_id, attachments=files)
             busy = thread_id in self.runs
             if busy and not branch:
                 steered = await self._try_steer(inst, thread_id, text)
@@ -107,7 +171,7 @@ class Turns:
             if msg.queued:
                 self.queues.setdefault(thread_id, []).append(msg.id)
             elif not msg.steered:
-                await self._start_turn(bot, thread_id, text)
+                await self._start_turn(bot, thread_id, text, files=files)
             else:
                 await self.publish_bot(bot)
             return msg
@@ -123,7 +187,8 @@ class Turns:
             await self.store.patch_thread(thread_id, title=msg.text.strip().splitlines()[0][:48])
         bot.lastText, bot.lastAt = msg.text, msg.at
 
-    async def _start_turn(self, bot: WireBot, thread_id: str, text: str, run: Optional[ThreadRun] = None) -> None:
+    async def _start_turn(self, bot: WireBot, thread_id: str, text: str, run: Optional[ThreadRun] = None,
+                          files: Optional[list[Attachment]] = None) -> None:
         inst = self.registry.get(bot.modelSelection.instanceId)
         if not inst or not inst.driver or inst.state != "available" or not inst.enabled:
             reason = inst.reason if inst and inst.reason else "that engine is not available"
@@ -138,7 +203,9 @@ class Turns:
         inp = SendTurnInput(
             thread_id=thread_id, bot_id=bot.id, text=text, model=bot.modelSelection.model,
             effort=bot.modelSelection.effort, system=persona(bot), resume_cursor=t.get("cursor"),
-            cwd=bot.cwd, transcript=transcript,
+            cwd=bot.cwd, transcript=transcript, approval_mode=normalize_mode(bot.approvalMode),
+            attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or []],
+            image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
         )
         self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp)
         await self.publish_bot(bot)
@@ -159,6 +226,8 @@ class Turns:
         for qid in self.queues.pop(thread_id, []):  # Stop clears what was waiting behind the turn
             await self.store.delete_message(qid)
             self.bus.publish({"kind": "message.deleted", "botId": bot.id, "threadId": thread_id, "messageId": qid})
+        if self.broker:
+            await self.broker.cancel_thread(thread_id)
         await inst.driver.interrupt_turn(thread_id)
 
     async def drop_queued(self, bot_id: str, thread_id: str, message_id: str) -> bool:
@@ -297,6 +366,8 @@ class Turns:
                                    createdAt="", data={"attempt": attempt + 1, "delayMs": int(delay * 1000)}))
             asyncio.create_task(self._retry_later(bot.id, thread_id, run, delay))
             return
+        if self.broker:
+            await self.broker.cancel_thread(thread_id)  # a request left open when the turn ends can no longer be answered
         await self._finalize_live(bot, thread_id, run)
         for m in run.tools.values():
             if m.tool and m.tool.ok is None:
@@ -347,5 +418,5 @@ class Turns:
             m.queued = False
             await self.store.update_message(m)
             self._frame("message.patch", bot.id, thread_id, {"id": m.id, "queued": False})
-            await self._start_turn(bot, thread_id, m.text)
+            await self._start_turn(bot, thread_id, m.text, files=m.attachments)
             return

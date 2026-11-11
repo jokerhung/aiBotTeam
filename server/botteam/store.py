@@ -37,6 +37,8 @@ CREATE INDEX IF NOT EXISTS thread_bot ON threads(bot_id);
 CREATE TABLE IF NOT EXISTS messages(
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, parent_id TEXT, role TEXT,
   at INTEGER NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sections(id TEXT PRIMARY KEY, name TEXT NOT NULL, pos INTEGER NOT NULL, collapsed INTEGER NOT NULL DEFAULT 0);
+CREATE VIRTUAL TABLE IF NOT EXISTS msg_fts USING fts5(text, message_id UNINDEXED, bot_id UNINDEXED, thread_id UNINDEXED, tokenize='unicode61 remove_diacritics 2');
 """
 
 
@@ -52,6 +54,7 @@ class Store:
         await self._migrate()
         await self.db.execute("CREATE INDEX IF NOT EXISTS msg_thread ON messages(thread_id, seq)")
         await self.db.execute("CREATE INDEX IF NOT EXISTS msg_parent ON messages(thread_id, parent_id)")
+        await self._backfill_fts()
         await self.db.commit()
 
     async def close(self) -> None:
@@ -123,6 +126,7 @@ class Store:
     async def delete_bot(self, bot_id: str) -> bool:
         cur = await self.db.execute("DELETE FROM bots WHERE id=?", (bot_id,))
         await self.db.execute("DELETE FROM messages WHERE bot_id=?", (bot_id,))
+        await self.db.execute("DELETE FROM msg_fts WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM threads WHERE bot_id=?", (bot_id,))
         await self.db.commit()
         return cur.rowcount > 0
@@ -174,6 +178,7 @@ class Store:
 
     async def delete_thread(self, thread_id: str) -> None:
         await self.db.execute("DELETE FROM messages WHERE thread_id=?", (thread_id,))
+        await self.db.execute("DELETE FROM msg_fts WHERE thread_id=?", (thread_id,))
         await self.db.execute("DELETE FROM threads WHERE id=?", (thread_id,))
         await self.db.commit()
 
@@ -189,10 +194,15 @@ class Store:
             (m.id, bot_id, thread_id, m.parentId, m.role, m.at, seq, m.model_dump_json()))
         if advance_leaf:
             await self.db.execute("UPDATE threads SET leaf_id=?, updated_at=? WHERE id=?", (m.id, now_ms(), thread_id))
+        await self._index(m, bot_id, thread_id)
         await self.db.commit()
 
     async def update_message(self, m: WireMessage) -> None:
         await self.db.execute("UPDATE messages SET body=? WHERE id=?", (m.model_dump_json(), m.id))
+        cur = await self.db.execute("SELECT bot_id, thread_id FROM messages WHERE id=?", (m.id,))
+        row = await cur.fetchone()
+        if row:
+            await self._index(m, row[0], row[1])
         await self.db.commit()
 
     async def get_message(self, message_id: str) -> Optional[WireMessage]:
@@ -202,6 +212,7 @@ class Store:
 
     async def delete_message(self, message_id: str) -> None:
         await self.db.execute("DELETE FROM messages WHERE id=?", (message_id,))
+        await self.db.execute("DELETE FROM msg_fts WHERE message_id=?", (message_id,))
         await self.db.commit()
 
     async def page(self, thread_id: str, before: Optional[str], limit: int = 200) -> tuple[list[WireMessage], bool]:
@@ -251,3 +262,90 @@ class Store:
             if not r:
                 return leaf
             leaf = r[0]
+
+    # ---- search ---------------------------------------------------------------
+    async def _index(self, m: WireMessage, bot_id: str, thread_id: str) -> None:
+        await self.db.execute("DELETE FROM msg_fts WHERE message_id=?", (m.id,))
+        if m.kind == "text" and m.text.strip():
+            await self.db.execute("INSERT INTO msg_fts(text, message_id, bot_id, thread_id) VALUES(?,?,?,?)",
+                                  (m.text, m.id, bot_id, thread_id))
+
+    async def _backfill_fts(self) -> None:
+        cur = await self.db.execute("SELECT COUNT(*) FROM msg_fts")
+        if (await cur.fetchone())[0]:
+            return
+        cur = await self.db.execute("SELECT bot_id, thread_id, body FROM messages")
+        for bot_id, thread_id, body in await cur.fetchall():
+            await self._index(WireMessage.model_validate_json(body), bot_id, thread_id or "")
+
+    async def search(self, q: str, limit: int = 30) -> list[dict[str, Any]]:
+        words = [w for w in "".join(c if c.isalnum() else " " for c in q).split() if w]
+        if not words:
+            return []
+        match = " ".join(f'"{w}"*' for w in words)
+        cur = await self.db.execute(
+            "SELECT message_id, bot_id, thread_id, snippet(msg_fts, 0, '[[', ']]', '...', 14) FROM msg_fts "
+            "WHERE msg_fts MATCH ? ORDER BY rank LIMIT ?", (match, limit))
+        out = []
+        for mid, bid, tid, snip in await cur.fetchall():
+            m = await self.get_message(mid)
+            out.append({"messageId": mid, "botId": bid, "threadId": tid, "snippet": snip,
+                        "at": m.at if m else 0, "role": m.role if m else ""})
+        return out
+
+    # ---- sections ---------------------------------------------------------------
+    async def list_sections(self) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, name, collapsed FROM sections ORDER BY pos")
+        return [{"id": r[0], "name": r[1], "collapsed": bool(r[2])} for r in await cur.fetchall()]
+
+    async def create_section(self, name: str) -> dict[str, Any]:
+        sid = new_id("sec")
+        cur = await self.db.execute("SELECT COALESCE(MAX(pos),-1)+1 FROM sections")
+        pos = (await cur.fetchone())[0]
+        await self.db.execute("INSERT INTO sections(id,name,pos) VALUES(?,?,?)", (sid, name, pos))
+        await self.db.commit()
+        return {"id": sid, "name": name, "collapsed": False}
+
+    async def patch_section(self, sid: str, name: Optional[str], collapsed: Optional[bool]) -> bool:
+        cur = await self.db.execute("SELECT 1 FROM sections WHERE id=?", (sid,))
+        if not await cur.fetchone():
+            return False
+        if name is not None:
+            await self.db.execute("UPDATE sections SET name=? WHERE id=?", (name, sid))
+        if collapsed is not None:
+            await self.db.execute("UPDATE sections SET collapsed=? WHERE id=?", (int(collapsed), sid))
+        await self.db.commit()
+        return True
+
+    async def delete_section(self, sid: str) -> bool:
+        cur = await self.db.execute("DELETE FROM sections WHERE id=?", (sid,))
+        await self.db.commit()
+        if cur.rowcount:
+            for bot in await self.list_bots():
+                if bot.section == sid:
+                    bot.section = None
+                    await self.save_bot(bot)
+        return cur.rowcount > 0
+
+    # ---- requests -----------------------------------------------------------------
+    async def expire_open_requests(self) -> int:
+        """A request still open at startup lost its CLI process with the previous run: close it as unavailable."""
+        cur = await self.db.execute("SELECT id, body FROM messages WHERE body LIKE ?", ('%"status":"open"%',))
+        n = 0
+        for _mid, body in await cur.fetchall():
+            m = WireMessage.model_validate_json(body)
+            if m.request and m.request.status == "open":
+                m.request.status, m.request.behavior, m.request.source = "resolved", "deny", "unavailable"
+                await self.update_message(m)
+                n += 1
+        return n
+
+    async def duplicate_bot(self, bot_id: str) -> Optional[WireBot]:
+        src = await self.get_bot(bot_id)
+        if not src:
+            return None
+        bot = await self.create_bot(f"{src.name} copy"[:60], src.title, src.description, src.color, src.modelSelection.model_dump())
+        for k in ("cwd", "approvalMode", "soul", "fallbackSelection", "notifications", "section"):
+            setattr(bot, k, getattr(src, k))
+        await self.save_bot(bot)
+        return bot

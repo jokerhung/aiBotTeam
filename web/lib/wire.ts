@@ -7,6 +7,84 @@ export interface ModelSelection {
   effort?: string | null;
 }
 
+export type ApprovalMode = "ask" | "edits" | "auto" | "full";
+export const APPROVAL_MODES: { id: ApprovalMode; label: string; hint: string }[] = [
+  { id: "ask", label: "Ask", hint: "Ask before running commands or editing files" },
+  { id: "edits", label: "Edits", hint: "Edit files freely, ask before commands" },
+  { id: "auto", label: "Auto", hint: "Run safe read-only commands and edits automatically" },
+  { id: "full", label: "Full", hint: "Never ask — full access" },
+];
+
+export interface RequestQuestion {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options?: ({ label: string; description?: string } | string)[];
+}
+
+export interface RequestInfo {
+  id: string;
+  type: "permission" | "question";
+  tool: string;
+  summary: string;
+  command?: string | null;
+  cwd?: string | null;
+  canAlways: boolean;
+  status: "open" | "resolved";
+  openedAt: number;
+  choices: string[];
+  questions: RequestQuestion[];
+  behavior?: "allow" | "deny" | null;
+  source?: "user" | "auto" | "rule" | "expired" | "unavailable" | "system" | null;
+  answer?: string | null;
+}
+
+export interface Attachment {
+  name: string;
+  filename: string;
+  mime: string;
+  size: number;
+  image: boolean;
+}
+
+export interface Section {
+  id: string;
+  name: string;
+  collapsed: boolean;
+}
+
+export interface KeyInfo {
+  id: string;
+  label: string;
+  purpose: string;
+}
+
+export interface AppSettings {
+  displayName: string;
+  uiMode: "simple" | "advanced";
+  skin: string;
+  font: string;
+  chatWidth: "narrow" | "default" | "wide";
+  reduceMotion: boolean;
+  language: string;
+}
+
+export interface AppConfig {
+  settings: AppSettings;
+  keys: Record<string, { configured: boolean }>;
+  keyCatalog: KeyInfo[];
+}
+
+export interface SearchHit {
+  messageId: string;
+  botId: string;
+  botName: string;
+  threadId: string;
+  snippet: string;
+  at: number;
+  role: string;
+}
+
 export interface Task {
   threadId: string;
   title: string;
@@ -37,6 +115,10 @@ export interface Bot {
   hidden: boolean;
   section: string | null;
   cwd: string | null;
+  approvalMode: ApprovalMode;
+  soul: string;
+  chief: boolean;
+  fallbackSelection: ModelSelection | null;
   lastText: string;
   lastAt: number | null;
   readAt: number;
@@ -63,7 +145,7 @@ export interface ErrorInfo {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "activity" | "error" | "stopped" | "notice";
+  kind: "text" | "activity" | "error" | "stopped" | "notice" | "request";
   text: string;
   at: number;
   sendId?: string | null;
@@ -73,12 +155,15 @@ export interface Message {
   steered?: boolean;
   tool?: ToolInfo | null;
   error?: ErrorInfo | null;
+  request?: RequestInfo | null;
+  attachments?: Attachment[];
   siblings?: string[];
   pending?: boolean;
 }
 
 export type ServerFrame =
-  | { kind: "config"; [k: string]: unknown }
+  | ({ kind: "config" } & Partial<AppConfig> & { [k: string]: unknown })
+  | { kind: "sections"; sections: Section[] }
   | { kind: "instances" }
   | { kind: "bot"; bot: Bot }
   | { kind: "bot.deleted"; botId: string }

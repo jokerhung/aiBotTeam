@@ -26,6 +26,31 @@ class WireTask(BaseModel):
     main: bool = False
 
 
+class RequestInfo(BaseModel):
+    id: str
+    type: Literal["permission", "question"] = "permission"
+    tool: str = ""
+    summary: str = ""
+    command: Optional[str] = None
+    cwd: Optional[str] = None
+    canAlways: bool = False
+    status: Literal["open", "resolved"] = "open"
+    openedAt: int = 0
+    choices: list[str] = Field(default_factory=list)
+    questions: list[dict[str, Any]] = Field(default_factory=list)
+    behavior: Optional[str] = None
+    source: Optional[str] = None  # user | auto | rule | expired | unavailable | system
+    answer: Optional[str] = None
+
+
+class Attachment(BaseModel):
+    name: str
+    filename: str = ""
+    mime: str = ""
+    size: int = 0
+    image: bool = False
+
+
 class WireBot(BaseModel):
     id: str
     threadId: str  # the conversation on screen (a task, or the main thread)
@@ -46,6 +71,10 @@ class WireBot(BaseModel):
     hidden: bool = False
     section: Optional[str] = None
     cwd: Optional[str] = None
+    approvalMode: str = "full"
+    soul: str = ""
+    chief: bool = False
+    fallbackSelection: Optional[ModelSelection] = None
     lastText: str = ""
     lastAt: Optional[int] = None
     readAt: int = 0
@@ -72,7 +101,7 @@ class ErrorInfo(BaseModel):
 class WireMessage(BaseModel):
     id: str
     role: Literal["bot", "user"]
-    kind: Literal["text", "activity", "error", "stopped", "notice"] = "text"
+    kind: Literal["text", "activity", "error", "stopped", "notice", "request"] = "text"
     text: str = ""
     at: int
     sendId: Optional[str] = None
@@ -82,6 +111,8 @@ class WireMessage(BaseModel):
     steered: bool = False
     tool: Optional[ToolInfo] = None
     error: Optional[ErrorInfo] = None
+    request: Optional[RequestInfo] = None
+    attachments: list[Attachment] = Field(default_factory=list)
     siblings: list[str] = Field(default_factory=list)  # ids of alternative versions of this message
 
 
@@ -91,6 +122,8 @@ class CreateBot(BaseModel):
     description: str = ""
     color: Optional[MausColor] = None
     modelSelection: Optional[ModelSelection] = None
+    approvalMode: Optional[str] = None
+    cwd: Optional[str] = None
 
 
 class PatchBot(BaseModel):
@@ -103,6 +136,11 @@ class PatchBot(BaseModel):
     unread: Optional[bool] = None
     section: Optional[str] = None
     cwd: Optional[str] = None
+    approvalMode: Optional[str] = None
+    soul: Optional[str] = None
+    chief: Optional[bool] = None
+    notifications: Optional[bool] = None
+    fallbackSelection: Optional[ModelSelection] = None
     modelSelection: Optional[ModelSelection] = None
     threadId: Optional[str] = None  # switch the conversation on screen
 
@@ -111,6 +149,7 @@ class SendMessage(BaseModel):
     text: str = Field(min_length=1, max_length=100_000)
     sendId: Optional[str] = None
     threadId: Optional[str] = None
+    attachments: list[str] = Field(default_factory=list)  # stored attachment names
     branch: bool = False  # true: parentId is explicit (None = the thread's root), making the new message a sibling of the one that had it
     parentId: Optional[str] = None
 
@@ -148,3 +187,41 @@ class PatchInstance(BaseModel):
 
 
 Frame = dict[str, Any]
+
+
+class RequestAnswer(BaseModel):
+    behavior: Literal["allow", "deny"]
+    message: Optional[str] = None
+    always: bool = False
+    answers: Optional[dict[str, str]] = None
+
+
+class SectionBody(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+
+class PatchSection(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    collapsed: Optional[bool] = None
+
+
+class MoveBot(BaseModel):
+    section: Optional[str] = None
+    botIds: Optional[list[str]] = None  # new order of the whole list, when given
+
+
+class BotDefaults(BaseModel):
+    modelSelection: Optional[ModelSelection] = None
+    approvalMode: Optional[str] = None
+    cwd: Optional[str] = None
+
+
+class ConfigPatch(BaseModel):
+    displayName: Optional[str] = Field(default=None, max_length=60)
+    uiMode: Optional[Literal["simple", "advanced"]] = None
+    skin: Optional[str] = Field(default=None, max_length=40)
+    font: Optional[str] = Field(default=None, max_length=40)
+    chatWidth: Optional[Literal["narrow", "default", "wide"]] = None
+    reduceMotion: Optional[bool] = None
+    language: Optional[str] = Field(default=None, max_length=12)
+    keys: Optional[dict[str, Optional[str]]] = None  # name -> secret; null/empty clears

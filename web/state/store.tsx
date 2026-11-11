@@ -1,7 +1,12 @@
 "use client";
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from "react";
 import { api } from "./api";
-import type { Bot, InstanceInfo, Message, ServerFrame } from "@/lib/wire";
+import type { AppConfig, AppSettings, Bot, InstanceInfo, Message, Section, ServerFrame } from "@/lib/wire";
+
+export type SettingsPage = "general" | "connections" | "engines" | "appearance";
+export const DEFAULT_SETTINGS: AppSettings = {
+  displayName: "", uiMode: "simple", skin: "daylight", font: "inter", chatWidth: "default", reduceMotion: false, language: "en",
+};
 
 export interface AppState {
   bots: Bot[];
@@ -17,6 +22,17 @@ export interface AppState {
   drawerOpen: boolean;
   newBotOpen: boolean;
   settingsOpen: boolean;
+  settingsPage: SettingsPage;
+  config: AppConfig;
+  sections: Section[];
+  panelBotId: string | null;
+  paletteOpen: boolean;
+  shortcutsOpen: boolean;
+  findOpen: boolean;
+  /** Message to scroll to and highlight after a search hit. */
+  focusMessage: { threadId: string; messageId: string } | null;
+  selecting: boolean;
+  picked: string[];
   /** When the person last read the selected bot, captured as it was opened: the unread divider sits after it. */
   dividerAt: Record<string, number>;
 }
@@ -32,12 +48,23 @@ export type Action =
   | { type: "optimisticFailed"; threadId: string; sendId: string }
   | { type: "drawer"; open: boolean }
   | { type: "newBot"; open: boolean }
-  | { type: "settings"; open: boolean }
+  | { type: "settings"; open: boolean; page?: SettingsPage }
+  | { type: "config"; config: AppConfig }
+  | { type: "sections"; sections: Section[] }
+  | { type: "panel"; botId: string | null }
+  | { type: "palette"; open: boolean }
+  | { type: "shortcuts"; open: boolean }
+  | { type: "find"; open: boolean }
+  | { type: "focusMessage"; target: AppState["focusMessage"] }
+  | { type: "selecting"; on: boolean }
+  | { type: "pick"; id: string }
   | { type: "frame"; frame: ServerFrame };
 
 export const initialState: AppState = {
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
+  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, sections: [], panelBotId: null,
+  paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
 
 function upsertMessage(list: Message[], m: Message): Message[] {
@@ -69,7 +96,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, connected: action.connected };
     case "select": {
       const bot = state.bots.find((b) => b.id === action.id);
-      return { ...state, selectedId: action.id, drawerOpen: false,
+      return { ...state, selectedId: action.id, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
         dividerAt: { ...state.dividerAt, [action.id]: bot?.readAt ?? 0 } };
     }
     case "drawer":
@@ -77,7 +104,25 @@ export function reducer(state: AppState, action: Action): AppState {
     case "newBot":
       return { ...state, newBotOpen: action.open };
     case "settings":
-      return { ...state, settingsOpen: action.open };
+      return { ...state, settingsOpen: action.open, settingsPage: action.page ?? state.settingsPage };
+    case "config":
+      return { ...state, config: action.config };
+    case "sections":
+      return { ...state, sections: action.sections };
+    case "panel":
+      return { ...state, panelBotId: action.botId };
+    case "palette":
+      return { ...state, paletteOpen: action.open };
+    case "shortcuts":
+      return { ...state, shortcutsOpen: action.open };
+    case "find":
+      return { ...state, findOpen: action.open };
+    case "focusMessage":
+      return { ...state, focusMessage: action.target };
+    case "selecting":
+      return { ...state, selecting: action.on, picked: [] };
+    case "pick":
+      return { ...state, picked: state.picked.includes(action.id) ? state.picked.filter((x) => x !== action.id) : [...state.picked, action.id] };
     case "history":
       return { ...state, messages: { ...state.messages, [action.threadId]: action.messages },
         hasMore: { ...state.hasMore, [action.threadId]: action.hasMore },
@@ -115,6 +160,10 @@ export function reducer(state: AppState, action: Action): AppState {
           const ordered = f.botIds.map((id) => by.get(id)).filter((b): b is Bot => !!b);
           return { ...state, bots: [...ordered, ...state.bots.filter((b) => !f.botIds.includes(b.id))] };
         }
+        case "sections":
+          return { ...state, sections: f.sections };
+        case "config":
+          return f.settings ? { ...state, config: { settings: { ...DEFAULT_SETTINGS, ...f.settings }, keys: f.keys ?? {}, keyCatalog: f.keyCatalog ?? [] } } : state;
         case "thread":
           return { ...state, reload: { ...state.reload, [f.threadId]: (state.reload[f.threadId] ?? 0) + 1 } };
         case "message":
@@ -141,11 +190,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let tries = 0;
     let dead = false;
     const load = async () => {
-      const [b, i] = await Promise.all([
+      const [b, i, c, sec] = await Promise.all([
         api<{ bots: Bot[] }>("/api/bots"),
         api<{ instances: InstanceInfo[] }>("/api/instances"),
+        api<AppConfig>("/api/config"),
+        api<{ sections: Section[] }>("/api/sidebar-sections"),
       ]);
       dispatch({ type: "hydrate", bots: b.bots, instances: i.instances });
+      dispatch({ type: "config", config: { settings: { ...DEFAULT_SETTINGS, ...c.settings }, keys: c.keys, keyCatalog: c.keyCatalog } });
+      dispatch({ type: "sections", sections: sec.sections });
     };
     const connect = () => {
       es = new EventSource("/api/events");
