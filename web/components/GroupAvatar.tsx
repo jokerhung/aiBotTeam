@@ -6,7 +6,7 @@ export function GroupAvatar({ members, size = 44 }: { members: MemberInfo[]; siz
   const shown = members.slice(0, 3);
   const extra = members.length - shown.length;
   const mini = Math.round(size * 0.55);
-  const step = Math.round(mini * 0.62);
+  const step = Math.round(mini * 0.8);
   return (
     <span className="relative flex shrink-0 items-center" style={{ width: step * (shown.length - 1) + mini + (extra > 0 ? 10 : 0), height: size }} aria-hidden>
       {shown.map((m, i) => (

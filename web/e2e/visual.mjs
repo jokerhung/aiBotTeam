@@ -76,40 +76,61 @@ const dismiss = (p) => p.getByRole("button", { name: "Done", exact: true }).firs
   report("routine dialog vs reference", diff(refShot, ourShot, "routine-dialog"), Number(process.env.LIMIT_DIALOG || 0.08), `dialog ${Math.round(rb.width)}x${Math.round(rb.height)} vs ${Math.round(ob.width)}x${Math.round(ob.height)}`);
 }
 
-// 1c. Room and mention picker: geometry of the same elements in the reference and in ours (their data differs, their layout must not)
+// 1c. Room header and mention picker: same member names, titles and colours on both sides, so the crops can be compared pixel by pixel
 {
   const echo = { instanceId: "echo", model: "echo-1" };
-  const mk = (name) => jj("/api/bots", "POST", { name, modelSelection: echo });
-  const [x, y, z] = [await mk("Vis A"), await mk("Vis B"), await mk("Vis C")];
-  const g = await jj("/api/groups", "POST", { name: "Vis room", members: [x.id, y.id, z.id], leader: x.id });
+  const mk = (name, title, color) => jj("/api/bots", "POST", { name, title, color, modelSelection: echo });
+  const [x, y, z] = [await mk("Leader", "Tech Lead", "purple"), await mk("Dev", "Fullstack Developer", "green"), await mk("QA", "QA and Release Engineer", "orange")];
+  const g = await jj("/api/groups", "POST", { name: "botTeam Project", members: [x.id, y.id, z.id], leader: x.id });
   const ref = await page(REF);
   await dismiss(ref);
   await ref.getByText("botTeam Project").first().click();
   await ref.waitForTimeout(1200);
   const ours = await page(OURS);
-  await ours.locator('[data-testid="group-row"]', { hasText: "Vis room" }).click();
+  await ours.locator('[data-testid="group-row"]', { hasText: "botTeam Project" }).click();
   await ours.waitForSelector('[data-testid="group-view"]');
-  const measure = async (p, picker, title) => {
+  await ours.waitForTimeout(500);
+  const HEAD = { x: 1240, y: 0, width: 120, height: 56 }; // the avatar stack (the title area has the reference's scrolled messages fading behind it)
+  const refHead = await ref.screenshot({ clip: HEAD }), ourHead = await ours.screenshot({ clip: HEAD });
+  writeFileSync(`${OUT}/ref-room-header.png`, refHead); writeFileSync(`${OUT}/ours-room-header.png`, ourHead);
+  report("room header vs reference", diff(refHead, ourHead, "room-header"), Number(process.env.LIMIT_HEADER || 0.1), "avatar stack of the same three members");
+  const open = async (p, picker) => {
     const box = p.locator("textarea").first();
-    await box.click(); await box.pressSequentially("@"); await p.waitForTimeout(600);
-    const pk = await p.locator(picker).first().boundingBox();
-    const comp = await box.evaluate((e) => { const r = (e.closest("[class*=rounded-]") || e).getBoundingClientRect(); return { w: r.width, h: r.height }; });
-    const heads = await p.getByText(title, { exact: true }).evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; }));
-    const head = heads.find((h) => h.y < 60 && h.x > 280);  // the title in the room header, not the sidebar row or a message
-    return { pk, comp, head };
+    await box.click(); await box.pressSequentially("@"); await p.waitForTimeout(700);
+    return p.locator(picker).first();
   };
-  const R = await measure(ref, "[role=listbox], [role=menu], [class*=shadow]:has(> button)", "botTeam Project");
-  const O = await measure(ours, '[data-testid="mention-picker"]', "Vis room");
-  const near = (name, a, b, tol) => { const ok = Math.abs(a - b) <= tol; failed ||= !ok; console.log(`${ok ? "PASS" : "FAIL"}  ${name}: reference ${Math.round(a)}, ours ${Math.round(b)} (tolerance ${tol}px)`); };
-  near("room title x", R.head.x, O.head.x, 12);
-  near("room title y", R.head.y, O.head.y, 12);
-  near("mention picker width", R.pk.width, O.pk.width, 12);
-  near("mention picker left edge", R.pk.x, O.pk.x, 12);
-  near("mention picker row height (picker height / 5 rows vs 4)", R.pk.height / 5, O.pk.height / 4, 6);
-  near("composer width", R.comp.w, O.comp.w, 12);
-  await ours.screenshot({ clip: MAIN, path: `${OUT}/ours-room-mention.png` });
-  await ref.screenshot({ clip: MAIN, path: `${OUT}/ref-room-mention.png` });
+  const rp = await open(ref, "[role=listbox], [role=menu], [class*=shadow]:has(> button)");
+  const op = await open(ours, '[data-testid="mention-picker"]');
+  const rb = await rp.boundingBox(), ob = await op.boundingBox();
+  const rows = 4, rowH = 53; // everyone + the three members (the reference lists one more, "devs", below them)
+  const refPk = await ref.screenshot({ clip: { x: rb.x, y: rb.y, width: rb.width, height: rowH * rows + 8 } });
+  const ourPk = await ours.screenshot({ clip: { x: ob.x, y: ob.y, width: ob.width, height: rowH * rows + 8 } });
+  writeFileSync(`${OUT}/ref-picker.png`, refPk); writeFileSync(`${OUT}/ours-picker.png`, ourPk);
+  report("mention picker vs reference", diff(refPk, ourPk, "picker"), Number(process.env.LIMIT_PICKER || 0.1), `first 4 rows, ${Math.round(rb.width)}px vs ${Math.round(ob.width)}px wide`);
   await jj(`/api/groups/${g.id}`, "DELETE"); for (const b2 of [x, y, z]) await jj(`/api/bots/${b2.id}`, "DELETE");
+}
+
+// 1d. Notifications panel: header, filter and footer of the panel (the rows hold each side's own events)
+{
+  const ref = await page(REF);
+  await dismiss(ref);
+  await ref.getByRole("button", { name: "You", exact: true }).click();
+  await ref.getByText("Settings", { exact: true }).first().click();
+  await ref.getByLabel("Show the notification feed").first().click({ force: true });
+  await ref.getByRole("button", { name: "Close settings" }).click();
+  await ref.waitForTimeout(600);
+  await ref.getByRole("button", { name: "Notifications" }).first().click();
+  await ref.waitForTimeout(900);
+  const ours = await page(OURS);
+  await ours.getByRole("button", { name: "Notifications" }).first().click();
+  await ours.waitForSelector('[data-testid="notifications-panel"]');
+  await ours.waitForTimeout(500);
+  const TOP = { x: 1060, y: 0, width: 300, height: 100 }, FOOT = { x: 1060, y: 820, width: 300, height: 40 };
+  for (const [name, clip, limit] of [["header + filter", TOP, 0.1], ["footer", FOOT, 0.1]]) {
+    const r = await ref.screenshot({ clip }), o = await ours.screenshot({ clip });
+    writeFileSync(`${OUT}/ref-notif-${name.split(" ")[0]}.png`, r); writeFileSync(`${OUT}/ours-notif-${name.split(" ")[0]}.png`, o);
+    report(`notifications panel ${name} vs reference`, diff(r, o, `notif-${name.split(" ")[0]}`), Number(process.env.LIMIT_NOTIF || limit), "panel chrome");
+  }
 }
 
 // 2. Our own screens against stored baselines (regression, tighter limit); UPDATE=1 rewrites them

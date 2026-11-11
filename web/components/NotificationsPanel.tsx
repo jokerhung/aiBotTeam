@@ -1,5 +1,5 @@
 "use client";
-import { Bell, BellRing, Check, Inbox as InboxIcon, Pin, PinOff, Trash2, X } from "lucide-react";
+import { Bell, BellRing, Inbox as InboxIcon, Pin, PinOff, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { desktopAlertsOn, enableDesktopAlerts, DESKTOP_ALERTS_KEY } from "./useTeamBehaviors";
 import { locale, useT } from "@/lib/i18n";
@@ -19,17 +19,32 @@ function ago(at: number): string {
   return new Date(at).toLocaleDateString([locale()], { month: "short", day: "numeric" });
 }
 
-/** The notification log in a right-hand panel the person can pin open. */
+const KIND_LABEL: Record<string, [string, string]> = {
+  approval: ["Approval", "text-warning"], question: ["Question", "text-warning"], turn_done: ["Done", "text-success"],
+  assignment_failed: ["Failed", "text-danger"], routine_failed: ["Failed", "text-danger"], webhook_failed: ["Failed", "text-danger"],
+};
+
+function agoText(at: number): string {
+  const m = Math.max(0, Math.floor((Date.now() - at) / 60_000));
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} m ago`;
+  if (m < 1440) return `${Math.floor(m / 60)} h ago`;
+  return `${Math.floor(m / 1440)} d ago`;
+}
+
+/** The notification log in a right-hand panel the person can pin open (same layout as the reference: filter, rows, footer). */
 export function NotificationsPanel() {
   const { state, dispatch } = useStore();
   const t = useT();
   const [alerts, setAlerts] = useState(() => desktopAlertsOn());
+  const [filter, setFilter] = useState("all");
   if (!state.notifOpen) return null;
   const toggleAlerts = async () => {
     if (alerts) { try { localStorage.setItem(DESKTOP_ALERTS_KEY, "0"); } catch { /* storage unavailable */ } setAlerts(false); return; }
     setAlerts(await enableDesktopAlerts());
   };
   const unread = state.notifications.filter((n) => !n.read).length;
+  const shown = state.notifications.filter((n) => filter === "all" || n.targetId === filter);
   const open = async (n: Notification) => {
     void api("/api/notifications/read", { method: "POST", body: JSON.stringify({ ids: [n.id] }) }).catch(() => {});
     if (n.targetKind === "group" && state.groups.some((g) => g.id === n.targetId)) dispatch({ type: "selectGroup", id: n.targetId });
@@ -41,39 +56,56 @@ export function NotificationsPanel() {
   };
   return (
     <aside aria-label={t("Notifications")} data-testid="notifications-panel"
-      className="flex h-full w-[340px] shrink-0 flex-col border-l-[0.5px] border-edge bg-panel max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:shadow-xl">
-      <div className="flex items-center gap-1 px-4 pb-2 pt-4">
-        <h2 className="flex-1 text-[15px] font-medium text-ink">{t("Notifications")}{unread > 0 && <span className="ml-2 rounded-full bg-accent px-1.5 text-[11px] text-[var(--color-accent-ink)]">{unread}</span>}</h2>
-        <button type="button" title={t("Desktop alerts")} aria-label={t("Desktop alerts")} aria-pressed={alerts} onClick={toggleAlerts}
-          className={cn("rounded-full p-1.5 hover:bg-ink/10", alerts ? "text-accent-text" : "text-ink-secondary")}>{alerts ? <BellRing size={14} /> : <Bell size={14} />}</button>
+      className="flex h-full w-[300px] shrink-0 flex-col border-l-[0.5px] border-edge bg-panel max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:shadow-xl">
+      <div className="flex h-[44px] shrink-0 items-center gap-1 px-4">
+        <h2 className="flex-1 text-[13px] font-medium text-ink">{t("Notifications")}</h2>
+        <button type="button" disabled={!unread} onClick={() => void api("/api/notifications/read", { method: "POST", body: JSON.stringify({ all: true }) }).catch(() => {})}
+          className="mr-1 text-[12.5px] text-accent-text hover:underline disabled:opacity-40">{t("Mark all read")}</button>
         <button type="button" title={state.notifPinned ? t("Unpin") : t("Pin open")} aria-label={state.notifPinned ? t("Unpin") : t("Pin open")} aria-pressed={state.notifPinned}
-          onClick={() => dispatch({ type: "notifPanel", pinned: !state.notifPinned })} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10">{state.notifPinned ? <PinOff size={14} /> : <Pin size={14} />}</button>
-        <button type="button" title={t("Mark all read")} aria-label={t("Mark all read")} disabled={!unread} onClick={() => void api("/api/notifications/read", { method: "POST", body: JSON.stringify({ all: true }) }).catch(() => {})}
-          className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 disabled:opacity-40"><Check size={14} /></button>
-        <button type="button" title={t("Clear")} aria-label={t("Clear")} disabled={!state.notifications.length} onClick={() => void api("/api/notifications", { method: "DELETE" }).catch(() => {})}
-          className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 disabled:opacity-40"><Trash2 size={14} /></button>
-        <button type="button" aria-label="Close" onClick={() => dispatch({ type: "notifPanel", open: false })} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><X size={14} /></button>
+          onClick={() => dispatch({ type: "notifPanel", pinned: !state.notifPinned })} className="rounded-full p-1 text-ink-secondary hover:bg-ink/10">{state.notifPinned ? <PinOff size={14} /> : <Pin size={14} />}</button>
+        <button type="button" aria-label="Close" onClick={() => dispatch({ type: "notifPanel", open: false })} className="rounded-full p-1 text-ink-secondary hover:bg-ink/10"><X size={14} /></button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {state.notifications.length === 0 && <div className="py-12 text-center text-[13.5px] text-ink-tertiary">{t("Nothing yet. Approvals, finished work and failed routines show up here.")}</div>}
-        {state.notifications.map((n) => {
+      <div className="shrink-0 border-y-[0.5px] border-edge px-2.5 py-2">
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 w-full rounded-xl bg-raised px-3 text-[13.5px] text-ink">
+          <option value="all">{t("All bots")}</option>
+          {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          {state.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {shown.length === 0 && <div className="px-6 py-12 text-center text-[13.5px] text-ink-tertiary">{t("Nothing yet. Approvals, finished work and failed routines show up here.")}</div>}
+        {shown.map((n) => {
           const bot = state.bots.find((b) => b.id === n.targetId);
+          const who = bot?.name ?? state.groups.find((g) => g.id === n.targetId)?.name ?? "";
+          const [label, tone] = KIND_LABEL[n.kind] ?? ["", ""];
+          const what = who && n.title.startsWith(who) ? n.title.slice(who.length).trim() : n.title;
           return (
-            <button key={n.id} type="button" data-testid="notification" onClick={() => open(n)} className={cn("flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-raised/60", !n.read && "bg-accent/[0.06]")}>
-              <span className="mt-0.5 shrink-0">{bot ? <Mascot color={bot.color} size={28} /> : <span className="flex size-7 items-center justify-center rounded-full bg-raised text-ink-secondary"><Bell size={13} /></span>}</span>
-              <span className="min-w-0 flex-1">
-                <span data-no-i18n="" className="block truncate text-[13.5px] font-medium text-ink">{n.title}</span>
-                {n.body && <span data-no-i18n="" className="line-clamp-2 text-[12.5px] leading-4 text-ink-secondary">{n.body}</span>}
+            <button key={n.id} type="button" data-testid="notification" onClick={() => open(n)}
+              className={cn("flex w-full items-start gap-2.5 border-b-[0.5px] border-edge px-4 py-3 text-left hover:bg-raised/60", !n.read && "bg-accent/[0.05]")}>
+              <span className="mt-0.5 shrink-0">{bot ? <Mascot color={bot.color} size={24} /> : <span className="flex size-6 items-center justify-center rounded-full bg-raised text-ink-secondary"><Bell size={12} /></span>}</span>
+              <span className="min-w-0 flex-1 leading-[18px]">
+                <span className="flex items-baseline gap-1.5">
+                  <span data-no-i18n="" className="min-w-0 flex-1 truncate text-[13px] text-ink"><span className="font-medium">{who}</span> <span className="text-ink-tertiary">·</span> {what}</span>
+                  {label && <span className={cn("shrink-0 text-[11.5px] font-medium", tone)}>{t(label)}</span>}
+                </span>
+                {n.body && <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-secondary">{n.body}</span>}
+                <span className="block text-[11.5px] text-ink-tertiary">{agoText(n.at)}</span>
               </span>
-              <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-ink-tertiary">{ago(n.at)}</span>
-              {!n.read && <span aria-label="Unread" className="mt-1.5 size-2 shrink-0 rounded-full bg-accent" />}
             </button>
           );
         })}
       </div>
+      <div className="relative flex h-[34px] shrink-0 items-center justify-center border-t-[0.5px] border-edge text-[12px] text-ink-tertiary">
+        <button type="button" title={t("Desktop alerts")} aria-label={t("Desktop alerts")} aria-pressed={alerts} onClick={toggleAlerts}
+          className={cn("absolute left-2 rounded-full p-1 hover:bg-ink/10", alerts ? "text-accent-text" : "text-ink-tertiary")}>{alerts ? <BellRing size={13} /> : <Bell size={13} />}</button>
+        {t("Last 500 events, newest first")}
+        <button type="button" title={t("Clear")} aria-label={t("Clear")} disabled={!state.notifications.length} onClick={() => void api("/api/notifications", { method: "DELETE" }).catch(() => {})}
+          className="absolute right-2 rounded-full p-1 text-ink-tertiary hover:bg-ink/10 disabled:opacity-40"><Trash2 size={13} /></button>
+      </div>
     </aside>
   );
 }
+
 
 function InboxCard({ item }: { item: InboxItem }) {
   const { dispatch } = useStore();

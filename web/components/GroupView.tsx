@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- the draft is read from localStorage when the room changes */
-import { ArrowUp, Menu, PanelRight, Square } from "lucide-react";
+import { ArrowUp, Menu, Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,6 @@ import { RoomPanel } from "./RoomPanel";
 import { ThreadRefCard, RoutineCard } from "./TeamCards";
 import { ToolChip } from "./ToolChip";
 
-const FLOAT_PILL = "bg-composer ring-[0.5px] ring-ink/10 shadow-(--shadow-float) transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]";
 
 function RoomHeader({ group }: { group: Group }) {
   const { state, dispatch } = useStore();
@@ -32,11 +31,9 @@ function RoomHeader({ group }: { group: Group }) {
             <div data-no-i18n="" className="truncate text-[15px] font-medium text-ink" title={group.memberInfo.map((m) => m.name).join(", ")}>{group.name}</div>
           </div>
           <div className="col-start-3 flex shrink-0 items-center justify-self-end gap-2">
-            <GroupAvatar members={group.memberInfo} size={32} />
-            <button type="button" title="Room details" aria-label="Room details" aria-pressed={open}
-              onClick={() => dispatch({ type: "groupPanel", id: open ? null : group.id })}
-              className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, open && "text-ink")}>
-              <PanelRight size={15} />
+            <button type="button" title="Room details" aria-label="Room details" aria-pressed={open} onClick={() => dispatch({ type: "groupPanel", id: open ? null : group.id })}
+              className={cn("rounded-full px-1 transition-colors hover:bg-ink/10", open && "bg-ink/10")}>
+              <GroupAvatar members={group.memberInfo} size={40} />
             </button>
           </div>
         </div>
