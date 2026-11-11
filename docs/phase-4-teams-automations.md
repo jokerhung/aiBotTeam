@@ -101,9 +101,11 @@ Theo `RoutineCalendarPage.tsx` và `tasks-routines.png`:
 
 Đã làm xong toàn bộ phase (máy chủ: `runtime.py`, `host.py`, `agents.py`, `groups.py`, `routines.py`, `webhooks.py`, `notifications.py`; web: `GroupView`, `MentionEditor`, `RoomPanel`, `NewGroupDialog`, `AutomationsPage`, `NotificationsPanel`/`InboxPanel`, `TeamCards`, `TeamMapPage`).
 
-- Kiểm thử: `server/tests` (129 ca, gồm runtime/kịch bản I1–I10, phòng, routine với đồng hồ giả, webhook, Chief theo section), `web` vitest (27 ca, gồm từ điển tiếng Việt), và `web/e2e/phase4.mjs` (trình duyệt thật trên bot `echo`: phòng + @mention + trưởng phòng trả lời, Automations rỗng/có dữ liệu, trình tạo routine, webhook 202/401 và bí mật hiện một lần, Inbox trả lời tại chỗ, thẻ giao việc, số chưa đọc trên tiêu đề tab).
-- So ảnh với giao diện tham chiếu được làm bằng mắt trên ảnh chụp (`web/e2e/shots/`, không commit), chưa có ngưỡng pixelmatch tự động cho các màn mới.
-- Header trang Automations theo giao diện tham chiếu đang chạy (tiêu đề, bộ lọc, List/Calendar, `+ New`) thay vì bản có phụ đề; trạng thái rỗng dùng biểu tượng tia chớp như tham chiếu.
-- "Chọn người trả lời tự động": có `GET/PUT /api/decider` và quy tắc `auto` của phòng; chưa có màn chọn model quyết định (rơi về bot trưởng phòng khi tắt).
-- Chief of Staff: `chief` + `managedSections` (bot panel → Settings); Chief chỉ giao việc trong section nó quản lý. `reportsTo` chưa làm.
+- Kiểm thử máy chủ: `server/tests` (130 ca: runtime và kịch bản I1–I10, phòng, routine với đồng hồ giả, webhook, Chief theo section và `reportsTo`). Web: vitest (27 ca, gồm từ điển tiếng Việt).
+- Trình duyệt thật (bot `echo`, không gọi engine thật): `web/e2e/phase4.mjs` (phòng, @mention, trưởng phòng trả lời, chọn model quyết định, Automations rỗng/có dữ liệu, trình tạo routine, webhook 202/401 và bí mật hiện một lần, Inbox trả lời tại chỗ, thẻ giao việc, số chưa đọc trên tiêu đề tab).
+- Tiêu chí 3 chạy đầu-cuối: `web/e2e/restart.mjs` bật máy chủ thật, giết giữa lúc B đang chạy, bật lại trên cùng dữ liệu; B chạy lại đúng một lần (`restarts=1`), A nhận đúng một báo cáo.
+- So ảnh (tiêu chí 7): `web/e2e/visual.mjs` dùng pixelmatch. Trang Automations rỗng so với giao diện tham chiếu: lệch 1,1% pixel (ngưỡng 4%). Các màn còn lại (phòng, bộ chọn mention, panel phòng, trình tạo routine, webhook, panel thông báo, inbox) so với ảnh nền `web/e2e/baseline-p4/` (ngưỡng 2%) — tham chiếu không có cùng dữ liệu nên đây là kiểm hồi quy. Lưới lịch có dữ liệu phụ thuộc giờ hiện tại nên chỉ kiểm cấu trúc (có khối routine), không so ảnh.
+- Header Automations theo giao diện tham chiếu đang chạy (tiêu đề, bộ lọc, List/Calendar, `+ New`), đúng mục "Cập nhật sau đối chiếu" ở trên; phụ đề và nhãn dài `+ New routine` của bản cũ không dùng (nút có `aria-label` "New routine").
+- Chọn người trả lời tự động: `GET/PUT /api/decider`; chọn model trong RoomPanel khi phòng ở chế độ Automatic (tắt = bot trưởng phòng).
+- Chief of Staff: `chief`, `managedSections`, `reportsTo` (bot panel → Settings); Chief chỉ giao việc cho bot trong section nó quản lý hoặc báo cáo cho nó; không cho vòng báo cáo.
 - Cổng nhận webhook: `WEBHOOK_PORT` (mặc định 8900) trong `.env`.

@@ -25,6 +25,31 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** Which model chooses the answering member when a room is set to Automatic. Off means the leader answers. */
+function DeciderField() {
+  const { state } = useStore();
+  const t = useT();
+  const [value, setValue] = useState("");
+  useEffect(() => {
+    api<{ decider: { instanceId: string; model: string } | null }>("/api/decider").then((r) => setValue(r.decider ? `${r.decider.instanceId}::${r.decider.model}` : "")).catch(() => {});
+  }, []);
+  const choose = (v: string) => {
+    setValue(v);
+    const [instanceId, ...m] = v.split("::");
+    void api("/api/decider", { method: "PUT", body: JSON.stringify(v ? { instanceId, model: m.join("::") } : {}) }).catch(() => {});
+  };
+  const engines = state.instances.filter((i) => !i.hidden && i.enabled && i.snapshot.state === "available");
+  return (
+    <Field label={t("Chooser model")}>
+      <select value={value} onChange={(e) => choose(e.target.value)} aria-label={t("Chooser model")} className={cn(INPUT, "h-10")} data-testid="decider-select">
+        <option value="">{t("Off: the leader answers")}</option>
+        {engines.map((i) => <optgroup key={i.id} label={i.displayName}>{i.models.map((m) => <option key={m.id} value={`${i.id}::${m.id}`}>{m.label}</option>)}</optgroup>)}
+      </select>
+      <div className="mt-1 text-[12px] text-ink-tertiary">{t("A quick model picks who answers each message. If it is off or unsure, the leader answers.")}</div>
+    </Field>
+  );
+}
+
 /** The side panel of a room: members, leader, instructions, folder and who answers. */
 export function RoomPanel({ group }: { group: Group }) {
   const { state, dispatch } = useStore();
@@ -96,6 +121,7 @@ export function RoomPanel({ group }: { group: Group }) {
           ))}
         </div>
       </Field>
+      {group.responder === "auto" && <DeciderField />}
       <Field label={t("Instructions")}>
         <textarea data-no-i18n="" value={instructions} rows={4} onChange={(e) => { setInstructions(e.target.value); later({ instructions: e.target.value }); }}
           aria-label={t("Instructions")} placeholder={t("What is this room for? Every member is told.")} className={cn(INPUT, "py-2 leading-5")} />

@@ -119,6 +119,7 @@ export interface Bot {
   soul: string;
   chief: boolean;
   managedSections?: string[];
+  reportsTo?: string | null;
   fallbackSelection: ModelSelection | null;
   lastText: string;
   lastAt: number | null;

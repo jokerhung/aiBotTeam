@@ -76,6 +76,7 @@ class WireBot(BaseModel):
     soul: str = ""
     chief: bool = False
     managedSections: list[str] = Field(default_factory=list)  # a Chief of Staff's own sections; empty means the whole team
+    reportsTo: Optional[str] = None  # the bot this one reports to (usually the Chief of Staff)
     fallbackSelection: Optional[ModelSelection] = None
     lastText: str = ""
     lastAt: Optional[int] = None
@@ -147,6 +148,7 @@ class PatchBot(BaseModel):
     soul: Optional[str] = None
     chief: Optional[bool] = None
     managedSections: Optional[list[str]] = None
+    reportsTo: Optional[str] = None
     notifications: Optional[bool] = None
     fallbackSelection: Optional[ModelSelection] = None
     modelSelection: Optional[ModelSelection] = None

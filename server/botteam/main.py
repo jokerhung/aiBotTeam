@@ -249,6 +249,16 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                 raise HTTPException(404, "section not found")
         if "threadId" in fields:
             fields["threadId"] = await need_thread(bot, fields["threadId"])
+        if fields.get("reportsTo"):
+            boss, seen = fields["reportsTo"], {bot.id}
+            while boss:  # the target must exist and the chain must not come back to this bot
+                if boss in seen:
+                    raise HTTPException(400, "a bot cannot report to itself or to one that reports to it")
+                seen.add(boss)
+                up = await store.get_bot(boss)
+                if not up:
+                    raise HTTPException(404, "bot not found")
+                boss = up.reportsTo
         for k, v in fields.items():
             if k not in ("modelSelection", "fallbackSelection"):
                 setattr(bot, k, v)
@@ -274,6 +284,11 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         for t in await store.list_threads(bot_id):
             await turns.interrupt(bot, t["id"])
             await broker.cancel_thread(t["id"])
+        for other in await store.list_bots():  # nobody keeps reporting to a bot that is gone
+            if other.reportsTo == bot_id:
+                other.reportsTo = None
+                await store.save_bot(other)
+                await turns.publish_bot(other)
         await store.delete_bot(bot_id)
         bus.publish({"kind": "bot.deleted", "botId": bot_id})
         return {"ok": True}

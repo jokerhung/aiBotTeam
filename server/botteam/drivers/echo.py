@@ -75,7 +75,7 @@ class EchoDriver(Emitter):
                           summary="ls -la", input="{'command': 'ls -la'}")
                 await asyncio.sleep(self.delay * 5)
                 self.emit("item.completed", t, turn_id, itemType="tool", itemId="tool1", ok=True, output="total 0")
-            if text.startswith("/slow"):
+            if text.startswith("/slow") or "\n/slow" in text:  # also as the task of a hand-off, after the envelope
                 await self._stream(t, turn_id, "streaming " * 200, pause=0.05)
             elif text.startswith("/md"):
                 await self._stream(t, turn_id, MD_REPLY.replace("\n", " \n"))

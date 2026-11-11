@@ -99,8 +99,15 @@ async def test_a_bot_can_hand_the_floor_on_with_an_at_mention_but_only_twice(ctx
     # the message names all three, so they answer in order; Gamma's reply names Beta again (hand-off 1), Beta's names Gamma (hand-off 2), and the chain stops there
     g2, (a2, b2, c2) = await room(c)
     await c.post(f"/api/groups/{g2['id']}/messages", json={"text": "@Alpha go (pass to @Beta) (pass to @Gamma)"})
-    await wait_idle(c, g2)
     names = {a2["id"]: "A", b2["id"]: "B", c2["id"]: "G"}
+    for _ in range(100):  # the room is briefly idle between chained turns, so wait for the whole chain
+        await wait_idle(c, g2)
+        seen = [names[x] for x in authors(await room_msgs(c, g2))]
+        if len(seen) >= 5:
+            break
+        await asyncio.sleep(0.1)
+    await asyncio.sleep(0.5)  # and give a sixth turn the chance to wrongly appear
+    await wait_idle(c, g2)
     assert [names[x] for x in authors(await room_msgs(c, g2))] == ["A", "B", "G", "B", "G"]
 
 

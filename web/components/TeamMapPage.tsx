@@ -17,8 +17,12 @@ export function TeamMapPage() {
   const [links, setLinks] = useState<Link[]>([]);
   useEffect(() => {
     let dead = false;
-    const load = () => api<{ assignments: { id: string; requester: string; assignee_bot: string; status: string; parent_id: string | null }[] }>("/api/assignments")
-      .then((r) => !dead && setLinks(r.assignments.filter((a) => a.parent_id).map((a) => ({ id: a.id, from: a.requester, to: a.assignee_bot, status: a.status }))))
+    const load = () => api<{ assignments: { id: string; botId: string; status: string; parentId: string | null }[] }>("/api/assignments")
+      .then((r) => {
+        if (dead) return;
+        const owner = new Map(r.assignments.map((x) => [x.id, x.botId]));
+        setLinks(r.assignments.filter((x) => x.parentId && owner.get(x.parentId)).map((x) => ({ id: x.id, from: owner.get(x.parentId!)!, to: x.botId, status: x.status })));
+      })
       .catch(() => {});
     void load();
     const id = setInterval(load, 3000);
@@ -28,6 +32,7 @@ export function TeamMapPage() {
   const bots = state.bots.filter((b) => !b.hidden);
   const chief = bots.find((b) => b.chief);
   const rest = bots.filter((b) => b !== chief);
+  const boss = (b: (typeof bots)[number]) => bots.find((x) => x.id === b.reportsTo) ?? chief;
   const W = 920, H = 520;
   const pos = new Map<string, { x: number; y: number }>();
   if (chief) pos.set(chief.id, { x: W / 2, y: 90 });
@@ -41,8 +46,8 @@ export function TeamMapPage() {
       </header>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto h-full max-h-[620px] w-full max-w-[1000px]" role="img" aria-label={t("Team map")}>
-          {rest.map((b) => chief && pos.get(b.id) && (
-            <line key={`org-${b.id}`} x1={pos.get(chief.id)!.x} y1={pos.get(chief.id)!.y + 34} x2={pos.get(b.id)!.x} y2={pos.get(b.id)!.y - 34} stroke="currentColor" className="text-ink/15" strokeWidth={1.5} />
+          {rest.map((b) => boss(b) && pos.get(b.id) && (
+            <line key={`org-${b.id}`} x1={pos.get(boss(b)!.id)!.x} y1={pos.get(boss(b)!.id)!.y + 34} x2={pos.get(b.id)!.x} y2={pos.get(b.id)!.y - 34} stroke="currentColor" className="text-ink/15" strokeWidth={1.5} />
           ))}
           {links.map((l) => {
             const a = pos.get(l.from), b = pos.get(l.to);

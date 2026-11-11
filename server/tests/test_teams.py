@@ -132,3 +132,23 @@ async def test_a_chief_with_sections_hands_work_only_inside_them(ctx):
 async def _idle(c, bot):
     bots = (await c.get("/api/bots")).json()["bots"]
     return not next(x for x in bots if x["id"] == bot["id"])["busy"]
+
+
+async def test_reports_to_scopes_a_chief_and_refuses_loops(ctx):
+    c, app = ctx
+    a, b, cc = await make_bot(c, "Boss"), await make_bot(c, "Report"), await make_bot(c, "Other")
+    sec = (await c.post("/api/sidebar-sections", json={"name": "Core"})).json()
+    await c.patch(f"/api/bots/{a['id']}", json={"chief": True, "managedSections": [sec["id"]]})
+    assert (await c.patch(f"/api/bots/{b['id']}", json={"reportsTo": a["id"]})).json()["reportsTo"] == a["id"]
+    assert (await c.patch(f"/api/bots/{a['id']}", json={"reportsTo": b["id"]})).status_code == 400  # a loop
+    assert (await c.patch(f"/api/bots/{b['id']}", json={"reportsTo": b["id"]})).status_code == 400
+    assert (await c.patch(f"/api/bots/{b['id']}", json={"reportsTo": "bot_nope"})).status_code == 404
+    app.state.turns.runs["tx"] = type("R", (), {"bot_id": a["id"], "group_id": None, "assignment_id": None, "origin": "person", "level": None, "started_at": 0, "label": None})()
+    out = await app.state.agents.call("tx", "coordinate_bots", {"bot_ids": [b["id"], cc["id"]], "message": "go", "reply": "none"})
+    app.state.turns.runs.pop("tx")
+    by = {r["bot"]: r for r in out["results"]}
+    assert by["Report"]["ok"] is True and by["Other"]["reason"] == "outside_scope"  # a report is in scope without a section
+    await c.delete(f"/api/bots/{a['id']}")
+    mine = next(x for x in (await c.get("/api/bots")).json()["bots"] if x["id"] == b["id"])
+    assert mine["reportsTo"] is None
+    await wait_until(lambda: _idle(c, b))

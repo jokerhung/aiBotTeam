@@ -109,6 +109,12 @@ function SettingsForm({ bot }: { bot: Bot }) {
           }} /> Notify me
         </label>
       </Field>
+      <Field label="Reports to" hint="Who this bot answers to. A Chief of Staff can hand work to the bots that report to it.">
+        <select value={bot.reportsTo ?? ""} onChange={(e) => void queuePatch(bot.id, { reportsTo: e.target.value || null })} aria-label="Reports to" className={cn(INPUT, "h-10")}>
+          <option value="">None</option>
+          {state.bots.filter((b) => b.id !== bot.id && !b.hidden).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+      </Field>
       <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">
         <label className="flex items-center gap-2 text-[14px] text-ink">
           <input type="checkbox" checked={bot.chief} onChange={(e) => void queuePatch(bot.id, { chief: e.target.checked })} /> Chief of Staff

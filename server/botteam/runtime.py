@@ -621,7 +621,7 @@ class Runtime:
     def public(self, a: dict) -> dict:
         return {"id": a["id"], "bot": self.host.bot_name(a["assignee_bot"]), "botId": a["assignee_bot"], "status": a["status"], "outcome": a["outcome"],
                 "detail": a["outcome_detail"], "result": a["result"], "level": a["level"], "mode": a["mode"], "threadId": a["thread_id"],
-                "parentId": a["parent_id"], "rootId": a["root_id"], "createdAt": a["created_at"]}
+                "parentId": a["parent_id"], "rootId": a["root_id"], "createdAt": a["created_at"], "restarts": a["restarts"]}
 
     # ---- invariants ------------------------------------------------------------------------------------------------
     async def check_invariants(self, quiescent: bool = True) -> list[str]:
