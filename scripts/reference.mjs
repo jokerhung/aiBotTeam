@@ -160,7 +160,7 @@ const refPanel = await panelMetrics(ref, async () => { await ref.locator("main b
 const ourPanel = await panelMetrics(ours, async () => { await ours.getByLabel("Bot details").click(); });
 console.log("  bot panel: reference", JSON.stringify(refPanel), "\n             ours     ", JSON.stringify(ourPanel));
 if (!refPanel || !ourPanel) failures.push("bot panel not found");
-else for (const k of ["width", "x", "tabsWidth", "circle", "circles"]) {
+else for (const k of ["width", "x", "tabsWidth", "circle"]) {
   const d = Math.abs(refPanel[k] - ourPanel[k]);
   const ok = d <= (k === "tabsWidth" ? 12 : BOX_PX);
   console.log(`  ${ok ? "ok  " : "FAIL"} panel ${k}: reference ${refPanel[k].toFixed(0)}  ours ${ourPanel[k].toFixed(0)}`);
@@ -175,6 +175,12 @@ else for (const k of ["width", "x", "tabsWidth", "circle", "circles"]) {
   writeFileSync(join(OUT, "panel-reference.png"), PNG.sync.write(pa)); writeFileSync(join(OUT, "panel-ours.png"), PNG.sync.write(pb)); writeFileSync(join(OUT, "panel-diff.png"), PNG.sync.write(pd));
   console.log(`  ${share <= 0.06 ? "ok  " : "FAIL"} bot panel header pixels: ${(share * 100).toFixed(2)}% differ (limit 6%)`);
   if (share > 0.06) failures.push(`bot panel header pixels ${(share * 100).toFixed(2)}%`);
+}
+// by request, the settings gear sits beside the bot name instead of in the top row: one round button fewer there
+{
+  const ok = ourPanel && refPanel && ourPanel.circles === refPanel.circles - 1;
+  console.log(`  ${ok ? "ok  " : "FAIL"} panel top-row buttons: reference ${refPanel?.circles}, ours ${ourPanel?.circles} (gear moved next to the name)`);
+  if (!ok) failures.push("panel top-row buttons");
 }
 await ref.screenshot({ path: join(OUT, "reference-panel.png") });
 await ours.screenshot({ path: join(OUT, "ours-panel.png") });

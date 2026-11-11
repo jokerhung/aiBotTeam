@@ -215,13 +215,16 @@ export function BotPanel({ bot }: { bot: Bot }) {
     <aside aria-label={`${bot.name} details`} data-testid="bot-panel" className="relative z-20 flex h-full w-[320px] shrink-0 animate-panel-in flex-col border-l-[0.5px] border-edge bg-app max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:w-full">
       <div className="flex h-[58px] shrink-0 items-center justify-end gap-2.5 px-3.5">
         <button type="button" title="Copy a link to this bot" aria-label="Share" onClick={() => { void navigator.clipboard?.writeText(`${location.origin}/?bot=${bot.id}`); toast("Link copied"); }} className={circle}><Share2 size={15} /></button>
-        <button type="button" title="Bot settings" aria-label="Bot settings" aria-pressed={view === "settings"} onClick={() => { setTab("details"); setView(view === "settings" ? "overview" : "settings"); }} className={cn(circle, view === "settings" && "text-ink")}><Settings size={15} /></button>
         <button type="button" title="Close" aria-label="Close panel" onClick={() => dispatch({ type: "panel", botId: null })} className={circle}><X size={16} /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
         <div className="flex flex-col items-center px-6 pb-3 pt-[10px] text-center">
           <Mascot color={bot.color} size={52} busy={bot.busy} />
-          <div data-no-i18n="" className="mt-[15px] max-w-full truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
+          <div className="mt-[15px] flex max-w-full items-center justify-center gap-1.5">
+            <div data-no-i18n="" className="min-w-0 truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
+            <button type="button" title="Bot settings" aria-label="Bot settings" aria-pressed={view === "settings"} onClick={() => { setTab("details"); setView(view === "settings" ? "overview" : "settings"); }}
+              className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink", view === "settings" && "bg-ink/10 text-ink")}><Settings size={15} /></button>
+          </div>
           {(bot.title || bot.description) && <div data-no-i18n="" className="max-w-full truncate text-[14px] text-ink-secondary">{bot.title || bot.description}</div>}
           <div role="tablist" className="mt-[22px] flex h-8 items-center rounded-full bg-raised p-[3px]" data-testid="panel-tabs">
             {tabs.map((x) => (
