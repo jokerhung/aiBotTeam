@@ -8,6 +8,7 @@ import { GroupPanelHost, GroupView } from "./GroupView";
 import { InboxPanel, NotificationsPanel } from "./NotificationsPanel";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { ConnectedApps } from "./ConnectedApps";
+import { GuidedTour, WelcomeGate, WhatsNew } from "./Welcome";
 import { UsagePage } from "./Observe";
 import { ImportTeamDialog, ShareTeamDialog } from "./TeamShare";
 import { McpServersPanel } from "./McpServers";
@@ -20,12 +21,15 @@ import { Toaster } from "./Toaster";
 import { useLocalizer } from "@/lib/i18n";
 import { useGlobalBehaviors } from "./useGlobalBehaviors";
 import { useTeamBehaviors } from "./useTeamBehaviors";
+import { useDialogA11y } from "./useDialogA11y";
+import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { Sidebar } from "./Sidebar";
 
 export function Shell() {
   const { state, dispatch } = useStore();
   useGlobalBehaviors();
   useTeamBehaviors();
+  useDialogA11y();
   useLocalizer();
   const bot = state.bots.find((b) => b.id === state.selectedId);
   const group = state.groups.find((g) => g.id === state.selectedGroupId);
@@ -85,6 +89,10 @@ export function Shell() {
         <InboxPanel />
         <NotificationsPanel />
       </div>
+      <TranscriptAnnouncer />
+      <WelcomeGate />
+      <GuidedTour />
+      <WhatsNew />
       <NewGroupDialog />
       <ConnectedApps />
       <UsagePage />

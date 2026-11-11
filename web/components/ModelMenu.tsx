@@ -32,6 +32,7 @@ export function ModelMenu({ bot }: { bot: Bot }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        data-tour="model"
         title={`${inst?.displayName ?? "Engine"} · ${label}`}
         className={cn("group flex h-8 shrink-0 items-center rounded-full pl-2.5 pr-2 text-[13px] leading-[18px] text-ink-secondary hover:text-ink aria-expanded:text-ink", FLOAT_PILL)}
       >

@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, BarChart3, Bell, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -10,6 +10,7 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { BotActionsButton, BotContextMenu, deleteBotWithUndo } from "./BotContextMenu";
 import { GroupAvatar } from "./GroupAvatar";
+import { LATEST_RELEASE } from "@/lib/whats-new";
 import { Mascot } from "./Mascot";
 
 const MIN_W = 240;
@@ -120,7 +121,7 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
           </div>
         </div>
         {!icons && !state.selecting && (
-          <BotActionsButton bot={bot} className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-panel/80 opacity-0 backdrop-blur group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 max-md:opacity-100" />
+          <BotActionsButton bot={bot} className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-panel/80 opacity-0 backdrop-blur group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 max-md:opacity-100 touch:opacity-100" />
         )}
       </div>
     </BotContextMenu>
@@ -207,10 +208,10 @@ function SectionHeader({ section, count, drag }: { section: Section; count: numb
       <button type="button" title="Share section" aria-label={`Share ${section.name}`} data-testid="share-section" onClick={() => dispatch({ type: "shareTeam", id: section.id })}
         className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-ink group-hover/sec:opacity-100 focus-visible:opacity-100 touch:opacity-100"><Share2 size={12} /></button>
       <button type="button" title="Rename section" aria-label={`Rename ${section.name}`} onClick={() => { setName(section.name); setRenaming(true); }}
-        className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-ink group-hover/sec:opacity-100 focus-visible:opacity-100"><Pencil size={12} /></button>
+        className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-ink group-hover/sec:opacity-100 focus-visible:opacity-100 touch:opacity-100"><Pencil size={12} /></button>
       <button type="button" title="Delete section" aria-label={`Delete ${section.name}`}
         onClick={() => { if (confirm(tr(`Delete the section “${section.name}”? Its bots stay in the list.`))) void api(`/api/sidebar-sections/${section.id}`, { method: "DELETE" }); }}
-        className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-danger group-hover/sec:opacity-100 focus-visible:opacity-100"><Trash2 size={12} /></button>
+        className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-danger group-hover/sec:opacity-100 focus-visible:opacity-100 touch:opacity-100"><Trash2 size={12} /></button>
     </div>
   );
 }
@@ -219,9 +220,10 @@ function ProfileMenu({ icons }: { icons: boolean }) {
   const { state, dispatch } = useStore();
   const [open, setOpen] = useState(false);
   const name = state.config.settings.displayName || "You";
+  const [unseen] = useState(() => { try { return localStorage.getItem("botteam-seen-release") !== LATEST_RELEASE; } catch { return false; } });
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger title="Profile and settings" aria-label="Profile and settings" className="shrink-0 rounded-full">
+      <PopoverTrigger data-tour="automations" title="Profile and settings" aria-label="Profile and settings" className="shrink-0 rounded-full">
         <span className="relative flex size-9 items-center justify-center rounded-full ring-2 ring-transparent transition-shadow hover:ring-ink/10">
           <span className="flex size-9 items-center justify-center rounded-full bg-raised text-ink-secondary ring-1 ring-inset ring-ink/[0.04]">
             <User size={16} />
@@ -231,6 +233,7 @@ function ProfileMenu({ icons }: { icons: boolean }) {
       <PopoverContent side="top" align="start" className="w-[230px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
         <div className="px-2.5 pb-1.5 pt-1 text-[13px] font-medium text-ink-secondary">{name}</div>
         <button type="button" data-testid="open-automations" onClick={() => { setOpen(false); dispatch({ type: "automations", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><CalendarClock size={15} /> Automations</button>
+        <button type="button" data-testid="open-whats-new" onClick={() => { setOpen(false); dispatch({ type: "whatsNew", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Gift size={15} /> What&apos;s new{unseen && <span aria-label="New" className="ml-auto size-2 rounded-full bg-accent" />}</button>
         <button type="button" data-testid="open-usage" onClick={() => { setOpen(false); dispatch({ type: "usage", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><BarChart3 size={15} /> Usage</button>
         <button type="button" data-testid="open-team-map" onClick={() => { setOpen(false); dispatch({ type: "teamMap", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Network size={15} /> Team map</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "settings", open: true, page: "general" }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Settings size={15} /> Settings</button>

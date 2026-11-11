@@ -92,3 +92,28 @@ async def test_a_transcript_exports_as_markdown_or_json_and_only_for_that_bots_t
     assert (await c.get(f"/api/bots/{bot['id']}/export", params={"format": "pdf"})).status_code == 400
     assert (await c.get(f"/api/bots/{bot['id']}/export", params={"thread": other["threadId"]})).status_code == 404
     assert to_markdown("Z", "", [{"kind": "activity", "text": "", "at": 0}]).strip() == "# Z"
+
+
+async def test_a_new_bot_can_open_the_conversation_itself_with_a_greeting_and_a_question(ctx):
+    c, app = ctx
+    sent = []
+    from botteam.drivers.echo import EchoDriver
+
+    real = EchoDriver.send_turn
+
+    async def spy(self, inp):
+        sent.append(inp.text)
+        return await real(self, inp)
+    EchoDriver.send_turn = spy
+    try:
+        made = (await c.post("/api/bots", json={"name": "Hello", "modelSelection": {"instanceId": "echo", "model": "echo-1"}, "greet": True})).json()
+        await wait_idle(c, made["id"])
+        plain = (await c.post("/api/bots", json={"name": "Quiet", "modelSelection": {"instanceId": "echo", "model": "echo-1"}})).json()
+        await wait_idle(c, plain["id"])
+    finally:
+        EchoDriver.send_turn = real
+    assert len(sent) == 1 and "What do you mostly want help with?" in sent[0] and "ask_user" in sent[0] and "First conversation" in sent[0]
+    texts = [m for m in (await c.get(f"/api/bots/{made['id']}/messages")).json()["messages"]]
+    assert not any(m["role"] == "user" for m in texts), "the greeting prompt is not shown as something the person said"
+    assert any(m["role"] == "bot" for m in texts)
+    assert (await c.get(f"/api/bots/{plain['id']}/messages")).json()["messages"] == []  # no greeting unless asked

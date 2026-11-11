@@ -174,7 +174,7 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
           </>
         )}
         {!m.queued && !editing && (
-          <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100">
+          <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100 touch:opacity-100">
             {new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
           </span>
         )}
@@ -205,7 +205,7 @@ function Header({ bot }: { bot: Bot }) {
               className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, panelOpen && "text-ink")}>
               <PanelRight size={15} />
             </button>
-            <button type="button" title="Bot's screen" className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL)}>
+            <button type="button" data-tour="computer" title="Bot's screen" className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL)}>
               <Monitor size={15} />
             </button>
           </div>

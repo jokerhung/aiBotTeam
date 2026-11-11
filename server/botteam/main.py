@@ -300,6 +300,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         bot.approvalMode, bot.cwd = mode, body.cwd or defaults.get("cwd")
         await store.save_bot(bot)
         await turns.publish_bot(bot)
+        if body.greet:
+            asyncio.create_task(turns.greet(bot))
         return await turns.bot_dict(bot)
 
     @app.patch("/api/bots/{bot_id}")

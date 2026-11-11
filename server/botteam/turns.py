@@ -302,6 +302,14 @@ class Turns:
             return False
         return True
 
+    GREETING = ("[First conversation. The person has just made you. In one or two short sentences, greet them by your own name and say what you can help with. "
+                "Then call the ask_user tool once with the question \"What do you mostly want help with?\" and these choices: "
+                "\"Everyday tasks and errands\", \"Writing and editing\", \"Coding\", \"Research and learning\". Wait for the answer before doing anything else.]")
+
+    async def greet(self, bot: WireBot) -> bool:
+        """A new bot opens the conversation itself: no message of the person's, just the bot's hello and a question card."""
+        return await self._start_turn(bot, bot.threadId, self.GREETING, origin="system")
+
     async def interrupt(self, bot: WireBot, thread_id: str) -> None:
         run = self.runs.get(thread_id)
         inst = self.registry.get(bot.modelSelection.instanceId)

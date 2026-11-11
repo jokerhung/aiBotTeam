@@ -28,7 +28,7 @@ export function AttachmentGallery({ items }: { items: Attachment[] }) {
         )}
       </div>
       {open && (
-        <div role="dialog" aria-label="Image preview" className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
+        <div role="dialog" aria-modal="true" aria-label="Image preview" className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
           onMouseDown={(e) => e.target === e.currentTarget && setOpen(null)} onKeyDown={(e) => e.key === "Escape" && setOpen(null)}>
           <button type="button" aria-label="Close preview" autoFocus onClick={() => setOpen(null)} className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white"><X size={18} /></button>
           {/* eslint-disable-next-line @next/next/no-img-element */}

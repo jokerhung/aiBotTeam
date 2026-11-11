@@ -137,6 +137,7 @@ class CreateBot(BaseModel):
     modelSelection: Optional[ModelSelection] = None
     approvalMode: Optional[str] = None
     cwd: Optional[str] = None
+    greet: bool = False  # a first conversation: the bot says hello and asks what the person mostly wants help with
 
 
 class PatchBot(BaseModel):
