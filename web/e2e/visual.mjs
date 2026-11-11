@@ -56,8 +56,25 @@ const report = (name, ratio, max, what) => { const ok = ratio <= max; failed ||=
   await ours.waitForTimeout(500);
   const ourShot = await ours.screenshot({ clip: MAIN });
   writeFileSync(`${OUT}/ours-automations.png`, ourShot);
-  if (refHasRoutine) console.log("SKIP  automations-empty vs reference: the reference currently lists a routine, so the empty state is not on screen there (its list card is compared below)");
-  else report("automations-empty vs reference", diff(refShot, ourShot, "automations-empty"), Number(process.env.LIMIT_AUTOMATIONS || 0.04), "main pane");
+  const HDR = { x: 280, y: 0, width: 1080, height: 60 };  // the page header is on screen in either state of the reference
+  const rh = await ref.screenshot({ clip: HDR }), oh = await ours.screenshot({ clip: HDR });
+  writeFileSync(`${OUT}/ref-automations-header.png`, rh); writeFileSync(`${OUT}/ours-automations-header.png`, oh);
+  report("automations header vs reference", diff(rh, oh, "automations-header"), Number(process.env.LIMIT_HEADER_AUTO || 0.08), "icon, title, subtitle, filter, List/Calendar, New");
+  if (refHasRoutine) {
+    // the live reference now lists a routine of its own, so its empty state is read from the capture of it kept in the repo (1280x800, taken from :5199)
+    const stored = PNG.sync.read(readFileSync("web/e2e/reference/automations-empty-1280x800.png"));
+    const region = { x: 280, y: 0, width: 1000, height: 800 };
+    const refPart = new PNG({ width: region.width, height: region.height });
+    PNG.bitblt(stored, refPart, region.x, region.y, region.width, region.height, 0, 0);
+    const small = await (await b.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+    await small.goto(OURS); await small.waitForTimeout(2500);
+    await small.getByTitle("Profile and settings").click();
+    await small.locator('[data-testid="open-automations"]').click();
+    await small.waitForSelector('[data-testid="automations-empty"]'); await small.waitForTimeout(500);
+    const mine = await small.screenshot({ clip: region });
+    writeFileSync(`${OUT}/ref-automations-stored.png`, PNG.sync.write(refPart)); writeFileSync(`${OUT}/ours-automations-1280.png`, mine);
+    report("automations-empty vs stored reference capture", diff(PNG.sync.write(refPart), mine, "automations-empty-stored"), Number(process.env.LIMIT_AUTOMATIONS || 0.04), "main pane, 1280x800");
+  } else report("automations-empty vs reference", diff(refShot, ourShot, "automations-empty"), Number(process.env.LIMIT_AUTOMATIONS || 0.04), "main pane");
 }
 
 // 1b. Routine dialog ("What should happen?"): pixel comparison of the dialog box, ours against the reference
