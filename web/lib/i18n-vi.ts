@@ -115,6 +115,7 @@ export const vi: Record<string, string> = {
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */
 export const viPatterns: [RegExp, string][] = [
+  [/^You chose: (.+)$/, "Bạn đã chọn: $1"],
   [/^Daily at (.+)$/, "Hằng ngày lúc $1"],
   [/^Every (\d+) min$/, "Mỗi $1 phút"],
   [/^unknown key: (.+)$/, "khoá không hợp lệ: $1"],

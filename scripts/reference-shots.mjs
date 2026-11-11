@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeFileSync, mkdirSync } from "node:fs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { chromium } = createRequire(join(root, "web", "package.json"))("playwright-core");
@@ -16,6 +17,23 @@ const WEB = `http://127.0.0.1:${process.env.WEB_PORT || 5299}`;
 const TOL = 3; // css px
 const j = async (m, p, b) => (await fetch(API + p, { method: m, headers: { "content-type": "application/json" }, body: b ? JSON.stringify(b) : undefined })).json();
 
+const req = createRequire(join(root, "web", "package.json"));
+const { PNG } = req("pngjs");
+const pixelmatch = req("pixelmatch").default ?? req("pixelmatch");
+const OUT = join(root, "web", "e2e", "actual");
+mkdirSync(OUT, { recursive: true });
+/** The four corners of a box, 36px squares reaching 8px outside it: radius, border, shadow and backdrop. Plus an
+ * optional strip of empty surface inside it. Returned as decoded images. */
+async function frame(page, box, strip) {
+  const clips = [
+    // the top-right corner sits over whatever message is behind it, so it is not compared
+    { x: box.x - 8, y: box.y - 8 },
+    { x: box.x - 8, y: box.y + box.h - 28 }, { x: box.x + box.w - 28, y: box.y + box.h - 28 },
+  ].map((c) => ({ x: Math.round(c.x), y: Math.round(c.y), width: 36, height: 36 }));
+  if (strip) clips.push({ x: Math.round(box.x + strip.x), y: Math.round(box.y + strip.y), width: strip.w, height: strip.h });
+  return Promise.all(clips.map(async (clip) => PNG.sync.read(await page.screenshot({ clip }))));
+}
+const shots = { ref: {}, ours: {} };
 const edge = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe"].find(existsSync);
 const browser = await chromium.launch({ headless: true, ...(edge ? { executablePath: edge } : {}) });
 const newPage = async (w, h) => (await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 })).newPage();
@@ -57,6 +75,7 @@ const ref = {};
     const items = [...m.querySelectorAll("[role=menuitem]")].map((e) => e.getBoundingClientRect());
     return { w: r.width, itemH: items[0].height, firstItemFromTop: items[0].y - r.y, pitch: items[1].y - items[0].y };
   });
+  shots.ref.menu = await frame(p, await p.locator("[role=menu]").evaluate((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
   await p.keyboard.press("Escape");
   await p.getByRole("button", { name: "You", exact: true }).click();
   await p.getByRole("menuitem", { name: /Settings/ }).first().click();
@@ -66,8 +85,10 @@ const ref = {};
     const d = document.querySelector("[role=dialog]"), r = d.getBoundingClientRect(), nav = d.querySelector("nav").getBoundingClientRect();
     const card = [...d.querySelectorAll("div")].find((e) => { const b = e.getBoundingClientRect(); return b.width > 560 && b.width < 640 && parseFloat(getComputedStyle(e).borderTopLeftRadius) >= 10; });
     const c = card.getBoundingClientRect();
-    return { w: r.width, h: r.height, navW: nav.width, cardX: c.x - r.x, cardW: c.width };
+    const x = [...d.querySelectorAll("button")].map((b) => b.getBoundingClientRect()).find((b) => b.right > r.right - 80 && b.top < r.top + 80 && b.width < 50);
+    return { w: r.width, h: r.height, navW: nav.width, cardX: c.x - r.x, cardW: c.width, closeFromRight: r.right - (x.x + x.width / 2), closeFromTop: x.y + x.height / 2 - r.y };
   });
+  shots.ref.modal = await frame(p, await p.locator("[role=dialog]").evaluate((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }), { x: 20, y: 420, w: 160, h: 240 });
   await p.context().close();
 }
 console.log("reference:", JSON.stringify(ref));
@@ -108,6 +129,7 @@ const bot = await j("POST", "/api/bots", { name: "Ledger", color: "teal", modelS
     const items = [...m.querySelectorAll("[role=menuitem]")].map((e) => e.getBoundingClientRect());
     return { w: r.width, itemH: items[0].height, firstItemFromTop: items[0].y - r.y, pitch: items[1].y - items[0].y };
   });
+  shots.ours.menu = await frame(p, await p.locator("[data-slot=context-menu-content]").evaluate((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
   await p.keyboard.press("Escape");
   await p.getByLabel("Profile and settings").click();
   await p.getByText("Settings", { exact: true }).click();
@@ -117,8 +139,10 @@ const bot = await j("POST", "/api/bots", { name: "Ledger", color: "teal", modelS
   ours.modal = await p.evaluate(() => {
     const d = document.querySelector("[data-testid=settings-modal]"), r = d.getBoundingClientRect(), nav = d.querySelector("nav").getBoundingClientRect();
     const c = document.querySelector("[data-testid=keys-card]").getBoundingClientRect();
-    return { w: r.width, h: r.height, navW: nav.width, cardX: c.x - r.x, cardW: c.width };
+    const x = d.querySelector("[aria-label='Close settings']").getBoundingClientRect();
+    return { w: r.width, h: r.height, navW: nav.width, cardX: c.x - r.x, cardW: c.width, closeFromRight: r.right - (x.x + x.width / 2), closeFromTop: x.y + x.height / 2 - r.y };
   });
+  shots.ours.modal = await frame(p, await p.locator("[data-testid=settings-modal]").evaluate((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }), { x: 20, y: 420, w: 160, h: 240 });
   await p.context().close();
 }
 await j("DELETE", `/api/bots/${bot.id}`);
@@ -134,6 +158,22 @@ for (const k of Object.keys(refF)) {
   const ok = d <= TOL;
   console.log(`  ${ok ? "ok  " : "FAIL"} ${k.padEnd(22)} reference ${refF[k].toFixed(1).padStart(7)}  ours ${(oursF[k] ?? NaN).toFixed(1).padStart(7)}  (off ${d.toFixed(1)}px)`);
   if (!ok) failures.push(`${k}: ${oursF[k]?.toFixed(1)} vs ${refF[k].toFixed(1)}`);
+}
+// ---- pixels: the frame of the menu and of the modal ----
+const pixelLimit = { menu: 0.06, modal: 0.05 };
+for (const name of ["menu", "modal"]) {
+  const a = shots.ref[name], b = shots.ours[name];
+  let worst = 0;
+  a.forEach((img, i) => {
+    const diff = new PNG({ width: img.width, height: img.height });
+    const share = pixelmatch(img.data, b[i].data, diff.data, img.width, img.height, { threshold: 0.2 }) / (img.width * img.height);
+    worst = Math.max(worst, share);
+    console.log(`      ${name} crop ${i}: ${(share * 100).toFixed(2)}%`);
+    if (share > pixelLimit[name]) { writeFileSync(join(OUT, `${name}-${i}-reference.png`), PNG.sync.write(img)); writeFileSync(join(OUT, `${name}-${i}-ours.png`), PNG.sync.write(b[i])); }
+  });
+  const ok = worst <= pixelLimit[name];
+  console.log(`  ${ok ? "ok  " : "FAIL"} ${name} frame pixels (${a.length} crops): worst ${(worst * 100).toFixed(2)}% (limit ${pixelLimit[name] * 100}%)`);
+  if (!ok) failures.push(`${name} frame pixels ${(worst * 100).toFixed(2)}%`);
 }
 if (failures.length) { console.error(`\ngeometry differs from the reference app:\n - ${failures.join("\n - ")}`); process.exit(1); }
 console.log("\nquestion card, context menu and settings modal match the reference app");

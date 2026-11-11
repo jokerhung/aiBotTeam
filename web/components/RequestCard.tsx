@@ -35,6 +35,15 @@ const WHO: Record<string, string> = {
 function Decided({ r }: { r: RequestInfo }) {
   const t = useT();
   const allowed = r.behavior === "allow";
+  // a question the person answered reads like the reference: a green tick and "You chose: ..."
+  if (r.type === "question" && allowed && r.answer && r.source === "user") {
+    return (
+      <div data-testid="request-decided" className="flex min-w-0 items-center gap-2 text-[13px] leading-5 text-ink-tertiary">
+        <Check size={14} className="shrink-0 text-success" />
+        <span className="truncate">{`You chose: ${r.answer.slice(0, 120)}`}</span>
+      </div>
+    );
+  }
   const Icon = r.type === "question" ? Check : allowed ? ShieldCheck : ShieldX;
   const what = t(r.type === "question" ? (allowed ? "Answered" : "Skipped") : allowed ? "Allowed" : "Denied");
   const detail = r.type === "question" ? (r.answer && allowed ? ` “${r.answer.slice(0, 80)}”` : "") : ` ${r.command ?? r.summary}`.slice(0, 90);

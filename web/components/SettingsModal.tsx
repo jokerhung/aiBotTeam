@@ -310,7 +310,7 @@ export function SettingsModal() {
   const close = () => dispatch({ type: "settings", open: false });
   const page = state.settingsPage;
   return (
-    <div role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+    <div role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4"
       onMouseDown={(e) => e.target === e.currentTarget && close()} onKeyDown={(e) => e.key === "Escape" && close()}>
       <div ref={ref} tabIndex={-1} data-testid="settings-modal" className="flex h-[min(700px,calc(100vh-100px))] max-h-[92vh] w-[860px] max-w-[96vw] animate-pop-in overflow-hidden rounded-2xl border border-hairline/70 bg-app shadow-2xl outline-none max-sm:flex-col">
         <nav aria-label="Settings sections" className="flex w-[198px] shrink-0 flex-col gap-0.5 border-r border-hairline/60 bg-app px-3 py-4 max-sm:w-full max-sm:flex-row max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0">
@@ -321,8 +321,8 @@ export function SettingsModal() {
             </button>
           ))}
         </nav>
-        <div className="relative min-w-0 flex-1 overflow-y-auto px-8 pb-6 pt-[22px]">
-          <button type="button" aria-label="Close settings" onClick={close} className="absolute right-3 top-3 rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><X size={16} /></button>
+        <div className="relative min-w-0 flex-1 overflow-y-auto px-8 pb-6 pt-[22px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button type="button" aria-label="Close settings" onClick={close} className="absolute right-[22px] top-[21px] rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><X size={16} /></button>
           <h2 className="mb-[18px] text-[17px] font-medium leading-6 tracking-[-0.008em] text-ink">{t(PAGES.find((p) => p.id === page)?.label ?? "")}</h2>
           {page === "general" && <General />}
           {page === "connections" && <Connections />}
