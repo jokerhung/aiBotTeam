@@ -108,6 +108,7 @@ class RoutineService:
 
     def __init__(self, store, turns, bus, groups=None, tick: float = 15.0) -> None:
         self.store, self.turns, self.bus, self.groups = store, turns, bus, groups
+        self.webhooks = None  # set by the app: a bot may ask for a webhook through `trigger`
         self.tick_seconds = tick
         self._task: Optional[asyncio.Task] = None
         self.run_threads: dict[str, str] = {}  # routine run id -> its task thread, while it is running
@@ -328,6 +329,16 @@ class RoutineService:
             return {"ok": False, "reason": "no_turn", "detail": "routines are made from a running turn"}
         action = str(args.get("action") or "create")
         try:
+            if action == "create" and str(args.get("kind")) == "webhook" and self.webhooks:
+                w, _secret = await self.webhooks.create(target_id=run.bot_id, name=str(args.get("name") or "Webhook"), prompt=str(args.get("prompt") or ""), created_by="bot")
+                from .wire import WireMessage
+
+                m = WireMessage(id=new_id("msg"), role="bot", kind="routine", author=run.bot_id, text=f"Created webhook {w['name']}", at=now_ms(),
+                                routine={"id": w["id"], "name": w["name"], "schedule": "Webhook", "enabled": True, "webhook": True})
+                await self.store.add_message(run.bot_id, thread_id, m)
+                self.turns._frame("message", run.bot_id, thread_id, m)
+                # the secret is kept aside for the person to reveal once; this result, and so the bot, never carries it
+                return {"ok": True, "id": w["id"], "note": "Created. The person copies the link and secret from the card; you cannot see the secret."}
             if action == "create":
                 r = await self.create(target_kind="bot", target_id=run.bot_id, name=str(args.get("name") or ""), prompt=str(args.get("prompt") or ""),
                                       kind=str(args.get("kind") or "interval"), every_min=args.get("every_min"), at=args.get("at"), days=args.get("days"),

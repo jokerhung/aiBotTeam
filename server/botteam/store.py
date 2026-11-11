@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, bod
 CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS webhooks(id TEXT PRIMARY KEY, target_id TEXT NOT NULL, name TEXT NOT NULL, prompt TEXT NOT NULL DEFAULT '', auth TEXT NOT NULL DEFAULT 'bearer', secret_hash TEXT NOT NULL, pending_secret TEXT, enabled INTEGER NOT NULL DEFAULT 1, last_at INTEGER, created_by TEXT NOT NULL DEFAULT 'person', created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS webhook_attempts(id TEXT PRIMARY KEY, webhook_id TEXT NOT NULL, at INTEGER NOT NULL, status INTEGER NOT NULL, result TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, ip TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS wa_hook ON webhook_attempts(webhook_id, at);
 CREATE TABLE IF NOT EXISTS sections(id TEXT PRIMARY KEY, name TEXT NOT NULL, pos INTEGER NOT NULL, collapsed INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS routine_defs(id TEXT PRIMARY KEY, target_kind TEXT NOT NULL, target_id TEXT NOT NULL, name TEXT NOT NULL, prompt TEXT NOT NULL, kind TEXT NOT NULL,
@@ -141,6 +144,7 @@ class Store:
         await self.db.execute("DELETE FROM msg_fts WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM notes WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM routine_defs WHERE target_kind='bot' AND target_id=?", (bot_id,))
+        await self.db.execute("DELETE FROM webhooks WHERE target_id=?", (bot_id,))
         await self.db.execute("DELETE FROM threads WHERE bot_id=?", (bot_id,))
         await self.db.commit()
         return cur.rowcount > 0
@@ -663,3 +667,59 @@ class Store:
     async def clear_notifications(self) -> None:
         await self.db.execute("DELETE FROM notifications")
         await self.db.commit()
+
+
+    # ---- webhooks ------------------------------------------------------------------------------------------------------------
+    _WCOLS = "id, target_id, name, prompt, auth, secret_hash, pending_secret, enabled, last_at, created_by, created_at"
+
+    @staticmethod
+    def _webhook(r) -> dict[str, Any]:
+        return {"id": r[0], "targetId": r[1], "name": r[2], "prompt": r[3], "auth": r[4], "secretHash": r[5], "pendingSecret": r[6], "enabled": bool(r[7]),
+                "lastAt": r[8], "createdBy": r[9], "createdAt": r[10]}
+
+    async def list_webhooks(self) -> list[dict[str, Any]]:
+        cur = await self.db.execute(f"SELECT {self._WCOLS} FROM webhooks ORDER BY created_at")
+        return [self._webhook(r) for r in await cur.fetchall()]
+
+    async def get_webhook(self, wid: str) -> Optional[dict[str, Any]]:
+        cur = await self.db.execute(f"SELECT {self._WCOLS} FROM webhooks WHERE id=?", (wid,))
+        r = await cur.fetchone()
+        return self._webhook(r) if r else None
+
+    async def create_webhook(self, target_id: str, name: str, prompt: str, auth: str, secret_hash: str, pending: Optional[str], created_by: str) -> dict[str, Any]:
+        wid = new_id("wh")
+        await self.db.execute(f"INSERT INTO webhooks({self._WCOLS}) VALUES({','.join('?' * 11)})", (wid, target_id, name, prompt, auth, secret_hash, pending, 1, None, created_by, now_ms()))
+        await self.db.commit()
+        return (await self.get_webhook(wid)) or {}
+
+    async def update_webhook(self, wid: str, **f: Any) -> bool:
+        cols = {"name": "name", "prompt": "prompt", "enabled": "enabled", "secretHash": "secret_hash", "pendingSecret": "pending_secret", "lastAt": "last_at", "targetId": "target_id", "auth": "auth"}
+        sets, args = [], []
+        for k, col in cols.items():
+            if k in f:
+                sets.append(f"{col}=?")
+                args.append(int(f[k]) if isinstance(f[k], bool) else f[k])
+        if not sets:
+            return True
+        cur = await self.db.execute(f"UPDATE webhooks SET {', '.join(sets)} WHERE id=?", [*args, wid])
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def delete_webhook(self, wid: str) -> bool:
+        cur = await self.db.execute("DELETE FROM webhooks WHERE id=?", (wid,))
+        await self.db.execute("DELETE FROM webhook_attempts WHERE webhook_id=?", (wid,))
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def add_webhook_attempt(self, wid: str, status: int, result: str, size: int, ip: str) -> dict[str, Any]:
+        aid = new_id("wa")
+        await self.db.execute("INSERT INTO webhook_attempts(id, webhook_id, at, status, result, size, ip) VALUES(?,?,?,?,?,?,?)", (aid, wid, now_ms(), status, result[:200], size, ip))
+        await self.db.execute("DELETE FROM webhook_attempts WHERE webhook_id=? AND id NOT IN (SELECT id FROM webhook_attempts WHERE webhook_id=? ORDER BY at DESC LIMIT 200)", (wid, wid))
+        await self.db.commit()
+        cur = await self.db.execute("SELECT id, webhook_id, at, status, result, size, ip FROM webhook_attempts WHERE id=?", (aid,))
+        r = await cur.fetchone()
+        return {"id": r[0], "webhookId": r[1], "at": r[2], "status": r[3], "result": r[4], "size": r[5], "ip": r[6]}
+
+    async def list_webhook_attempts(self, wid: str, limit: int = 100) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, webhook_id, at, status, result, size, ip FROM webhook_attempts WHERE webhook_id=? ORDER BY at DESC, id DESC LIMIT ?", (wid, limit))
+        return [{"id": r[0], "webhookId": r[1], "at": r[2], "status": r[3], "result": r[4], "size": r[5], "ip": r[6]} for r in await cur.fetchall()]

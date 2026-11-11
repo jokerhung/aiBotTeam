@@ -25,6 +25,7 @@ from .host import RuntimeHost
 from .notifications import Notifications
 from .routines import RoutineService
 from .runtime import Runtime
+from .webhooks import WebhookService, make_hook_app
 from .store import Store, data_dir, now_ms
 from .turns import Turns
 from .wire import (
@@ -43,7 +44,7 @@ WEB_PORT = os.environ.get("WEB_PORT", "5299")
 CONFIG_FRAME = {"kind": "config", "version": "0.2.0", "needsSetup": False}
 
 
-def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True) -> FastAPI:
+def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False) -> FastAPI:
     home = home or data_dir()
     store = Store(db_path or home / "messages.db")
     bus = Bus()
@@ -68,9 +69,14 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     groups = Groups(store, turns, bus, registry, host)
     routines = RoutineService(store, turns, bus, groups)
     notify = Notifications(store, bus, turns)
+    hook_port = int(os.environ.get("WEBHOOK_PORT") or 8900)
+    webhooks = WebhookService(store, turns, bus, port=hook_port)
+    webhooks.notify = notify
+    hook_state: dict = {}
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
+    routines.webhooks = webhooks
     broker.agent_call = agents.call
     registry.agents = agents
     attachments_dir = home / "attachments"
@@ -88,9 +94,20 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await runtime.recover()  # a cut turn runs again at most once, and never after it acted outward
         runtime.start()
         turns.start()
+        if serve_hooks:  # the receiver: its own port, only /health and /hooks/...
+            import uvicorn
+
+            srv = uvicorn.Server(uvicorn.Config(make_hook_app(webhooks), host="127.0.0.1", port=hook_port, log_level="warning", loop="asyncio"))
+            hook_state["server"], hook_state["task"] = srv, asyncio.create_task(srv.serve())
         await routines.after_restart()  # nothing missed while the server was off is made up
         routines.start()
         yield
+        if hook_state.get("server"):
+            hook_state["server"].should_exit = True
+            try:
+                await asyncio.wait_for(hook_state["task"], 5)
+            except Exception:
+                pass
         await routines.stop()
         await runtime.close()
         await turns.stop()
@@ -711,6 +728,67 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         config.save()
         return {"decider": groups.decider}
 
+    # ---- webhooks (management; the receiver is a separate app on its own port) ---------------------------------------------------
+    async def need_webhook(wid: str):
+        w = await store.get_webhook(wid)
+        if not w:
+            raise HTTPException(404, "webhook not found")
+        return w
+
+    @app.get("/api/webhooks")
+    async def list_webhooks():
+        return {"webhooks": [webhooks.public(w) for w in await store.list_webhooks()], "port": hook_port}
+
+    @app.post("/api/webhooks", status_code=201)
+    async def create_webhook(body: dict):
+        target, name = str(body.get("targetId") or ""), str(body.get("name") or "").strip()
+        if not await store.get_bot(target):
+            raise HTTPException(404, "bot not found")
+        if not name:
+            raise HTTPException(400, "a webhook needs a name")
+        auth = "url" if body.get("auth") == "url" else "bearer"
+        w, secret = await webhooks.create(target_id=target, name=name, prompt=str(body.get("prompt") or ""), auth=auth)
+        return {"webhook": webhooks.public(w), "secret": secret}  # shown here once and never again
+
+    @app.patch("/api/webhooks/{wid}")
+    async def patch_webhook(wid: str, body: dict):
+        await need_webhook(wid)
+        f = {k: body[k] for k in ("name", "prompt", "enabled") if k in body}
+        if "targetId" in body:
+            if not await store.get_bot(str(body["targetId"])):
+                raise HTTPException(404, "bot not found")
+            f["targetId"] = body["targetId"]
+        await store.update_webhook(wid, **f)
+        await webhooks.publish(wid)
+        return webhooks.public(await need_webhook(wid))
+
+    @app.delete("/api/webhooks/{wid}")
+    async def delete_webhook(wid: str):
+        if not await store.delete_webhook(wid):
+            raise HTTPException(404, "webhook not found")
+        await webhooks.publish(wid, deleted=True)
+        return {"ok": True}
+
+    @app.post("/api/webhooks/{wid}/rotate")
+    async def rotate_webhook(wid: str):
+        secret = await webhooks.rotate(wid)
+        if not secret:
+            raise HTTPException(404, "webhook not found")
+        return {"secret": secret}
+
+    @app.post("/api/webhooks/{wid}/reveal")
+    async def reveal_webhook(wid: str):
+        await need_webhook(wid)
+        secret = await webhooks.reveal(wid)
+        if not secret:
+            raise HTTPException(404, "there is no secret waiting to be shown")
+        return {"secret": secret}
+
+    @app.get("/api/webhooks/{wid}/attempts")
+    async def webhook_attempts(wid: str):
+        await need_webhook(wid)
+        return {"attempts": await store.list_webhook_attempts(wid)}
+
     # ---- notifications and the inbox of cards waiting on a person -------------------------------------------------------
     @app.get("/api/notifications")
     async def list_notifications(limit: int = 100):
@@ -847,9 +925,10 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     app.state.turns, app.state.registry, app.state.store, app.state.broker = turns, registry, store, broker
     app.state.scheduler = app.state.routines = routines
+    app.state.webhooks, app.state.hook_app = webhooks, make_hook_app(webhooks)
     app.state.runtime, app.state.host, app.state.agents, app.state.groups, app.state.notify = runtime, host, agents, groups, notify
     _ = now_ms
     return app
 
 
-app = create_app()
+app = create_app(serve_hooks=True)
