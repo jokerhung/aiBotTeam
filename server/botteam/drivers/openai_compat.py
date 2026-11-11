@@ -81,3 +81,16 @@ class OpenAICompatDriver(Emitter):
             self.emit("runtime.error", tid, turn_id, message=f"Endpoint error: {e}")
         self.emit("turn.completed", tid, turn_id, ok=ok, usage=(
             {"input": usage.get("prompt_tokens", 0), "output": usage.get("completion_tokens", 0)} if usage else None))
+
+
+async def ask_once(driver, model: str, system: str, user: str, timeout: float = 8.0) -> str:
+    """A single short chat completion (no streaming), for small decisions such as choosing who answers in a room."""
+    import httpx
+
+    headers = {"authorization": f"Bearer {driver.api_key}"} if getattr(driver, "api_key", None) else {}
+    async with httpx.AsyncClient(timeout=timeout, transport=getattr(driver, "transport", None)) as c:
+        r = await c.post(driver.base_url.rstrip("/") + "/chat/completions", headers=headers, json={
+            "model": model, "temperature": 0, "max_tokens": 20,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
+        r.raise_for_status()
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()

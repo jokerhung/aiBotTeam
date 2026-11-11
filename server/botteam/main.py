@@ -20,13 +20,14 @@ from .bus import Bus
 from .config import ConfigStore
 from .registry import KEY_CATALOG, KEY_IDS, Registry
 from .agents import AgentTools
+from .groups import Groups
 from .host import RuntimeHost
 from .routines import Scheduler, next_run_after, valid_schedule
 from .runtime import Runtime
 from .store import Store, data_dir, now_ms
 from .turns import Turns
 from .wire import (
-    BotDefaults, ConfigPatch, CreateBot, NoteBody, RoutineBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
+    BotDefaults, ConfigPatch, CreateBot, CreateGroup, GroupMessage, NoteBody, PatchGroup, RoutineBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
     PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage,
 )
 
@@ -64,6 +65,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     runtime = Runtime(str(home / "runtime.db"), host)
     host.runtime, turns.runtime, turns.host = runtime, runtime, host
     agents = AgentTools(store, turns, runtime, host)
+    groups = Groups(store, turns, bus, registry, host)
+    turns.groups, agents.groups = groups, groups
     broker.agent_call = agents.call
     registry.agents = agents
     attachments_dir = home / "attachments"
@@ -77,6 +80,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await host.refresh()
         await registry.load()
         await runtime.open()
+        groups.decider = config.data.get("decider")
         await runtime.recover()  # a cut turn runs again at most once, and never after it acted outward
         runtime.start()
         turns.start()
@@ -244,6 +248,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def delete_bot(bot_id: str):
         bot = await need(bot_id)
         host.forget(bot_id)
+        await groups.remove_bot(bot_id)
         for t in await store.list_threads(bot_id):
             await turns.interrupt(bot, t["id"])
             await broker.cancel_thread(t["id"])
@@ -511,6 +516,111 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             raise HTTPException(409, "the bot is still answering")
         return await store.get_routine(bot_id, routine_id)
 
+    # ---- rooms (channels with several bots) --------------------------------------------------------------------
+    async def need_group(group_id: str):
+        g = await store.get_group(group_id)
+        if not g:
+            raise HTTPException(404, "room not found")
+        return g
+
+    @app.get("/api/groups")
+    async def list_groups():
+        return {"groups": await groups.list()}
+
+    @app.post("/api/groups", status_code=201)
+    async def create_group(body: CreateGroup):
+        members = await groups.clean_members(body.members)
+        if body.leader and body.leader not in members:
+            raise HTTPException(400, "the leader must be a member")
+        g = await store.create_group(body.name.strip(), members, body.leader or (members[0] if members else None), body.instructions, body.cwd, body.responder)
+        await groups.publish(g)
+        return await groups.dict_of(g)
+
+    @app.patch("/api/groups/{group_id}")
+    async def patch_group(group_id: str, body: PatchGroup):
+        g = await need_group(group_id)
+        f = body.model_dump(exclude_unset=True)
+        if "members" in f:
+            g.members = await groups.clean_members(f.pop("members") or [])
+            if g.leader not in g.members:
+                g.leader = g.members[0] if g.members else None
+        if f.get("leader") is not None and f["leader"] not in g.members:
+            raise HTTPException(400, "the leader must be a member")
+        if f.get("section"):
+            if not any(sec["id"] == f["section"] for sec in await store.list_sections()):
+                raise HTTPException(404, "section not found")
+        for k, v in f.items():
+            setattr(g, k, v)
+        await store.save_group(g)
+        await groups.publish(g)
+        return await groups.dict_of(g)
+
+    @app.delete("/api/groups/{group_id}")
+    async def delete_group(group_id: str):
+        g = await need_group(group_id)
+        await groups.stop(g)
+        await store.delete_group(group_id)
+        bus.publish({"kind": "group.deleted", "groupId": group_id})
+        return {"ok": True}
+
+    @app.get("/api/groups/{group_id}/messages")
+    async def group_messages(group_id: str, before: str | None = None, thread: str | None = None):
+        g = await need_group(group_id)
+        tid = thread or g.threadId
+        t = await store.get_thread(tid)
+        if not t or t["botId"] != g.id:
+            raise HTTPException(404, "conversation not found")
+        items, more = await store.page(tid, before)
+        return {"threadId": tid, "messages": [m.model_dump() for m in items], "hasMore": more}
+
+    @app.post("/api/groups/{group_id}/messages", status_code=202)
+    async def group_send(group_id: str, body: GroupMessage):
+        g = await need_group(group_id)
+        if body.threadId:
+            t = await store.get_thread(body.threadId)
+            if not t or t["botId"] != g.id:
+                raise HTTPException(404, "conversation not found")
+        msg = await groups.send(g, body.text, body.threadId, body.sendId)
+        return {"message": msg.model_dump()}
+
+    @app.post("/api/groups/{group_id}/read")
+    async def group_read(group_id: str):
+        g = await need_group(group_id)
+        if g.unread:
+            g.unread, g.readAt = False, now_ms()
+            await store.save_group(g)
+            await groups.publish(g)
+        return {"ok": True}
+
+    @app.post("/api/groups/{group_id}/interrupt")
+    async def group_interrupt(group_id: str):
+        await groups.stop(await need_group(group_id))
+        return {"ok": True}
+
+    @app.get("/api/groups/{group_id}/queue")
+    async def group_queue(group_id: str):
+        g = await need_group(group_id)
+        return {"queue": (await groups.dict_of(g))["queue"]}
+
+    @app.post("/api/groups/{group_id}/tasks", status_code=201)
+    async def group_task(group_id: str, body: CreateTask):
+        g = await need_group(group_id)
+        t = await store.create_thread(g.id, body.title)
+        await groups.publish(g)
+        return {"threadId": t["id"]}
+
+    @app.get("/api/decider")
+    async def get_decider():
+        return {"decider": groups.decider}
+
+    @app.put("/api/decider")
+    async def put_decider(body: dict):
+        inst, model = body.get("instanceId"), body.get("model")
+        groups.decider = {"instanceId": inst, "model": model} if inst and model else None
+        config.data["decider"] = groups.decider
+        config.save()
+        return {"decider": groups.decider}
+
     # ---- work handed between bots (the job runtime) --------------------------------------------------------------
     @app.get("/api/assignments")
     async def assignments(root: str | None = None):
@@ -627,7 +737,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     app.state.turns, app.state.registry, app.state.store, app.state.broker = turns, registry, store, broker
     app.state.scheduler = scheduler
-    app.state.runtime, app.state.host, app.state.agents = runtime, host, agents
+    app.state.runtime, app.state.host, app.state.agents, app.state.groups = runtime, host, agents, groups
     _ = now_ms
     return app
 

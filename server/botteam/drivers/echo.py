@@ -82,7 +82,15 @@ class EchoDriver(Emitter):
                 text_out = MD_REPLY
                 self.emit("item.completed", t, turn_id, itemType="assistant_text", text=text_out)
             else:
-                reply = f"You said: {text}"
+                import re as _re
+                room = _re.search(r"It is your turn, (.+?)\. Reply now\.", text)
+                if room:  # a room turn: answer the last line of the transcript, so tests can steer with an @mention in it
+                    last = [ln for ln in text.split("\n") if ln.strip() and not ln.startswith("It is your turn")][-1]
+                    said = last.split(": ", 1)[-1][:120]
+                    head, sep, tail = said.partition("(pass to")
+                    reply = f"{room.group(1)} heard: {head.replace('@', '')}{sep}{tail}"  # only an explicit "(pass to @Name)" keeps its mention
+                else:
+                    reply = f"You said: {text}"
                 await self._stream(t, turn_id, reply)
                 self.emit("item.completed", t, turn_id, itemType="assistant_text", text=reply)
             self.emit("turn.completed", t, turn_id, ok=True, usage={"input": len(text), "output": 10})

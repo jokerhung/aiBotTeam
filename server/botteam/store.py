@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import aiosqlite
 
-from .wire import MAUS_COLORS, WireBot, WireMessage
+from .wire import MAUS_COLORS, WireBot, WireGroup, WireMessage
 
 
 def data_dir() -> Path:
@@ -37,6 +37,7 @@ CREATE INDEX IF NOT EXISTS thread_bot ON threads(bot_id);
 CREATE TABLE IF NOT EXISTS messages(
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, parent_id TEXT, role TEXT,
   at INTEGER NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sections(id TEXT PRIMARY KEY, name TEXT NOT NULL, pos INTEGER NOT NULL, collapsed INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS routines(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, kind TEXT NOT NULL, every_min INTEGER, at TEXT, enabled INTEGER NOT NULL DEFAULT 1, last_run INTEGER, next_run INTEGER NOT NULL);
@@ -435,3 +436,43 @@ class Store:
     async def mark_routine_ran(self, routine_id: str, ran_at: int, next_run: int) -> None:
         await self.db.execute("UPDATE routines SET last_run=?, next_run=? WHERE id=?", (ran_at, next_run, routine_id))
         await self.db.commit()
+
+    # ---- groups (rooms with several bots) -------------------------------------------------------------------------
+    async def list_groups(self) -> list[WireGroup]:
+        cur = await self.db.execute("SELECT body FROM groups ORDER BY pos")
+        return [WireGroup.model_validate_json(r[0]) for r in await cur.fetchall()]
+
+    async def get_group(self, group_id: str) -> Optional[WireGroup]:
+        cur = await self.db.execute("SELECT body FROM groups WHERE id=?", (group_id,))
+        r = await cur.fetchone()
+        return WireGroup.model_validate_json(r[0]) if r else None
+
+    async def group_of_thread(self, thread_id: str) -> Optional[WireGroup]:
+        cur = await self.db.execute("SELECT bot_id FROM threads WHERE id=?", (thread_id,))
+        r = await cur.fetchone()
+        return await self.get_group(r[0]) if r else None
+
+    async def save_group(self, g: WireGroup) -> None:
+        body = g.model_copy(update={"memberInfo": [], "busy": False, "activity": "idle", "queue": [], "tasks": []}).model_dump_json()
+        cur = await self.db.execute("SELECT pos FROM groups WHERE id=?", (g.id,))
+        if await cur.fetchone():
+            await self.db.execute("UPDATE groups SET body=? WHERE id=?", (body, g.id))
+        else:
+            cur = await self.db.execute("SELECT COALESCE(MAX(pos),-1)+1 FROM groups")
+            await self.db.execute("INSERT INTO groups(id,pos,body) VALUES(?,?,?)", (g.id, (await cur.fetchone())[0], body))
+        await self.db.commit()
+
+    async def create_group(self, name: str, members: list[str], leader: Optional[str], instructions: str, cwd: Optional[str], responder: str) -> WireGroup:
+        gid, tid = new_id("grp"), new_id("th")
+        g = WireGroup(id=gid, threadId=tid, mainThreadId=tid, name=name, members=members, leader=leader, instructions=instructions, cwd=cwd, responder=responder)  # type: ignore[arg-type]
+        await self.db.execute("INSERT INTO threads(id,bot_id,title,main,created_at,updated_at) VALUES(?,?,?,?,?,?)", (tid, gid, "", 1, now_ms(), now_ms()))
+        await self.save_group(g)
+        return g
+
+    async def delete_group(self, group_id: str) -> bool:
+        cur = await self.db.execute("DELETE FROM groups WHERE id=?", (group_id,))
+        await self.db.execute("DELETE FROM messages WHERE bot_id=?", (group_id,))
+        await self.db.execute("DELETE FROM msg_fts WHERE bot_id=?", (group_id,))
+        await self.db.execute("DELETE FROM threads WHERE bot_id=?", (group_id,))
+        await self.db.commit()
+        return cur.rowcount > 0

@@ -64,6 +64,7 @@ class Turns:
         self.req_msgs: dict[str, str] = {}  # request id -> the transcript message that shows it
         self.runtime = None  # set by the app: the job runtime that tracks work handed between bots
         self.host = None  # the runtime's host: keeps the names it needs in step with the bots
+        self.groups = None  # rooms: told when a room turn ends so the next responder can start
         self.delegated: dict[str, asyncio.Future] = {}  # work thread -> the runtime's wait for that turn's result
         self.attachments_dir = attachments_dir or data_dir() / "attachments"
         if broker:
@@ -93,9 +94,20 @@ class Turns:
             text += f"\n\nNotes you keep (your library):\n{body}"
         return text
 
+    async def _bot_for(self, thread_id: str) -> Optional[WireBot]:
+        run = self.runs.get(thread_id)
+        if run:
+            return await self.store.get_bot(run.bot_id)
+        return await self.store.bot_of_thread(thread_id)
+
+    def _owner(self, bot: WireBot, thread_id: str) -> str:
+        """Whose messages these are in the store: the bot's own, or the room's when a room turn is running."""
+        run = self.runs.get(thread_id)
+        return run.group_id if run and run.group_id else bot.id
+
     # ---- permission requests ----------------------------------------------------------
     async def policy(self, thread_id: str) -> Optional[Policy]:
-        bot = await self.store.bot_of_thread(thread_id)
+        bot = await self._bot_for(thread_id)
         if not bot:
             return None
         run = self.runs.get(thread_id)
@@ -103,21 +115,21 @@ class Turns:
                       instance=bot.modelSelection.instanceId)
 
     async def _request_opened(self, thread_id: str, req: dict) -> None:
-        bot = await self.store.bot_of_thread(thread_id)
+        bot = await self._bot_for(thread_id)
         if not bot:
             return
         run = self.runs.get(thread_id)
         if run:
             await self._finalize_live(bot, thread_id, run)
-        m = WireMessage(id=new_id("msg"), role="bot", kind="request", at=now_ms(), request=RequestInfo(**req))
-        await self.store.add_message(bot.id, thread_id, m)
+        m = WireMessage(id=new_id("msg"), role="bot", author=bot.id, kind="request", at=now_ms(), request=RequestInfo(**req))
+        await self.store.add_message(self._owner(bot, thread_id), thread_id, m)
         self.req_msgs[req["id"]] = m.id
         self._frame("message", bot.id, thread_id, m)
         await self.publish_bot(bot)
 
     async def _request_resolved(self, thread_id: str, req: dict) -> None:
         mid = self.req_msgs.pop(req["id"], None)
-        bot = await self.store.bot_of_thread(thread_id)
+        bot = await self._bot_for(thread_id)
         if not mid or not bot:
             return
         m = await self.store.get_message(mid)
@@ -136,6 +148,7 @@ class Turns:
             for t in threads
         ]
         runs = [self.runs[t["id"]] for t in threads if t["id"] in self.runs]
+        runs += [r for tid, r in self.runs.items() if r.bot_id == bot.id and tid not in {t["id"] for t in threads}]
         waiting = bool(self.broker and any(self.broker.open_for(t["id"]) for t in threads))
         active = self.runs.get(bot.threadId)
         usage = next((t["usage"] for t in threads if t["id"] == bot.threadId), {})
@@ -212,7 +225,8 @@ class Turns:
 
     async def _start_turn(self, bot: WireBot, thread_id: str, text: str, run: Optional[ThreadRun] = None,
                           files: Optional[list[Attachment]] = None, level: Optional[str] = None, origin: str = "person",
-                          assignment_id: Optional[str] = None) -> bool:
+                          assignment_id: Optional[str] = None, extra_system: str = "", session_reset: bool = False,
+                          cwd: Optional[str] = None, group_id: Optional[str] = None) -> bool:
         inst = self.registry.get(bot.modelSelection.instanceId)
         if not inst or not inst.driver or inst.state != "available" or not inst.enabled:
             reason = inst.reason if inst and inst.reason else "that engine is not available"
@@ -226,12 +240,12 @@ class Turns:
             transcript = [("user" if m.role == "user" else "assistant", m.text) for m in rows[:-1] if m.kind == "text" and m.text]
         inp = SendTurnInput(
             thread_id=thread_id, bot_id=bot.id, text=text, model=bot.modelSelection.model,
-            effort=bot.modelSelection.effort, system=await self._system(bot), resume_cursor=t.get("cursor"),
-            cwd=bot.cwd, transcript=transcript, approval_mode=normalize_mode(level or bot.approvalMode),
+            effort=bot.modelSelection.effort, system=(await self._system(bot)) + extra_system, resume_cursor=None if session_reset else t.get("cursor"),
+            session_reset=session_reset, cwd=cwd or bot.cwd, transcript=transcript, approval_mode=normalize_mode(level or bot.approvalMode),
             attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or []],
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
         )
-        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id)
+        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id)
         await self.publish_bot(bot)
         try:
             self.runs[thread_id].turn_id = await inst.driver.send_turn(inp)
@@ -261,6 +275,8 @@ class Turns:
     # ---- work handed between bots ------------------------------------------------------------------------------------
     async def _after_turn(self, thread_id: str, run: ThreadRun, d: dict) -> None:
         """A turn ended: the runtime's wait for it resolves, or (a turn of the host's own) its root ends."""
+        if run.group_id and self.groups:
+            await self.groups.turn_done(thread_id, run)
         if not self.runtime:
             return
         ok = not run.failed and not run.interrupted and d.get("ok", True) is not False
@@ -277,7 +293,8 @@ class Turns:
         msg = WireMessage(id=new_id("msg"), role="user", text=text, at=now_ms(), sender=sender)
         await self.store.add_message(bot.id, thread_id, msg)
         self._frame("message", bot.id, thread_id, msg)
-        return await self._start_turn(bot, thread_id, text, level=level, origin=origin, assignment_id=assignment_id)
+        g = await self.store.group_of_thread(thread_id)  # a hand-off into a room's thread is still the room's
+        return await self._start_turn(bot, thread_id, text, level=level, origin=origin, assignment_id=assignment_id, group_id=g.id if g else None)
 
     async def drop_queued(self, bot_id: str, thread_id: str, message_id: str) -> bool:
         q = self.queues.get(thread_id, [])
@@ -357,8 +374,8 @@ class Turns:
         if run.label:
             await self._set_label(bot, run, None)
         if run.live is None:
-            run.live = WireMessage(id=new_id("msg"), role="bot", text="", at=now_ms(), streaming=True)
-            await self.store.add_message(bot.id, thread_id, run.live)
+            run.live = WireMessage(id=new_id("msg"), role="bot", author=bot.id, text="", at=now_ms(), streaming=True)
+            await self.store.add_message(self._owner(bot, thread_id), thread_id, run.live)
             self._frame("message", bot.id, thread_id, run.live)
         run.live.text += d.get("delta", "")
         self._frame("message.patch", bot.id, thread_id, {"id": run.live.id, "text": run.live.text, "streaming": True})
@@ -367,8 +384,8 @@ class Turns:
         if text.strip():
             run.final_text = text
         if run.live is None and text.strip():
-            run.live = WireMessage(id=new_id("msg"), role="bot", text="", at=now_ms(), streaming=True)
-            await self.store.add_message(bot.id, thread_id, run.live)
+            run.live = WireMessage(id=new_id("msg"), role="bot", author=bot.id, text="", at=now_ms(), streaming=True)
+            await self.store.add_message(self._owner(bot, thread_id), thread_id, run.live)
             self._frame("message", bot.id, thread_id, run.live)
         await self._finalize_live(bot, thread_id, run, text)
 
@@ -377,9 +394,9 @@ class Turns:
         if (d.get("title") or "") not in READ_ONLY_TOOLS and not str(d.get("title") or "").startswith("mcp__bt__"):
             run.acted = True  # something went outward: a restart must not run this turn again
         await self._finalize_live(bot, thread_id, run)
-        m = WireMessage(id=new_id("msg"), role="bot", kind="activity", at=now_ms(), tool=ToolInfo(
+        m = WireMessage(id=new_id("msg"), role="bot", author=bot.id, kind="activity", at=now_ms(), tool=ToolInfo(
             name=d.get("title") or "tool", itemId=d.get("itemId"), summary=d.get("summary") or "", input=d.get("input") or ""))
-        await self.store.add_message(bot.id, thread_id, m)
+        await self.store.add_message(self._owner(bot, thread_id), thread_id, m)
         if m.tool and m.tool.itemId:
             run.tools[m.tool.itemId] = m
         self._frame("message", bot.id, thread_id, m)
@@ -395,8 +412,8 @@ class Turns:
         await self._set_label(bot, run, None)
 
     async def _add_error(self, bot: WireBot, thread_id: str, text: str, **info: Any) -> None:
-        m = WireMessage(id=new_id("msg"), role="bot", kind="error", text=text, at=now_ms(), error=ErrorInfo(**info))
-        await self.store.add_message(bot.id, thread_id, m)
+        m = WireMessage(id=new_id("msg"), role="bot", author=bot.id, kind="error", text=text, at=now_ms(), error=ErrorInfo(**info))
+        await self.store.add_message(self._owner(bot, thread_id), thread_id, m)
         self._frame("message", bot.id, thread_id, m)
 
     async def _error(self, bot: WireBot, thread_id: str, run: ThreadRun, d: dict) -> None:
@@ -428,8 +445,8 @@ class Turns:
                 await self.store.update_message(m)
                 self._frame("message.patch", bot.id, thread_id, {"id": m.id, "tool": m.tool.model_dump()})
         if run.interrupted or d.get("stopReason") == "interrupted":
-            m = WireMessage(id=new_id("msg"), role="bot", kind="stopped", text="Stopped", at=now_ms())
-            await self.store.add_message(bot.id, thread_id, m)
+            m = WireMessage(id=new_id("msg"), role="bot", author=bot.id, kind="stopped", text="Stopped", at=now_ms())
+            await self.store.add_message(self._owner(bot, thread_id), thread_id, m)
             self._frame("message", bot.id, thread_id, m)
         usage = d.get("usage")
         if usage:

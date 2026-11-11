@@ -112,6 +112,7 @@ class WireMessage(BaseModel):
     tool: Optional[ToolInfo] = None
     error: Optional[ErrorInfo] = None
     request: Optional[RequestInfo] = None
+    mentions: list[str] = Field(default_factory=list)  # bot ids a message names with @
     sender: Optional[str] = None  # who this line came from when it is a teammate's or a routine's, not the person's
     author: Optional[str] = None  # the bot that wrote a bot message (rooms show it)
     attachments: list[Attachment] = Field(default_factory=list)
@@ -241,3 +242,74 @@ class RoutineBody(BaseModel):
     everyMin: Optional[int] = None
     at: Optional[str] = Field(default=None, max_length=5)
     enabled: Optional[bool] = None
+
+
+Responder = Literal["leader", "auto", "mention"]
+
+
+class QueueEntry(BaseModel):
+    id: str
+    botId: str
+    name: str = ""
+    state: Literal["waiting", "running"] = "waiting"
+    reason: str = ""  # mention | leader | auto | chained
+    text: str = ""
+
+
+class MemberInfo(BaseModel):
+    id: str
+    name: str
+    color: str = "green"
+    title: str = ""
+
+
+class WireGroup(BaseModel):
+    id: str
+    threadId: str
+    mainThreadId: str = ""
+    name: str
+    members: list[str] = Field(default_factory=list)
+    memberInfo: list[MemberInfo] = Field(default_factory=list)
+    leader: Optional[str] = None
+    instructions: str = ""
+    cwd: Optional[str] = None
+    responder: Responder = "leader"
+    section: Optional[str] = None
+    pinned: bool = False
+    hidden: bool = False
+    unread: bool = False
+    busy: bool = False
+    activity: Literal["working", "waiting-on-you", "idle"] = "idle"
+    queue: list[QueueEntry] = Field(default_factory=list)
+    lastText: str = ""
+    lastAt: Optional[int] = None
+    readAt: int = 0
+    tasks: list[WireTask] = Field(default_factory=list)
+
+
+class CreateGroup(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    members: list[str] = Field(default_factory=list)
+    leader: Optional[str] = None
+    instructions: str = ""
+    cwd: Optional[str] = None
+    responder: Responder = "leader"
+
+
+class PatchGroup(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    members: Optional[list[str]] = None
+    leader: Optional[str] = None
+    instructions: Optional[str] = None
+    cwd: Optional[str] = None
+    responder: Optional[Responder] = None
+    section: Optional[str] = None
+    pinned: Optional[bool] = None
+    hidden: Optional[bool] = None
+    unread: Optional[bool] = None
+
+
+class GroupMessage(BaseModel):
+    text: str = Field(min_length=1, max_length=100_000)
+    sendId: Optional[str] = None
+    threadId: Optional[str] = None
