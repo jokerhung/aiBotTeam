@@ -356,6 +356,9 @@ class Runtime:
         if not self.host.can_start(a):
             return
         async with self.lock:
+            cur = await self.get(a["id"])  # it may have been stopped since the tick read it
+            if not cur or cur["status"] != "queued":
+                return
             bud = await self._budget(a["root_id"])
             if bud["executions"] >= BUDGET_EXECUTIONS:
                 await self._set(a["id"], "failed", "refused", outcome="budget", outcome_detail="the executions budget of this request is used up")
@@ -478,6 +481,9 @@ class Runtime:
 
     async def _maybe_resume(self, a: dict) -> None:
         async with self.lock:
+            cur = await self.get(a["id"])
+            if not cur or cur["status"] != "waiting":
+                return
             kids = [k for k in await self.children(a["id"]) if k["reply"] != "none"]
             if not kids or any(k["status"] not in TERMINAL or not k["reported"] for k in kids):
                 return
@@ -500,6 +506,9 @@ class Runtime:
         if not self.host.can_start(a):
             return
         async with self.lock:
+            cur = await self.get(a["id"])
+            if not cur or cur["status"] != "resume":
+                return
             await self._set(a["id"], "running", "resumed", executions=a["executions"] + 1, children_since_turn=0, resumed=False)
             await self.db.execute("UPDATE inbox SET delivered=1 WHERE owner=?", (a["id"],))
             await self.db.commit()

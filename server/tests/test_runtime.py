@@ -56,11 +56,21 @@ async def rt(tmp_path):
 
 
 async def settle(r, timeout=5.0):
-    """Wait until nothing is queued, running or resuming (waiting/needs_input are allowed to stay)."""
+    """Wait until nothing is queued, running or about to resume (a node still waiting on live children may stay waiting)."""
+    calm = 0
     for _ in range(int(timeout / 0.02)):
         await asyncio.sleep(0.02)
         rows = await r.all()
-        if not any(a["status"] in ("queued", "resume") or (a["status"] == "running" and not a["host_turn"]) for a in rows) and not r.tasks:
+        by_parent = {}
+        for a in rows:
+            by_parent.setdefault(a["parent_id"], []).append(a)
+        busy = r.tasks or any(
+            a["status"] in ("queued", "resume")
+            or (a["status"] == "running" and not a["host_turn"])
+            or (a["status"] == "waiting" and by_parent.get(a["id"]) and all(k["status"] in ("completed", "failed", "cancelled") for k in by_parent[a["id"]]))
+            for a in rows)
+        calm = 0 if busy else calm + 1
+        if calm >= 3:
             return
     raise AssertionError("runtime never settled")
 
