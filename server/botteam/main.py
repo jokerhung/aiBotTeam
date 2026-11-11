@@ -22,7 +22,8 @@ from .registry import KEY_CATALOG, KEY_IDS, Registry
 from .agents import AgentTools
 from .groups import Groups
 from .host import RuntimeHost
-from .routines import Scheduler, next_run_after, valid_schedule
+from .notifications import Notifications
+from .routines import RoutineService
 from .runtime import Runtime
 from .store import Store, data_dir, now_ms
 from .turns import Turns
@@ -60,13 +61,16 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     registry.broker = broker
     turns = Turns(store, bus, registry, home / "threads", broker=broker, attachments_dir=home / "attachments")
     turns_ref.append(turns)
-    scheduler = Scheduler(store, turns)
     host = RuntimeHost(store, turns, registry, bus)
     runtime = Runtime(str(home / "runtime.db"), host)
     host.runtime, turns.runtime, turns.host = runtime, runtime, host
     agents = AgentTools(store, turns, runtime, host)
     groups = Groups(store, turns, bus, registry, host)
+    routines = RoutineService(store, turns, bus, groups)
+    notify = Notifications(store, bus, turns)
+    turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
+    turns.routines, agents.routines = routines, routines
     broker.agent_call = agents.call
     registry.agents = agents
     attachments_dir = home / "attachments"
@@ -84,9 +88,10 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await runtime.recover()  # a cut turn runs again at most once, and never after it acted outward
         runtime.start()
         turns.start()
-        scheduler.start()
+        await routines.after_restart()  # nothing missed while the server was off is made up
+        routines.start()
         yield
-        await scheduler.stop()
+        await routines.stop()
         await runtime.close()
         await turns.stop()
         await broker.stop()
@@ -468,53 +473,138 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             raise HTTPException(404, "note not found")
         return {"ok": True}
 
-    # ---- routines (a message sent to the bot on a schedule) --------------------------------------------
+    # ---- routines ----------------------------------------------------------------------------------------------------
+    def routine_args(body: RoutineBody) -> dict:
+        f = body.model_dump(exclude_unset=True)
+        f["name"] = f.pop("name", None) or f.pop("title", None)
+        f.pop("title", None)
+        f["prompt"] = f.pop("prompt", None) or f.pop("text", None)
+        f.pop("text", None)
+        return {k: v for k, v in f.items() if v is not None or k in ("maxRunMin",)}
+
+    async def need_routine(rid: str):
+        r = await store.get_routine(rid)
+        if not r:
+            raise HTTPException(404, "routine not found")
+        return r
+
+    async def check_target(kind: str, tid: str):
+        ok = (await store.get_bot(tid)) if kind == "bot" else (await store.get_group(tid))
+        if not ok:
+            raise HTTPException(404, "bot not found" if kind == "bot" else "room not found")
+
+    @app.get("/api/routines")
+    async def list_all_routines(target: str | None = None):
+        rows = await store.list_routines()
+        if target:
+            rows = [r for r in rows if r["targetId"] == target]
+        return {"routines": [routines.public(r) for r in rows]}
+
+    @app.post("/api/routines", status_code=201)
+    async def create_routine(body: RoutineBody):
+        f = routine_args(body)
+        kind, tid = f.pop("targetKind", None) or "bot", f.pop("targetId", None)
+        if not tid:
+            raise HTTPException(400, "pick a bot or a room for the routine")
+        await check_target(kind, tid)
+        try:
+            r = await routines.create(target_kind=kind, target_id=tid, name=f.get("name") or "", prompt=f.get("prompt") or "", kind=f.get("kind") or "interval",
+                                      every_min=f.get("everyMin"), at=f.get("at"), days=f.get("days"), run_at=f.get("runAt"), tz=f.get("tz"), max_run_min=f.get("maxRunMin"))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return routines.public(r)
+
+    @app.patch("/api/routines/{rid}")
+    async def patch_routine(rid: str, body: RoutineBody):
+        await need_routine(rid)
+        f = routine_args(body)
+        f.pop("targetKind", None)
+        f.pop("targetId", None)
+        try:
+            r = await routines.update(rid, **f)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return routines.public(r)  # type: ignore[arg-type]
+
+    @app.delete("/api/routines/{rid}")
+    async def delete_routine(rid: str):
+        if not await routines.delete(rid):
+            raise HTTPException(404, "routine not found")
+        return {"ok": True}
+
+    @app.post("/api/routines/{rid}/run")
+    async def run_routine(rid: str):
+        r = await need_routine(rid)
+        run = await routines.start_run(r)
+        if run and run["status"] == "skipped":
+            raise HTTPException(409, "the previous run is still going")
+        return {"run": run, "routine": routines.public(await need_routine(rid))}
+
+    @app.get("/api/routines/{rid}/runs")
+    async def routine_runs_of(rid: str, status: str | None = None):
+        await need_routine(rid)
+        return {"runs": await store.list_runs(rid, status)}
+
+    @app.get("/api/routine-runs")
+    async def list_routine_runs(routine: str | None = None, status: str | None = None, since: int | None = None, until: int | None = None):
+        return {"runs": await store.list_runs(routine, status, since, until)}
+
+    @app.post("/api/routine-runs/{run_id}/cancel")
+    async def cancel_routine_run(run_id: str):
+        run = await routines.cancel_run(run_id)
+        if not run:
+            raise HTTPException(404, "run not found")
+        return {"run": run}
+
+    # Phase 3's per-bot routines: the same routines, filtered to one bot
     @app.get("/api/bots/{bot_id}/routines")
-    async def routines(bot_id: str):
+    async def bot_routines(bot_id: str):
         await need(bot_id)
-        return {"routines": await store.list_routines(bot_id)}
+        return {"routines": [routines.public(r) for r in await store.list_routines("bot", bot_id)]}
 
     @app.post("/api/bots/{bot_id}/routines", status_code=201)
-    async def add_routine(bot_id: str, body: RoutineBody):
+    async def add_bot_routine(bot_id: str, body: RoutineBody):
         await need(bot_id)
-        kind = body.kind or "interval"
-        why = valid_schedule(kind, body.everyMin, body.at)
-        if why or not body.text:
-            raise HTTPException(400, why or "a routine needs a message")
-        nxt = next_run_after(kind, body.everyMin, body.at, now_ms())
-        return await store.create_routine(bot_id, (body.title or body.text)[:60], body.text, kind, body.everyMin, body.at, nxt)
+        f = routine_args(body)
+        if not f.get("prompt"):
+            raise HTTPException(400, "a routine needs a message")
+        try:
+            r = await routines.create(target_kind="bot", target_id=bot_id, name=f.get("name") or "", prompt=f["prompt"], kind=f.get("kind") or "interval",
+                                      every_min=f.get("everyMin"), at=f.get("at"), days=f.get("days"), run_at=f.get("runAt"), tz=f.get("tz"), max_run_min=f.get("maxRunMin"))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return routines.public(r)
 
     @app.patch("/api/bots/{bot_id}/routines/{routine_id}")
-    async def patch_routine(bot_id: str, routine_id: str, body: RoutineBody):
-        cur = await store.get_routine(bot_id, routine_id)
-        if not cur:
+    async def patch_bot_routine(bot_id: str, routine_id: str, body: RoutineBody):
+        r = await store.get_routine(routine_id)
+        if not r or r["targetId"] != bot_id:
             raise HTTPException(404, "routine not found")
-        f = body.model_dump(exclude_unset=True)
-        kind, every, at = f.get("kind", cur["kind"]), f.get("everyMin", cur["everyMin"]), f.get("at", cur["at"])
-        if {"kind", "everyMin", "at"} & f.keys():
-            why = valid_schedule(kind, every, at)
-            if why:
-                raise HTTPException(400, why)
-            f["nextRun"] = next_run_after(kind, every, at, now_ms())
-        if f.get("enabled") is True and not cur["enabled"]:
-            f["nextRun"] = next_run_after(kind, every, at, now_ms())
-        await store.update_routine(bot_id, routine_id, **f)
-        return await store.get_routine(bot_id, routine_id)
+        f = routine_args(body)
+        f.pop("targetKind", None)
+        f.pop("targetId", None)
+        try:
+            out = await routines.update(routine_id, **f)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return routines.public(out)  # type: ignore[arg-type]
 
     @app.delete("/api/bots/{bot_id}/routines/{routine_id}")
-    async def delete_routine(bot_id: str, routine_id: str):
-        if not await store.delete_routine(bot_id, routine_id):
+    async def delete_bot_routine(bot_id: str, routine_id: str):
+        r = await store.get_routine(routine_id)
+        if not r or r["targetId"] != bot_id or not await routines.delete(routine_id):
             raise HTTPException(404, "routine not found")
         return {"ok": True}
 
     @app.post("/api/bots/{bot_id}/routines/{routine_id}/run")
-    async def run_routine(bot_id: str, routine_id: str):
-        cur = await store.get_routine(bot_id, routine_id)
-        if not cur:
+    async def run_bot_routine(bot_id: str, routine_id: str):
+        r = await store.get_routine(routine_id)
+        if not r or r["targetId"] != bot_id:
             raise HTTPException(404, "routine not found")
-        if not await scheduler.fire(cur):
+        run = await routines.start_run(r)
+        if not run or run["status"] != "running":
             raise HTTPException(409, "the bot is still answering")
-        return await store.get_routine(bot_id, routine_id)
+        return routines.public(await store.get_routine(routine_id))  # type: ignore[arg-type]
 
     # ---- rooms (channels with several bots) --------------------------------------------------------------------
     async def need_group(group_id: str):
@@ -620,6 +710,26 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         config.data["decider"] = groups.decider
         config.save()
         return {"decider": groups.decider}
+
+    # ---- notifications and the inbox of cards waiting on a person -------------------------------------------------------
+    @app.get("/api/notifications")
+    async def list_notifications(limit: int = 100):
+        rows = await store.list_notifications(min(max(limit, 1), 300))
+        return {"notifications": rows, "unread": sum(1 for n in rows if not n["read"])}
+
+    @app.post("/api/notifications/read")
+    async def read_notifications(body: dict):
+        ids = body.get("ids")
+        return {"read": await notify.read(None if body.get("all") or ids is None else [str(i) for i in ids])}
+
+    @app.delete("/api/notifications")
+    async def clear_notifications():
+        await notify.clear()
+        return {"ok": True}
+
+    @app.get("/api/inbox")
+    async def inbox():
+        return {"items": await notify.inbox()}
 
     # ---- work handed between bots (the job runtime) --------------------------------------------------------------
     @app.get("/api/assignments")
@@ -736,8 +846,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         return EventSourceResponse(gen(), ping=None)
 
     app.state.turns, app.state.registry, app.state.store, app.state.broker = turns, registry, store, broker
-    app.state.scheduler = scheduler
-    app.state.runtime, app.state.host, app.state.agents, app.state.groups = runtime, host, agents, groups
+    app.state.scheduler = app.state.routines = routines
+    app.state.runtime, app.state.host, app.state.agents, app.state.groups, app.state.notify = runtime, host, agents, groups, notify
     _ = now_ms
     return app
 

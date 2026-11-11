@@ -91,6 +91,15 @@ class RuntimeHost:
         return await fut
 
     async def report(self, a: dict) -> None:
+        if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):
+            await self.turns.notify.add("assignment_failed", f"{self.bot_name(a['assignee_bot'])} could not finish a task", (a.get("outcome_detail") or a.get("outcome") or "")[:200],
+                                        target_id=a["assignee_bot"], thread_id=a["thread_id"])
+        if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):
+            await self.turns.notify.add("assignment_failed", f"{self.bot_name(a['assignee_bot'])} could not finish a task", (a.get("outcome_detail") or a.get("outcome") or "")[:200],
+                                        target_id=a["assignee_bot"], thread_id=a["thread_id"])
+        if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):
+            await self.turns.notify.add("assignment_failed", f"{self.bot_name(a['assignee_bot'])} could not finish a task", (a.get("outcome_detail") or a.get("outcome") or "")[:200],
+                                        target_id=a["assignee_bot"], thread_id=a["thread_id"])
         self.bus.publish({"kind": "assignment", "assignment": self.runtime.public(a) if self.runtime else {"id": a["id"]}})
 
     async def stop_thread(self, thread_id: str) -> None:

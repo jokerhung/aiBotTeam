@@ -9,6 +9,7 @@ dependencies = [
   "httpx",
   "pydantic",
   "sse-starlette",
+  "tzdata",
 ]
 
 [dependency-groups]

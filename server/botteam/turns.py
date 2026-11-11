@@ -43,6 +43,7 @@ class ThreadRun:
     final_text: str = ""
     acted: bool = False
     group_id: Optional[str] = None
+    routine_run_id: Optional[str] = None
 
 
 def persona(bot: WireBot) -> str:
@@ -65,6 +66,8 @@ class Turns:
         self.runtime = None  # set by the app: the job runtime that tracks work handed between bots
         self.host = None  # the runtime's host: keeps the names it needs in step with the bots
         self.groups = None  # rooms: told when a room turn ends so the next responder can start
+        self.routines = None  # routine runs: told when their turn ends
+        self.notify = None  # the notification log
         self.delegated: dict[str, asyncio.Future] = {}  # work thread -> the runtime's wait for that turn's result
         self.attachments_dir = attachments_dir or data_dir() / "attachments"
         if broker:
@@ -126,6 +129,18 @@ class Turns:
         self.req_msgs[req["id"]] = m.id
         self._frame("message", bot.id, thread_id, m)
         await self.publish_bot(bot)
+        if self.notify:
+            grp = await self.store.group_of_thread(thread_id)
+            await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
+                                  target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
+        if self.notify:
+            grp = await self.store.group_of_thread(thread_id)
+            await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
+                                  target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
+        if self.notify:
+            grp = await self.store.group_of_thread(thread_id)
+            await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
+                                  target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
 
     async def _request_resolved(self, thread_id: str, req: dict) -> None:
         mid = self.req_msgs.pop(req["id"], None)
@@ -226,7 +241,7 @@ class Turns:
     async def _start_turn(self, bot: WireBot, thread_id: str, text: str, run: Optional[ThreadRun] = None,
                           files: Optional[list[Attachment]] = None, level: Optional[str] = None, origin: str = "person",
                           assignment_id: Optional[str] = None, extra_system: str = "", session_reset: bool = False,
-                          cwd: Optional[str] = None, group_id: Optional[str] = None) -> bool:
+                          cwd: Optional[str] = None, group_id: Optional[str] = None, routine_run_id: Optional[str] = None) -> bool:
         inst = self.registry.get(bot.modelSelection.instanceId)
         if not inst or not inst.driver or inst.state != "available" or not inst.enabled:
             reason = inst.reason if inst and inst.reason else "that engine is not available"
@@ -245,7 +260,7 @@ class Turns:
             attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or []],
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
         )
-        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id)
+        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id, routine_run_id=routine_run_id)
         await self.publish_bot(bot)
         try:
             self.runs[thread_id].turn_id = await inst.driver.send_turn(inp)
@@ -277,6 +292,9 @@ class Turns:
         """A turn ended: the runtime's wait for it resolves, or (a turn of the host's own) its root ends."""
         if run.group_id and self.groups:
             await self.groups.turn_done(thread_id, run)
+        if run.routine_run_id and self.routines:
+            await self.routines.run_finished(thread_id, run.routine_run_id, not run.failed and not run.interrupted and d.get("ok", True) is not False,
+                                             "" if not run.failed else "the turn failed")
         if not self.runtime:
             return
         ok = not run.failed and not run.interrupted and d.get("ok", True) is not False
@@ -459,6 +477,15 @@ class Turns:
             await self.store.patch_thread(thread_id, usage=u)
         self.runs.pop(thread_id, None)
         await self._after_turn(thread_id, run, d)
+        if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
+            grp = await self.store.group_of_thread(thread_id)
+            await self.notify.add("turn_done", f"{bot.name} finished", (run.final_text or "")[:160], target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
+        if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
+            grp = await self.store.group_of_thread(thread_id)
+            await self.notify.add("turn_done", f"{bot.name} finished", (run.final_text or "")[:160], target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
+        if self.notify and now_ms() - run.started_at >= 15_000 and not run.failed and not run.interrupted:
+            grp = await self.store.group_of_thread(thread_id)
+            await self.notify.add("turn_done", f"{bot.name} finished", (run.final_text or "")[:160], target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
         bot = await self.store.get_bot(bot.id) or bot
         bot.unread = True
         await self.store.save_bot(bot)

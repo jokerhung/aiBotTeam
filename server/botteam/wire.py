@@ -101,7 +101,7 @@ class ErrorInfo(BaseModel):
 class WireMessage(BaseModel):
     id: str
     role: Literal["bot", "user"]
-    kind: Literal["text", "activity", "error", "stopped", "notice", "request"] = "text"
+    kind: Literal["text", "activity", "error", "stopped", "notice", "request", "routine"] = "text"
     text: str = ""
     at: int
     sendId: Optional[str] = None
@@ -112,6 +112,7 @@ class WireMessage(BaseModel):
     tool: Optional[ToolInfo] = None
     error: Optional[ErrorInfo] = None
     request: Optional[RequestInfo] = None
+    routine: Optional[dict[str, Any]] = None  # a routine a bot just made: the live card shows Edit, Pause, Undo
     mentions: list[str] = Field(default_factory=list)  # bot ids a message names with @
     sender: Optional[str] = None  # who this line came from when it is a teammate's or a routine's, not the person's
     author: Optional[str] = None  # the bot that wrote a bot message (rooms show it)
@@ -236,12 +237,22 @@ class NoteBody(BaseModel):
 
 
 class RoutineBody(BaseModel):
+    """A routine as the API takes it. `title` / `text` / `kind: daily` are the Phase 3 names and still work."""
+    name: Optional[str] = Field(default=None, max_length=120)
     title: Optional[str] = Field(default=None, max_length=120)
+    prompt: Optional[str] = Field(default=None, min_length=1, max_length=20_000)
     text: Optional[str] = Field(default=None, min_length=1, max_length=20_000)
-    kind: Optional[Literal["interval", "daily"]] = None
+    targetKind: Optional[Literal["bot", "group"]] = None
+    targetId: Optional[str] = None
+    kind: Optional[Literal["interval", "daily", "weekly", "once"]] = None
     everyMin: Optional[int] = None
     at: Optional[str] = Field(default=None, max_length=5)
+    days: Optional[list[int]] = None
+    runAt: Optional[int] = None
+    tz: Optional[str] = Field(default=None, max_length=64)
+    maxRunMin: Optional[int] = Field(default=None, ge=1, le=1440)
     enabled: Optional[bool] = None
+
 
 
 Responder = Literal["leader", "auto", "mention"]

@@ -62,6 +62,15 @@ class Broker:
         if self._server:
             self._server.close()
 
+    def all_open(self) -> list[tuple[str, dict]]:
+        return [(self._thread_of.get(rid, ""), r) for rid, r in self.open.items()]
+
+    def all_open(self) -> list[tuple[str, dict]]:
+        return [(self._thread_of.get(rid, ""), r) for rid, r in self.open.items()]
+
+    def all_open(self) -> list[tuple[str, dict]]:
+        return [(self._thread_of.get(rid, ""), r) for rid, r in self.open.items()]
+
     def open_for(self, thread_id: str) -> list[dict]:
         return [r for rid, r in self.open.items() if self._thread_of.get(rid) == thread_id]
 

@@ -38,9 +38,17 @@ CREATE TABLE IF NOT EXISTS messages(
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, parent_id TEXT, role TEXT,
   at INTEGER NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', target_kind TEXT NOT NULL DEFAULT 'bot', target_id TEXT NOT NULL DEFAULT '', thread_id TEXT, read INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sections(id TEXT PRIMARY KEY, name TEXT NOT NULL, pos INTEGER NOT NULL, collapsed INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, updated_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS routines(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, kind TEXT NOT NULL, every_min INTEGER, at TEXT, enabled INTEGER NOT NULL DEFAULT 1, last_run INTEGER, next_run INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS routine_defs(id TEXT PRIMARY KEY, target_kind TEXT NOT NULL, target_id TEXT NOT NULL, name TEXT NOT NULL, prompt TEXT NOT NULL, kind TEXT NOT NULL,
+  every_min INTEGER, at TEXT, days TEXT, run_at INTEGER, tz TEXT NOT NULL DEFAULT 'UTC', anchor INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+  last_run INTEGER, next_run INTEGER, max_run_min INTEGER, created_by TEXT NOT NULL DEFAULT 'person', created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS routine_runs(id TEXT PRIMARY KEY, routine_id TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL,
+  thread_id TEXT, detail TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS rr_routine ON routine_runs(routine_id, started_at);
 CREATE VIRTUAL TABLE IF NOT EXISTS msg_fts USING fts5(text, message_id UNINDEXED, bot_id UNINDEXED, thread_id UNINDEXED, tokenize='unicode61 remove_diacritics 2');
 """
 
@@ -58,6 +66,7 @@ class Store:
         await self.db.execute("CREATE INDEX IF NOT EXISTS msg_thread ON messages(thread_id, seq)")
         await self.db.execute("CREATE INDEX IF NOT EXISTS msg_parent ON messages(thread_id, parent_id)")
         await self._backfill_fts()
+        await self.migrate_phase3_routines()
         await self.db.commit()
 
     async def close(self) -> None:
@@ -131,7 +140,7 @@ class Store:
         await self.db.execute("DELETE FROM messages WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM msg_fts WHERE bot_id=?", (bot_id,))
         await self.db.execute("DELETE FROM notes WHERE bot_id=?", (bot_id,))
-        await self.db.execute("DELETE FROM routines WHERE bot_id=?", (bot_id,))
+        await self.db.execute("DELETE FROM routine_defs WHERE target_kind='bot' AND target_id=?", (bot_id,))
         await self.db.execute("DELETE FROM threads WHERE bot_id=?", (bot_id,))
         await self.db.commit()
         return cur.rowcount > 0
@@ -386,56 +395,6 @@ class Store:
         await self.db.commit()
         return cur.rowcount > 0
 
-    # ---- routines ----------------------------------------------------------------
-    _ROUTINE_COLS = "id, bot_id, title, text, kind, every_min, at, enabled, last_run, next_run"
-
-    @staticmethod
-    def _routine(r) -> dict[str, Any]:
-        return {"id": r[0], "botId": r[1], "title": r[2], "text": r[3], "kind": r[4], "everyMin": r[5], "at": r[6],
-                "enabled": bool(r[7]), "lastRun": r[8], "nextRun": r[9]}
-
-    async def list_routines(self, bot_id: str) -> list[dict[str, Any]]:
-        cur = await self.db.execute(f"SELECT {self._ROUTINE_COLS} FROM routines WHERE bot_id=? ORDER BY next_run", (bot_id,))
-        return [self._routine(r) for r in await cur.fetchall()]
-
-    async def get_routine(self, bot_id: str, routine_id: str) -> Optional[dict[str, Any]]:
-        cur = await self.db.execute(f"SELECT {self._ROUTINE_COLS} FROM routines WHERE id=? AND bot_id=?", (routine_id, bot_id))
-        r = await cur.fetchone()
-        return self._routine(r) if r else None
-
-    async def create_routine(self, bot_id: str, title: str, text: str, kind: str, every_min: Optional[int], at: Optional[str], next_run: int) -> dict[str, Any]:
-        rid = new_id("rt")
-        await self.db.execute("INSERT INTO routines(id,bot_id,title,text,kind,every_min,at,enabled,next_run) VALUES(?,?,?,?,?,?,?,1,?)",
-                              (rid, bot_id, title, text, kind, every_min, at, next_run))
-        await self.db.commit()
-        return (await self.get_routine(bot_id, rid)) or {}
-
-    async def update_routine(self, bot_id: str, routine_id: str, **f: Any) -> bool:
-        cols = {"title": "title", "text": "text", "kind": "kind", "everyMin": "every_min", "at": "at", "enabled": "enabled", "nextRun": "next_run"}
-        sets, args = [], []
-        for k, col in cols.items():
-            if k in f:
-                sets.append(f"{col}=?")
-                args.append(int(f[k]) if isinstance(f[k], bool) else f[k])
-        if not sets:
-            return await self.get_routine(bot_id, routine_id) is not None
-        args += [routine_id, bot_id]
-        cur = await self.db.execute(f"UPDATE routines SET {', '.join(sets)} WHERE id=? AND bot_id=?", args)
-        await self.db.commit()
-        return cur.rowcount > 0
-
-    async def delete_routine(self, bot_id: str, routine_id: str) -> bool:
-        cur = await self.db.execute("DELETE FROM routines WHERE id=? AND bot_id=?", (routine_id, bot_id))
-        await self.db.commit()
-        return cur.rowcount > 0
-
-    async def due_routines(self, now: int) -> list[dict[str, Any]]:
-        cur = await self.db.execute(f"SELECT {self._ROUTINE_COLS} FROM routines WHERE enabled=1 AND next_run<=? ORDER BY next_run", (now,))
-        return [self._routine(r) for r in await cur.fetchall()]
-
-    async def mark_routine_ran(self, routine_id: str, ran_at: int, next_run: int) -> None:
-        await self.db.execute("UPDATE routines SET last_run=?, next_run=? WHERE id=?", (ran_at, next_run, routine_id))
-        await self.db.commit()
 
     # ---- groups (rooms with several bots) -------------------------------------------------------------------------
     async def list_groups(self) -> list[WireGroup]:
@@ -476,3 +435,231 @@ class Store:
         await self.db.execute("DELETE FROM threads WHERE bot_id=?", (group_id,))
         await self.db.commit()
         return cur.rowcount > 0
+
+    # ---- routines (Phase 4: bots and rooms, schedules, runs) ----------------------------------------------------------
+    _RCOLS = "id, target_kind, target_id, name, prompt, kind, every_min, at, days, run_at, tz, anchor, enabled, last_run, next_run, max_run_min, created_by, created_at"
+
+    @staticmethod
+    def _routine(r) -> dict[str, Any]:
+        return {"id": r[0], "targetKind": r[1], "targetId": r[2], "name": r[3], "prompt": r[4], "kind": r[5], "everyMin": r[6], "at": r[7],
+                "days": json.loads(r[8]) if r[8] else None, "runAt": r[9], "tz": r[10], "anchor": r[11], "enabled": bool(r[12]), "lastRun": r[13],
+                "nextRun": r[14], "maxRunMin": r[15], "createdBy": r[16], "createdAt": r[17]}
+
+    async def list_routines(self, target_kind: Optional[str] = None, target_id: Optional[str] = None) -> list[dict[str, Any]]:
+        q, args = f"SELECT {self._RCOLS} FROM routine_defs", []
+        if target_kind:
+            q += " WHERE target_kind=?"
+            args.append(target_kind)
+            if target_id:
+                q += " AND target_id=?"
+                args.append(target_id)
+        cur = await self.db.execute(q + " ORDER BY COALESCE(next_run, 9e18), created_at", args)
+        return [self._routine(r) for r in await cur.fetchall()]
+
+    async def get_routine(self, rid: str) -> Optional[dict[str, Any]]:
+        cur = await self.db.execute(f"SELECT {self._RCOLS} FROM routine_defs WHERE id=?", (rid,))
+        r = await cur.fetchone()
+        return self._routine(r) if r else None
+
+    async def create_routine(self, target_kind: str, target_id: str, name: str, prompt: str, kind: str, every_min: Optional[int], at: Optional[str],
+                             days: Optional[list[int]], run_at: Optional[int], tz: str, next_run: Optional[int], anchor: int, max_run_min: Optional[int],
+                             created_by: str) -> dict[str, Any]:
+        rid = new_id("rt")
+        await self.db.execute(f"INSERT INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 18)})",
+                              (rid, target_kind, target_id, name, prompt, kind, every_min, at, json.dumps(days) if days else None, run_at, tz, anchor, 1, None, next_run,
+                               max_run_min, created_by, now_ms()))
+        await self.db.commit()
+        return (await self.get_routine(rid)) or {}
+
+    async def update_routine(self, rid: str, **f: Any) -> bool:
+        cols = {"name": "name", "prompt": "prompt", "kind": "kind", "everyMin": "every_min", "at": "at", "days": "days", "runAt": "run_at", "tz": "tz", "anchor": "anchor",
+                "enabled": "enabled", "lastRun": "last_run", "nextRun": "next_run", "maxRunMin": "max_run_min"}
+        sets, args = [], []
+        for k, col in cols.items():
+            if k in f:
+                v = f[k]
+                sets.append(f"{col}=?")
+                args.append(json.dumps(v) if k == "days" and v is not None else (int(v) if isinstance(v, bool) else v))
+        if not sets:
+            return await self.get_routine(rid) is not None
+        cur = await self.db.execute(f"UPDATE routine_defs SET {', '.join(sets)} WHERE id=?", [*args, rid])
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def delete_routine(self, rid: str) -> bool:
+        cur = await self.db.execute("DELETE FROM routine_defs WHERE id=?", (rid,))
+        await self.db.execute("DELETE FROM routine_runs WHERE routine_id=?", (rid,))
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def due_routines(self, now: int) -> list[dict[str, Any]]:
+        cur = await self.db.execute(f"SELECT {self._RCOLS} FROM routine_defs WHERE enabled=1 AND next_run IS NOT NULL AND next_run<=? ORDER BY next_run", (now,))
+        return [self._routine(r) for r in await cur.fetchall()]
+
+    @staticmethod
+    def _run(r) -> dict[str, Any]:
+        return {"id": r[0], "routineId": r[1], "startedAt": r[2], "finishedAt": r[3], "status": r[4], "threadId": r[5], "detail": r[6],
+                "durationMs": (r[3] - r[2]) if r[3] else None}
+
+    async def create_run(self, routine_id: str, started_at: int, status: str, thread_id: Optional[str], detail: str) -> dict[str, Any]:
+        rid = new_id("rr")
+        done = started_at if status in ("skipped",) else None
+        await self.db.execute("INSERT INTO routine_runs(id, routine_id, started_at, finished_at, status, thread_id, detail) VALUES(?,?,?,?,?,?,?)",
+                              (rid, routine_id, started_at, done, status, thread_id, detail))
+        await self.db.commit()
+        return (await self.get_run(rid)) or {}
+
+    async def get_run(self, run_id: str) -> Optional[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, routine_id, started_at, finished_at, status, thread_id, detail FROM routine_runs WHERE id=?", (run_id,))
+        r = await cur.fetchone()
+        return self._run(r) if r else None
+
+    async def finish_run(self, run_id: str, finished_at: Optional[int], status: str, detail: str, thread_id: Optional[str] = None) -> dict[str, Any]:
+        sets, args = ["status=?", "detail=?"], [status, detail]
+        if finished_at is not None or status != "running":
+            sets.append("finished_at=?")
+            args.append(finished_at)
+        if thread_id:
+            sets.append("thread_id=?")
+            args.append(thread_id)
+        await self.db.execute(f"UPDATE routine_runs SET {', '.join(sets)} WHERE id=?", [*args, run_id])
+        await self.db.commit()
+        return (await self.get_run(run_id)) or {}
+
+    async def set_run_thread(self, run_id: str, thread_id: str) -> dict[str, Any]:
+        await self.db.execute("UPDATE routine_runs SET thread_id=? WHERE id=?", (thread_id, run_id))
+        await self.db.commit()
+        return (await self.get_run(run_id)) or {}
+
+    async def running_run_of(self, routine_id: str) -> Optional[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, routine_id, started_at, finished_at, status, thread_id, detail FROM routine_runs WHERE routine_id=? AND status='running' LIMIT 1", (routine_id,))
+        r = await cur.fetchone()
+        return self._run(r) if r else None
+
+    async def running_runs(self) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, routine_id, started_at, finished_at, status, thread_id, detail FROM routine_runs WHERE status='running'")
+        return [self._run(r) for r in await cur.fetchall()]
+
+    async def interrupt_running_routine_runs(self, now: int) -> list[str]:
+        ids = [r["id"] for r in await self.running_runs()]
+        for rid in ids:
+            await self.finish_run(rid, now, "failed", "interrupted by a restart")
+        return ids
+
+    async def list_runs(self, routine_id: Optional[str] = None, status: Optional[str] = None, since: Optional[int] = None, until: Optional[int] = None, limit: int = 200) -> list[dict[str, Any]]:
+        q, args = "SELECT id, routine_id, started_at, finished_at, status, thread_id, detail FROM routine_runs WHERE 1=1", []
+        for cond, v in (("routine_id=?", routine_id), ("status=?", status), ("started_at>=?", since), ("started_at<=?", until)):
+            if v is not None:
+                q += f" AND {cond}"
+                args.append(v)
+        cur = await self.db.execute(q + " ORDER BY started_at DESC LIMIT ?", [*args, min(limit, 500)])
+        return [self._run(r) for r in await cur.fetchall()]
+
+    async def migrate_phase3_routines(self) -> int:
+        """Per-bot routines of Phase 3 (table `routines`) become Phase 4 routines on the same bot."""
+        cur = await self.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='routines'")
+        if not await cur.fetchone():
+            return 0
+        cur = await self.db.execute("SELECT id, bot_id, title, text, kind, every_min, at, enabled, last_run, next_run FROM routines")
+        n = 0
+        for rid, bot_id, title, text, kind, every, at, enabled, last_run, next_run in await cur.fetchall():
+            await self.db.execute(f"INSERT OR IGNORE INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 18)})",
+                                  (rid, "bot", bot_id, title, text, "weekly" if kind == "daily" else kind, every, at, json.dumps(list(range(7))) if kind == "daily" else None, None,
+                                   "UTC", next_run or now_ms(), enabled, last_run, next_run, None, "person", now_ms()))
+            n += 1
+        await self.db.execute("DROP TABLE routines")
+        await self.db.commit()
+        return n
+
+    # ---- notifications --------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _note(r) -> dict[str, Any]:
+        return {"id": r[0], "at": r[1], "kind": r[2], "title": r[3], "body": r[4], "targetKind": r[5], "targetId": r[6], "threadId": r[7], "read": bool(r[8])}
+
+    async def add_notification(self, kind: str, title: str, body: str, target_kind: str, target_id: str, thread_id: Optional[str]) -> dict[str, Any]:
+        nid = new_id("nt")
+        await self.db.execute("INSERT INTO notifications(id, at, kind, title, body, target_kind, target_id, thread_id) VALUES(?,?,?,?,?,?,?,?)",
+                              (nid, now_ms(), kind, title, body, target_kind, target_id, thread_id))
+        await self.db.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY at DESC LIMIT 300)")  # the log is bounded
+        await self.db.commit()
+        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications WHERE id=?", (nid,))
+        return self._note(await cur.fetchone())
+
+    async def list_notifications(self, limit: int = 100) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications ORDER BY at DESC, id DESC LIMIT ?", (limit,))
+        return [self._note(r) for r in await cur.fetchall()]
+
+    async def mark_notifications_read(self, ids: Optional[list[str]]) -> list[str]:
+        if ids is None:
+            cur = await self.db.execute("SELECT id FROM notifications WHERE read=0")
+            ids = [r[0] for r in await cur.fetchall()]
+        for i in ids:
+            await self.db.execute("UPDATE notifications SET read=1 WHERE id=?", (i,))
+        await self.db.commit()
+        return ids
+
+    async def clear_notifications(self) -> None:
+        await self.db.execute("DELETE FROM notifications")
+        await self.db.commit()
+
+    # ---- notifications --------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _note(r) -> dict[str, Any]:
+        return {"id": r[0], "at": r[1], "kind": r[2], "title": r[3], "body": r[4], "targetKind": r[5], "targetId": r[6], "threadId": r[7], "read": bool(r[8])}
+
+    async def add_notification(self, kind: str, title: str, body: str, target_kind: str, target_id: str, thread_id: Optional[str]) -> dict[str, Any]:
+        nid = new_id("nt")
+        await self.db.execute("INSERT INTO notifications(id, at, kind, title, body, target_kind, target_id, thread_id) VALUES(?,?,?,?,?,?,?,?)",
+                              (nid, now_ms(), kind, title, body, target_kind, target_id, thread_id))
+        await self.db.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY at DESC LIMIT 300)")  # the log is bounded
+        await self.db.commit()
+        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications WHERE id=?", (nid,))
+        return self._note(await cur.fetchone())
+
+    async def list_notifications(self, limit: int = 100) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications ORDER BY at DESC, id DESC LIMIT ?", (limit,))
+        return [self._note(r) for r in await cur.fetchall()]
+
+    async def mark_notifications_read(self, ids: Optional[list[str]]) -> list[str]:
+        if ids is None:
+            cur = await self.db.execute("SELECT id FROM notifications WHERE read=0")
+            ids = [r[0] for r in await cur.fetchall()]
+        for i in ids:
+            await self.db.execute("UPDATE notifications SET read=1 WHERE id=?", (i,))
+        await self.db.commit()
+        return ids
+
+    async def clear_notifications(self) -> None:
+        await self.db.execute("DELETE FROM notifications")
+        await self.db.commit()
+
+    # ---- notifications --------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _note(r) -> dict[str, Any]:
+        return {"id": r[0], "at": r[1], "kind": r[2], "title": r[3], "body": r[4], "targetKind": r[5], "targetId": r[6], "threadId": r[7], "read": bool(r[8])}
+
+    async def add_notification(self, kind: str, title: str, body: str, target_kind: str, target_id: str, thread_id: Optional[str]) -> dict[str, Any]:
+        nid = new_id("nt")
+        await self.db.execute("INSERT INTO notifications(id, at, kind, title, body, target_kind, target_id, thread_id) VALUES(?,?,?,?,?,?,?,?)",
+                              (nid, now_ms(), kind, title, body, target_kind, target_id, thread_id))
+        await self.db.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY at DESC LIMIT 300)")  # the log is bounded
+        await self.db.commit()
+        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications WHERE id=?", (nid,))
+        return self._note(await cur.fetchone())
+
+    async def list_notifications(self, limit: int = 100) -> list[dict[str, Any]]:
+        cur = await self.db.execute("SELECT id, at, kind, title, body, target_kind, target_id, thread_id, read FROM notifications ORDER BY at DESC, id DESC LIMIT ?", (limit,))
+        return [self._note(r) for r in await cur.fetchall()]
+
+    async def mark_notifications_read(self, ids: Optional[list[str]]) -> list[str]:
+        if ids is None:
+            cur = await self.db.execute("SELECT id FROM notifications WHERE read=0")
+            ids = [r[0] for r in await cur.fetchall()]
+        for i in ids:
+            await self.db.execute("UPDATE notifications SET read=1 WHERE id=?", (i,))
+        await self.db.commit()
+        return ids
+
+    async def clear_notifications(self) -> None:
+        await self.db.execute("DELETE FROM notifications")
+        await self.db.commit()
