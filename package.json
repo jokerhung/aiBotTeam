@@ -13,6 +13,8 @@
     "test:web": "pnpm --filter web test",
     "test:visual": "node scripts/visual.mjs",
     "test:visual:update": "node scripts/visual.mjs --update",
+    "test:reference": "node scripts/reference.mjs",
+    "test:noflash": "node scripts/noflash.mjs",
     "start:web": "node scripts/run.mjs web-start",
     "typecheck": "pnpm --filter web exec tsc --noEmit"
   },

@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Trash2, User } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Hash, Trash2, User } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -312,11 +312,6 @@ export function Sidebar() {
               <button type="button" title="Search bots and messages" aria-expanded={searching} onClick={() => setSearching((v) => !v)} className={PILL}>
                 <Search size={16} />
               </button>
-              {!icons && (
-                <button type="button" title="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })} className={cn(PILL, state.selecting && "bg-accent text-[var(--color-accent-ink)]")}>
-                  <ListChecks size={16} />
-                </button>
-              )}
               <button type="button" title="New bot" onClick={() => dispatch({ type: "newBot", open: true })} className={PILL}>
                 <Plus size={18} />
               </button>
@@ -336,7 +331,7 @@ export function Sidebar() {
               />
             </div>
           )}
-          <div className={cn("px-3 pb-1", icons && "mt-10 px-0")}>
+          <div className={cn("relative px-3 pb-1", icons && "mt-10 px-0")}>
             <button
               type="button"
               title="Inbox"
@@ -347,6 +342,12 @@ export function Sidebar() {
               </span>
               {!icons && <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-ink">Inbox</span>}
             </button>
+            {!icons && (
+              <button type="button" title="Select bots" aria-label="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })}
+                className={cn("absolute right-5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink", state.selecting && "bg-accent text-[var(--color-accent-ink)] hover:bg-accent")}>
+                <ListChecks size={15} />
+              </button>
+            )}
           </div>
         </div>
         <div className="relative min-h-0 flex-1">
@@ -416,10 +417,10 @@ export function Sidebar() {
                   className="group/apps flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-composer pl-4 pr-3 text-[14px] font-medium leading-5 text-ink ring-1 ring-inset ring-ink/[0.07] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]"
                 >
                   <span className="min-w-0 truncate">Connect apps</span>
-                  <span className="flex shrink-0 items-center gap-1 opacity-60 grayscale transition-[filter,opacity] group-hover/apps:opacity-100 group-hover/apps:grayscale-0">
-                    <AppDot bg="#ea4335" label="G" />
-                    <AppDot bg="#611f69" label="#" />
-                    <AppDot bg="#000" label="N" />
+                  <span aria-hidden className="flex shrink-0 items-center gap-[7px] text-ink-tertiary opacity-70 transition-opacity group-hover/apps:opacity-100">
+                    <span className="w-[16px] text-center text-[16px] font-semibold leading-none">G</span>
+                    <Hash size={16} strokeWidth={2} />
+                    <span className="flex size-[17px] items-center justify-center rounded-[3px] border border-current text-[11px] font-bold leading-none">N</span>
                   </span>
                 </button>
               )}
@@ -442,12 +443,4 @@ export function Sidebar() {
 function escapeSnippet(s: string): string {
   const esc = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return esc.replace(/\[\[/g, "<mark class=\"rounded bg-warning/30 px-0.5 text-ink\">").replace(/\]\]/g, "</mark>");
-}
-
-function AppDot({ bg, label }: { bg: string; label: string }) {
-  return (
-    <span aria-hidden style={{ background: bg }} className="flex size-[18px] shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white">
-      {label}
-    </span>
-  );
 }

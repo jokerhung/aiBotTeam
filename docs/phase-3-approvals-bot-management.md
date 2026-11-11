@@ -67,7 +67,7 @@ Theo `SettingsModal.tsx` và `app-settings.png`:
 
 - [x] Broker: cho phép, từ chối, hết hạn, client ngắt giữa chừng, hai yêu cầu trùng id, tự duyệt theo danh sách lệnh.
 - [x] Bảo mật: `GET /api/config` không bao giờ trả giá trị khoá; đường dẫn đính kèm không thoát khỏi kho.
-- [x] So ảnh: `pnpm test:visual` dựng một stack cô lập, chạy engine demo qua thẻ câu hỏi, thẻ duyệt (mở và đã quyết), menu chuột phải, modal cài đặt (Connections, skin), panel cài đặt bot và màn chính trên cả 13 skin, rồi so với ảnh gốc trong `web/e2e/baseline` (ngưỡng 0,3% điểm ảnh khác); `pnpm test:visual:update` để cập nhật. Đối chiếu bằng mắt với `localhost:5199` đã làm.
+- [x] So ảnh: `pnpm test:visual` dựng một stack cô lập, chạy engine demo qua thẻ câu hỏi, thẻ duyệt (mở và đã quyết), menu chuột phải, modal cài đặt (Connections, skin), panel cài đặt bot và màn chính trên cả 13 skin, rồi so với ảnh gốc trong `web/e2e/baseline` (ngưỡng 0,3% điểm ảnh khác); `pnpm test:visual:update` để cập nhật. Đối chiếu với ứng dụng tham chiếu: `pnpm test:reference` mở `localhost:5199` và bản của ta cùng cỡ 1280x800 với bot "QA", so hộp bố cục (sidebar, nút tìm/tạo, composer: lệch 0 px, ngưỡng 6 px) và cắt các vùng không phụ thuộc dữ liệu (đầu/cuối sidebar, composer, header pill: lệch 0,4–2% điểm ảnh, ngưỡng 3%). `pnpm test:noflash` kiểm tra không nháy skin khi tải lại.
 
 ## Tiêu chí hoàn thành
 

@@ -14,9 +14,10 @@ export function useGlobalBehaviors() {
 
   // Look settings -> <html> (the boot script already painted the saved ones).
   const s = state.config.settings;
+  const loaded = state.configLoaded;
   useEffect(() => {
-    applyLook(s);
-  }, [s.skin, s.chatWidth, s.font, s.reduceMotion, s.language]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (loaded) applyLook(s); // before the server answers, s is only the defaults: leave the page and its saved skin alone
+  }, [loaded, s.skin, s.chatWidth, s.font, s.reduceMotion, s.language]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const typing = (t: EventTarget | null) => {

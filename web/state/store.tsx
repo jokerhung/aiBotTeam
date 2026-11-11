@@ -24,6 +24,8 @@ export interface AppState {
   settingsOpen: boolean;
   settingsPage: SettingsPage;
   config: AppConfig;
+  /** False until the server has answered: the default settings must never be applied to the page. */
+  configLoaded: boolean;
   sections: Section[];
   panelBotId: string | null;
   paletteOpen: boolean;
@@ -63,7 +65,7 @@ export type Action =
 export const initialState: AppState = {
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
-  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, sections: [], panelBotId: null,
+  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
 
@@ -106,7 +108,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "settings":
       return { ...state, settingsOpen: action.open, settingsPage: action.page ?? state.settingsPage };
     case "config":
-      return { ...state, config: action.config };
+      return { ...state, config: action.config, configLoaded: true };
     case "sections":
       return { ...state, sections: action.sections };
     case "panel":
@@ -163,7 +165,7 @@ export function reducer(state: AppState, action: Action): AppState {
         case "sections":
           return { ...state, sections: f.sections };
         case "config":
-          return f.settings ? { ...state, config: { settings: { ...DEFAULT_SETTINGS, ...f.settings }, keys: f.keys ?? {}, keyCatalog: f.keyCatalog ?? [] } } : state;
+          return f.settings ? { ...state, configLoaded: true, config: { settings: { ...DEFAULT_SETTINGS, ...f.settings }, keys: f.keys ?? {}, keyCatalog: f.keyCatalog ?? [] } } : state;
         case "thread":
           return { ...state, reload: { ...state.reload, [f.threadId]: (state.reload[f.threadId] ?? 0) + 1 } };
         case "message":
