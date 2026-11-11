@@ -97,7 +97,7 @@ try {
   await box.press("Enter");
   await page.getByTestId("approval-card").waitFor();
   await shot("approval-open");
-  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await page.getByText("Allowed: ran mkdir demo_dir").waitFor();
   await page.waitForTimeout(600);
   await shot("approval-decided");

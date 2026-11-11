@@ -3,6 +3,7 @@
 import { Bug, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, MausColor, ModelSelection } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -127,6 +128,7 @@ function Row({ icon: Icon, label, right, onClick, chevron }: { icon: typeof Sear
 
 function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
   const { state, dispatch } = useStore();
+  const t = useT();
   const inst = state.instances.find((i) => i.id === bot.modelSelection.instanceId);
   const modelLabel = inst?.models.find((m) => m.id === bot.modelSelection.model)?.label ?? bot.modelSelection.model;
   const newTask = () => void api(`/api/bots/${bot.id}/tasks`, { method: "POST", body: JSON.stringify({ title: "New task" }) });
@@ -141,13 +143,13 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
   return (
     <div className="px-[30px] pb-6" data-testid="panel-overview">
       <Row icon={Sparkles} label="Model" right={<span className="max-w-[140px] truncate text-[14px] text-ink-secondary">{modelLabel}</span>} chevron onClick={() => go("settings")} />
-      <div className="mt-4 text-[14px] font-medium text-ink-secondary">Conversations</div>
-      <Row icon={SquarePen} label="New conversation" onClick={newTask} />
-      <div className="mt-4 text-[14px] font-medium text-ink-secondary">This conversation</div>
-      <Row icon={Search} label="Find in conversation" right={<kbd className="rounded border border-hairline px-1.5 text-[11px] text-ink-tertiary">Ctrl F</kbd>} onClick={() => dispatch({ type: "find", open: true })} />
-      <Row icon={RotateCcw} label="Start fresh" onClick={fresh} />
-      <Row icon={ListChecks} label="Activity" chevron onClick={() => go("activity")} />
-      <Row icon={Bug} label="Inspector" chevron onClick={() => go("inspector")} />
+      <div className="mt-4 text-[14px] font-medium text-ink-secondary">{t("Conversations")}</div>
+      <Row icon={SquarePen} label={t("New conversation")} onClick={newTask} />
+      <div className="mt-4 text-[14px] font-medium text-ink-secondary">{t("This conversation")}</div>
+      <Row icon={Search} label={t("Find in conversation")} right={<kbd className="rounded border border-hairline px-1.5 text-[11px] text-ink-tertiary">Ctrl F</kbd>} onClick={() => dispatch({ type: "find", open: true })} />
+      <Row icon={RotateCcw} label={t("Start fresh")} onClick={fresh} />
+      <Row icon={ListChecks} label={t("Activity")} chevron onClick={() => go("activity")} />
+      <Row icon={Bug} label={t("Inspector")} chevron onClick={() => go("inspector")} />
     </div>
   );
 }
@@ -194,6 +196,7 @@ function Inspector({ bot }: { bot: Bot }) {
 
 export function BotPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
+  const t = useT();
   const [tab, setTab] = useState<Tab>("details");
   const [view, setView] = useState<View>("overview");
   const tabs: { id: Tab; label: string }[] = [
@@ -216,10 +219,10 @@ export function BotPanel({ bot }: { bot: Bot }) {
           <div className="mt-[15px] max-w-full truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
           {(bot.title || bot.description) && <div className="max-w-full truncate text-[14px] text-ink-secondary">{bot.title || bot.description}</div>}
           <div role="tablist" className="mt-[22px] flex h-8 items-center rounded-full bg-raised p-[3px]" data-testid="panel-tabs">
-            {tabs.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => { setTab(t.id); setView("overview"); }}
-                className={cn("h-[26px] rounded-full px-[10.5px] text-[13.5px] font-medium", tab === t.id ? "bg-composer text-ink shadow-sm ring-[0.5px] ring-ink/10" : "text-ink-secondary hover:text-ink")}>
-                {t.label}
+            {tabs.map((x) => (
+              <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} onClick={() => { setTab(x.id); setView("overview"); }}
+                className={cn("h-[26px] rounded-full px-[10.5px] text-[13.5px] font-medium", tab === x.id ? "bg-composer text-ink shadow-sm ring-[0.5px] ring-ink/10" : "text-ink-secondary hover:text-ink")}>
+                {t(x.label)}
               </button>
             ))}
           </div>

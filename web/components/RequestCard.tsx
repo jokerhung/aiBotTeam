@@ -1,8 +1,10 @@
 "use client";
-import { Check, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react";
+import { Check, ChevronDown, ShieldCheck, ShieldX, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Message, RequestInfo, RequestQuestion } from "@/lib/wire";
+import type { Bot, Message, RequestInfo, RequestQuestion } from "@/lib/wire";
+import { Mascot } from "./Mascot";
 import { api } from "@/state/api";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
@@ -31,9 +33,10 @@ const WHO: Record<string, string> = {
 
 /** After a decision the card shrinks to one line saying who decided. */
 function Decided({ r }: { r: RequestInfo }) {
+  const t = useT();
   const allowed = r.behavior === "allow";
   const Icon = r.type === "question" ? Check : allowed ? ShieldCheck : ShieldX;
-  const what = r.type === "question" ? (allowed ? "Answered" : "Skipped") : allowed ? "Allowed" : "Denied";
+  const what = t(r.type === "question" ? (allowed ? "Answered" : "Skipped") : allowed ? "Allowed" : "Denied");
   const detail = r.type === "question" ? (r.answer && allowed ? ` “${r.answer.slice(0, 80)}”` : "") : ` ${r.command ?? r.summary}`.slice(0, 90);
   return (
     <div
@@ -43,48 +46,57 @@ function Decided({ r }: { r: RequestInfo }) {
       <Icon size={14} className={cn("shrink-0", !allowed && r.type === "permission" && "text-danger")} />
       <span className="truncate">
         {what}
-        <span className="font-mono text-[12px]">{detail}</span> {WHO[r.source ?? "user"] ?? ""}
+        <span className="font-mono text-[12px]">{detail}</span> {t(WHO[r.source ?? "user"] ?? "")}
       </span>
     </div>
   );
 }
 
-function PermissionCard({ r, thread }: { r: RequestInfo; thread: string }) {
+/** The open permission request, docked above the composer like the reference: who wants what, the exact command,
+ * then Deny / Allow once (and Always allow when the command can be remembered). */
+export function ApprovalDock({ m, thread, bot }: { m: Message; thread: string; bot: Bot }) {
+  const r = m.request;
+  const t = useT();
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  if (!r || r.status !== "open" || r.type !== "permission") return null;
   const decide = async (behavior: "allow" | "deny", always = false) => {
     setBusy(true);
     await answer(thread, r.id, { behavior, always, message: behavior === "deny" ? "Denied from the chat" : undefined });
     setBusy(false);
   };
+  const what = r.command ? "wants to run a command" : r.tool === "Edit" || r.tool === "Write" ? "wants to edit files" : `wants to use ${r.tool}`;
   return (
     <div role="group" aria-label={`Permission needed: ${r.tool}`} data-testid="approval-card"
-      className="w-full max-w-[min(var(--chat-bubble-max),100%)] rounded-[18px] bg-card p-4 ring-[0.5px] ring-ink/10">
-      <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
-        <ShieldAlert size={16} className="text-warning" />
-        Allow {r.tool}?
-      </div>
-      {r.command ? (
-        <pre className="mt-2.5 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-[18px] text-ink">{r.command}</pre>
-      ) : (
-        <div className="mt-2 break-all text-[13px] text-ink-secondary">{r.summary}</div>
+      className="mb-2 w-full rounded-[18px] border border-hairline bg-card px-4 pb-3.5 pt-3 shadow-(--shadow-float)">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex h-5 w-full items-center gap-2 text-left text-[13.5px] text-ink-secondary">
+        <Mascot color={bot.color} size={16} />
+        <span className="min-w-0 flex-1 truncate">{bot.name} {t(what)}</span>
+        <ChevronDown size={15} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      <pre className={cn("mt-2 overflow-auto rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-[17px] text-ink-secondary", open ? "max-h-48 whitespace-pre-wrap break-all" : "max-h-[33px] truncate whitespace-nowrap")}>{r.command ?? r.summary}</pre>
+      {open && (r.cwd || r.tool) && (
+        <div className="mt-1.5 space-y-0.5 font-mono text-[12px] text-ink-tertiary">
+          <div>tool: {r.tool}</div>
+          {r.cwd && <div className="truncate" title={r.cwd}>in {r.cwd}</div>}
+        </div>
       )}
-      {r.cwd && <div className="mt-1.5 truncate font-mono text-[12px] text-ink-tertiary" title={r.cwd}>in {r.cwd}</div>}
-      <div className="mt-3.5 flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => decide("allow")}
-          className="rounded-full bg-accent px-4 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-50">Allow</button>
-        <button type="button" disabled={busy} onClick={() => decide("deny")}
-          className="rounded-full bg-raised px-4 py-1.5 text-[13px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50">Deny</button>
+      <div className="mt-3 flex items-center justify-end gap-2">
         {r.canAlways && (
-          <button type="button" disabled={busy} onClick={() => decide("allow", true)}
-            className="rounded-full px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-ink/10 disabled:opacity-50"
-            title="Skip this prompt next time for this exact command in this folder">Always allow</button>
+          <button type="button" disabled={busy} onClick={() => decide("allow", true)} title="Skip this prompt next time for this exact command in this folder"
+            className="mr-auto rounded-full px-2 py-1.5 text-[13px] text-ink-secondary hover:bg-ink/10 disabled:opacity-50">{t("Always allow")}</button>
         )}
+        <button type="button" disabled={busy} onClick={() => decide("deny")}
+          className="h-9 rounded-full bg-raised px-4 text-[14px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50">{t("Deny")}</button>
+        <button type="button" disabled={busy} onClick={() => decide("allow")}
+          className="h-9 rounded-full bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)] disabled:opacity-50">{t("Allow once")}</button>
       </div>
     </div>
   );
 }
 
 function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; active: boolean }) {
+  const t = useT();
   const qs = useMemo(() => questionsOf(r), [r]);
   const single = qs.length === 1 && !qs[0].multiSelect;
   const [picked, setPicked] = useState<Record<number, string[]>>({});
@@ -140,7 +152,7 @@ function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; a
       {qs.map((q, qi) => (
         <div key={qi} className={cn(qi > 0 && "mt-4 border-t border-hairline pt-4")}>
           <div className="pr-8 text-[16px] font-semibold leading-6 text-ink">{q.header ? `${q.header}: ` : ""}{q.question}</div>
-          <div className="text-[14px] leading-5 text-ink-secondary">{q.multiSelect ? "Select all that apply" : "Pick whatever's closest, or type your own."}</div>
+          <div className="text-[14px] leading-5 text-ink-secondary">{t(q.multiSelect ? "Select all that apply" : "Pick whatever's closest, or type your own.")}</div>
           <div className="mt-[15px] overflow-hidden rounded-lg border border-hairline" role="listbox" aria-label="Options">
             {(q.options ?? []).map((o, oi) => {
               const label = optionLabel(o);
@@ -164,7 +176,7 @@ function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; a
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.nativeEvent.isComposing && typed[qi]?.trim() && (single || ready)) { e.preventDefault(); void submit(); }
             }}
-            placeholder="Type your own answer"
+            placeholder={t("Type your own answer")}
             aria-label="Type your own answer"
             className="mt-[13px] h-[43px] w-full rounded-lg bg-inset px-3.5 text-[15px] text-ink outline-none placeholder:text-ink-secondary focus:ring-1 focus:ring-ink/25"
           />
@@ -173,7 +185,7 @@ function QuestionCard({ r, thread, active }: { r: RequestInfo; thread: string; a
       {(!single || Object.values(typed).some((v) => v.trim())) && (
         <div className="mt-3.5 flex justify-end">
           <button type="button" disabled={busy || !ready} onClick={() => submit()}
-            className="rounded-full bg-accent px-4 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">Submit</button>
+            className="rounded-full bg-accent px-4 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Submit")}</button>
         </div>
       )}
     </div>
@@ -184,5 +196,6 @@ export function RequestCard({ m, thread, active }: { m: Message; thread: string;
   const r = m.request;
   if (!r) return null;
   if (r.status === "resolved") return <Decided r={r} />;
-  return r.type === "question" ? <QuestionCard r={r} thread={thread} active={active} /> : <PermissionCard r={r} thread={thread} />;
+  if (r.type === "permission") return null; // shown in the dock above the composer while it is open
+  return <QuestionCard r={r} thread={thread} active={active} />;
 }

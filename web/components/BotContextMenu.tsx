@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, Section } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -38,6 +39,7 @@ export function deleteBotWithUndo(bot: Bot, hide: (id: string, hidden: boolean) 
 
 export function useBotMenu(bot: Bot) {
   const { state, dispatch } = useStore();
+  const t = useT();
   const sections: Section[] = state.sections;
   const hideLocal = (id: string, hidden: boolean) => {
     const b = state.bots.find((x) => x.id === id);
@@ -50,23 +52,23 @@ export function useBotMenu(bot: Bot) {
     await api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: sec.id }) });
   };
   const entries: Entry[] = [
-    { key: "pin", label: bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? PinOff : Pin, run: () => void patch(bot.id, { pinned: !bot.pinned }) },
-    { key: "chief", label: bot.chief ? "Remove as Chief of Staff" : "Make Chief of Staff", icon: Crown, run: () => void patch(bot.id, { chief: !bot.chief }) },
-    { key: "section", label: "Move to new section", icon: FolderPlus, run: () => void newSection() },
+    { key: "pin", label: t(bot.pinned ? "Unpin" : "Pin"), icon: bot.pinned ? PinOff : Pin, run: () => void patch(bot.id, { pinned: !bot.pinned }) },
+    { key: "chief", label: bot.chief ? "Remove as Chief of Staff" : t("Make Chief of Staff"), icon: Crown, run: () => void patch(bot.id, { chief: !bot.chief }) },
+    { key: "section", label: t("Move to new section"), icon: FolderPlus, run: () => void newSection() },
     ...sections.filter((s) => s.id !== bot.section).map((s): Entry => ({
       key: `to-${s.id}`, label: `Move to ${s.name}`, icon: FolderPlus,
       run: () => void api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: s.id }) }),
     })),
     ...(bot.section ? [{ key: "unsection", label: "Remove from section", icon: FolderPlus, run: () => void api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: null }) }) } as Entry] : []),
-    { key: "unread", label: bot.unread ? "Mark as Read" : "Mark as Unread", icon: BellDot, run: () => void patch(bot.id, { unread: !bot.unread }) },
+    { key: "unread", label: t(bot.unread ? "Mark as Read" : "Mark as Unread"), icon: BellDot, run: () => void patch(bot.id, { unread: !bot.unread }) },
     "sep",
-    { key: "edit", label: "Edit Profile", icon: Pencil, run: () => { dispatch({ type: "select", id: bot.id }); dispatch({ type: "panel", botId: bot.id }); } },
-    { key: "dup", label: "Duplicate", icon: CopyPlus, run: () => void api<{ id: string }>(`/api/bots/${bot.id}/duplicate`, { method: "POST" }).then((b) => dispatch({ type: "select", id: b.id })) },
+    { key: "edit", label: t("Edit Profile"), icon: Pencil, run: () => { dispatch({ type: "select", id: bot.id }); dispatch({ type: "panel", botId: bot.id }); } },
+    { key: "dup", label: t("Duplicate"), icon: CopyPlus, run: () => void api<{ id: string }>(`/api/bots/${bot.id}/duplicate`, { method: "POST" }).then((b) => dispatch({ type: "select", id: b.id })) },
     "sep",
-    { key: "copy", label: "Copy conversation ID", icon: Copy, run: () => void navigator.clipboard?.writeText(bot.threadId) },
+    { key: "copy", label: t("Copy conversation ID"), icon: Copy, run: () => void navigator.clipboard?.writeText(bot.threadId) },
     "sep",
-    { key: "hide", label: "Hide from sidebar", icon: EyeOff, run: () => void patch(bot.id, { hidden: true }) },
-    { key: "delete", label: "Delete", icon: Trash2, danger: true, run: () => deleteBotWithUndo(bot, hideLocal) },
+    { key: "hide", label: t("Hide from sidebar"), icon: EyeOff, run: () => void patch(bot.id, { hidden: true }) },
+    { key: "delete", label: t("Delete"), icon: Trash2, danger: true, run: () => deleteBotWithUndo(bot, hideLocal) },
   ];
   return entries;
 }

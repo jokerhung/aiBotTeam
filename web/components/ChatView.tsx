@@ -10,7 +10,7 @@ import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Composer } from "./Composer";
-import { RequestCard } from "./RequestCard";
+import { ApprovalDock, RequestCard } from "./RequestCard";
 import { Mascot } from "./Mascot";
 import { ModelMenu } from "./ModelMenu";
 import { TaskMenu } from "./TaskMenu";
@@ -254,6 +254,7 @@ export function ChatView({ bot }: { bot: Bot }) {
     return () => clearTimeout(t);
   }, [focus, thread, messages.length, dispatch]);
 
+  const openApproval = useMemo(() => [...messages].reverse().find((m) => m.kind === "request" && m.request?.status === "open" && m.request.type === "permission"), [messages]);
   const dividerAt = state.dividerAt[bot.id] ?? 0;
   const dividerIndex = dividerAt > 0 ? messages.findIndex((m) => m.role === "bot" && m.at > dividerAt) : -1;
   const liveText = messages.some((m) => m.streaming);
@@ -272,7 +273,7 @@ export function ChatView({ bot }: { bot: Bot }) {
             setAtBottom(near);
             if (el.scrollTop < 240 && hasMore) void loadOlder();
           }}
-          className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 pb-32 pt-14 [overflow-anchor:none]"
+          className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 pt-14 [overflow-anchor:none]", openApproval ? "pb-72" : "pb-32")}
         >
           <div role="log" aria-label={`Conversation with ${bot.name}`} className="chat-column relative flex w-full flex-col gap-3">
             {hasMore && <div className="py-2 text-center text-[13px] text-ink-tertiary">Loading earlier messages…</div>}
@@ -313,7 +314,7 @@ export function ChatView({ bot }: { bot: Bot }) {
             <ArrowDown size={16} />
           </button>
         )}
-        <Composer bot={bot} />
+        <Composer bot={bot} dock={openApproval ? <ApprovalDock m={openApproval} thread={bot.threadId} bot={bot} /> : undefined} />
       </div>
     </main>
   );

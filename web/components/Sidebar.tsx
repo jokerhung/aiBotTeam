@@ -3,6 +3,7 @@
 import { Archive, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Hash, Trash2, User } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, SearchHit, Section } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -214,6 +215,7 @@ function BulkSelectBar() {
 
 export function Sidebar() {
   const { state, dispatch } = useStore();
+  const t = useT();
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -340,7 +342,7 @@ export function Sidebar() {
               <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-raised text-ink-secondary">
                 <Inbox size={16} />
               </span>
-              {!icons && <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-ink">Inbox</span>}
+              {!icons && <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-ink">{t("Inbox")}</span>}
             </button>
             {!icons && (
               <button type="button" title="Select bots" aria-label="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })}
@@ -369,7 +371,7 @@ export function Sidebar() {
               })}
               {needle && !visible.length && hits.length === 0 && <div className="px-2 py-6 text-center text-[13px] text-ink-tertiary">No bots match “{q.trim()}”.</div>}
               {!icons && !needle && (
-                <button type="button" onClick={addSection} className="mt-2 self-start rounded-md px-2 py-1 text-[12px] text-ink-tertiary hover:bg-raised/60 hover:text-ink">+ New section</button>
+                <button type="button" onClick={addSection} className="mt-2 self-start rounded-md px-2 py-1 text-[12px] text-ink-tertiary hover:bg-raised/60 hover:text-ink">{t("+ New section")}</button>
               )}
               {!icons && hits.length > 0 && (
                 <div className="mt-3" role="region" aria-label="Message results">
@@ -416,7 +418,7 @@ export function Sidebar() {
                   onClick={() => dispatch({ type: "settings", open: true, page: "connections" })}
                   className="group/apps flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-composer pl-4 pr-3 text-[14px] font-medium leading-5 text-ink ring-1 ring-inset ring-ink/[0.07] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]"
                 >
-                  <span className="min-w-0 truncate">Connect apps</span>
+                  <span className="min-w-0 truncate">{t("Connect apps")}</span>
                   <span aria-hidden className="flex shrink-0 items-center gap-[7px] text-ink-tertiary opacity-70 transition-opacity group-hover/apps:opacity-100">
                     <span className="w-[16px] text-center text-[16px] font-semibold leading-none">G</span>
                     <Hash size={16} strokeWidth={1.75} />

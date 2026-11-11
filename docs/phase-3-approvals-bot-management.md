@@ -86,3 +86,10 @@ Theo `SettingsModal.tsx` và `app-settings.png`:
 - **Cài đặt app:** `SettingsModal` + `SettingsSimplePages` cho Simple; khoá API chỉ-ghi giữ nguyên.
 - **Menu chuột phải hàng bot** (ảnh `context-menu.png`) vẫn đúng, nhưng hàng bot Simple dùng nút "Actions for {bot}" (`size-7`, hiện khi rê chuột/chạm) mở cùng menu.
 - Thẻ Allow/Deny và thẻ câu hỏi A/B/C: giữ như đã mô tả.
+
+## Đối chiếu giao diện (ghi lại cách làm, phase 3)
+
+- Thẻ duyệt lệnh: so với bộ thẻ mẫu của chính bản gốc (`localhost:5199/question-cards-preview.html?state=approval`) bằng `pnpm test:cards`: thẻ rộng 960, cao 136/137, nút Deny 65,5x36 và "Allow once" 103,9x36 khớp, đầu thẻ + khối lệnh lệch 5,2% điểm ảnh (ngưỡng 8%). Thẻ gắn phía trên composer như bản gốc; composer hiện "Answer the approval above to continue".
+- Thẻ câu hỏi, menu chuột phải, modal cài đặt: bộ thẻ mẫu và app đang chạy ở 5199 là bản mới hơn ảnh trong `docs/screenshots` (thẻ câu hỏi dạng viên thuốc không có ô chữ, menu 207 px với mục theo phòng ban, modal cao theo cửa sổ). Tài liệu này mô tả đúng các ảnh `approval-card.png`, `context-menu.png`, `app-settings.png` và mục "Cập nhật sau đối chiếu" giữ nguyên thẻ A/B/C và menu 228 px, nên hình học của ba phần này được đo theo ảnh (`pnpm test:reference-shots`, lệch ≤ 2 px).
+- "Đổi skin tức thì": `pnpm test:instant` bấm từng skin trong Cài đặt và đo từ lúc bấm đến khi `<html data-skin>` và màu nền đổi: 31–52 ms, không tải lại trang (cập nhật lạc quan, không chờ server).
+- Ngôn ngữ: khung i18n (`web/lib/i18n.ts`, tiếng Anh là khoá, thiếu mục thì hiện tiếng Anh) đã nối vào Cài đặt, thẻ duyệt/câu hỏi, composer, menu chuột phải, bot panel, sidebar; `pnpm test:instant` chuyển sang Tiếng Việt và đọc lại các màn hình đó. Phần còn lại của bản dịch thuộc phase 5.

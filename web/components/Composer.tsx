@@ -3,6 +3,7 @@
 import { ArrowUp, AudioLines, FileUp, FolderOpen, ImagePlus, Pencil, Plus, Shield, Square, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { APPROVAL_MODES, type ApprovalMode, type Attachment, type Bot } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -34,8 +35,9 @@ async function upload(file: File): Promise<Attachment> {
   return body as Attachment;
 }
 
-export function Composer({ bot }: { bot: Bot }) {
+export function Composer({ bot, dock }: { bot: Bot; dock?: React.ReactNode }) {
   const { state, dispatch } = useStore();
+  const t = useT();
   const thread = bot.threadId;
   const [text, setText] = useState("");
   const [wrapped, setWrapped] = useState(false);
@@ -147,6 +149,7 @@ export function Composer({ bot }: { bot: Bot }) {
         <div className="pointer-events-auto relative w-full">
           <div className="relative">
             <div className="pointer-events-none absolute -left-5 -right-5 -bottom-4 top-0 bg-app" />
+            {dock && <div className="relative z-[1]">{dock}</div>}
             <div
               className={cn(
                 "relative z-[1] bg-composer p-2 ring-[0.5px] ring-ink/10 hover:ring-ink/[0.22] focus-within:ring-ink/[0.22]",
@@ -194,15 +197,15 @@ export function Composer({ bot }: { bot: Bot }) {
                     <Plus size={16} />
                   </PopoverTrigger>
                   <PopoverContent side="top" align="start" className="w-[240px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
-                    <button type="button" onClick={() => { setPlusOpen(false); fileInput.current?.click(); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><FileUp size={15} /> Attach file</button>
+                    <button type="button" onClick={() => { setPlusOpen(false); fileInput.current?.click(); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><FileUp size={15} /> {t("Attach file")}</button>
                     <button type="button" disabled={!canImages} title={canImages ? undefined : "This engine cannot read images"} onClick={() => { setPlusOpen(false); imageInput.current?.click(); }}
-                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover disabled:opacity-40"><ImagePlus size={15} /> Attach image</button>
+                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover disabled:opacity-40"><ImagePlus size={15} /> {t("Attach image")}</button>
                     <button type="button" onClick={() => { setPlusOpen(false); chooseFolder(); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover">
-                      <FolderOpen size={15} /> Choose folder
+                      <FolderOpen size={15} /> {t("Choose folder")}
                       {bot.cwd ? <span className="ml-auto max-w-[80px] truncate text-[11px] text-ink-tertiary">{bot.cwd.split(/[\\/]/).pop()}</span> : null}
                     </button>
                     <div className="my-1 border-t border-ink/10" />
-                    <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-tertiary">Approval</div>
+                    <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Approval")}</div>
                     <ApprovalModeSelector compact value={bot.approvalMode} onChange={(m) => { setPlusOpen(false); setMode(m); }} />
                   </PopoverContent>
                 </Popover>
@@ -236,7 +239,8 @@ export function Composer({ bot }: { bot: Bot }) {
                         void send();
                       }
                     }}
-                    placeholder={`Message ${bot.name}`}
+                    placeholder={dock ? t("Answer the approval above to continue") : `${t("Message")} ${bot.name}`}
+                    disabled={!!dock}
                     aria-label={`Message ${bot.name}`}
                     className="block max-h-[9rem] min-h-7 w-full resize-none overflow-y-auto bg-transparent px-0.5 py-1 text-[14px] leading-5 text-ink outline-none placeholder:text-ink-tertiary"
                   />
