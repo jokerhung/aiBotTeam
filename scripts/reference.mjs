@@ -166,6 +166,16 @@ else for (const k of ["width", "x", "tabsWidth", "circle", "circles"]) {
   console.log(`  ${ok ? "ok  " : "FAIL"} panel ${k}: reference ${refPanel[k].toFixed(0)}  ours ${ourPanel[k].toFixed(0)}`);
   if (!ok) failures.push(`panel ${k}: ${ourPanel[k]} vs ${refPanel[k]}`);
 }
+// pixels of the panel's header buttons, avatar, name, subtitle and tab bar (same bot, same text)
+{
+  const clip = { x: 960, y: 0, width: 320, height: 250 };
+  const pa = PNG.sync.read(await ref.screenshot({ clip })), pb = PNG.sync.read(await ours.screenshot({ clip }));
+  const pd = new PNG({ width: clip.width, height: clip.height });
+  const share = pixelmatch(pa.data, pb.data, pd.data, clip.width, clip.height, { threshold: 0.2 }) / (clip.width * clip.height);
+  writeFileSync(join(OUT, "panel-reference.png"), PNG.sync.write(pa)); writeFileSync(join(OUT, "panel-ours.png"), PNG.sync.write(pb)); writeFileSync(join(OUT, "panel-diff.png"), PNG.sync.write(pd));
+  console.log(`  ${share <= 0.06 ? "ok  " : "FAIL"} bot panel header pixels: ${(share * 100).toFixed(2)}% differ (limit 6%)`);
+  if (share > 0.06) failures.push(`bot panel header pixels ${(share * 100).toFixed(2)}%`);
+}
 await ref.screenshot({ path: join(OUT, "reference-panel.png") });
 await ours.screenshot({ path: join(OUT, "ours-panel.png") });
 await ours.getByLabel("Close panel").click();
@@ -189,6 +199,25 @@ for (const k of Object.keys(rm)) {
   const ok = d <= 3;  // row pitch follows how many lines each description wraps to
   console.log(`  ${ok ? "ok  " : "FAIL"} skin selector ${k}: reference ${rm[k].toFixed(0)}  ours ${om[k].toFixed(0)}`);
   if (!ok) failures.push(`skin selector ${k}: ${om[k]} vs ${rm[k]}`);
+}
+// pixels of every tile's name and description (below the little preview), same skins, same text
+{
+  const textBoxes = (pg) => pg.locator("[data-skin-preview]").evaluateAll((els) => els.map((e) => {
+    const tile = e.closest("button,[role=radio]").getBoundingClientRect(), pv = e.getBoundingClientRect();
+    return { x: Math.round(tile.x), y: Math.round(pv.bottom), width: Math.round(tile.width), height: Math.round(tile.bottom - pv.bottom) };
+  }));
+  const [rb, ob] = [await textBoxes(ref), await textBoxes(ours)];
+  let worst = 0, total = 0, n = 0;
+  for (let i = 0; i < Math.min(rb.length, ob.length); i++) {
+    const clip = { x: rb[i].x, y: rb[i].y, width: rb[i].width, height: Math.min(rb[i].height, ob[i].height, 60) };
+    if (clip.y + clip.height > 800 || ob[i].y + clip.height > 800) continue; // below the fold of the modal
+    const ta = PNG.sync.read(await ref.screenshot({ clip })), tb = PNG.sync.read(await ours.screenshot({ clip: { ...clip, x: ob[i].x, y: ob[i].y } }));
+    const share = pixelmatch(ta.data, tb.data, new Uint8Array(ta.data.length), clip.width, clip.height, { threshold: 0.2 }) / (clip.width * clip.height);
+    if (i === 0) { writeFileSync(join(OUT, "tile0-reference.png"), PNG.sync.write(ta)); writeFileSync(join(OUT, "tile0-ours.png"), PNG.sync.write(tb)); }
+    worst = Math.max(worst, share); total += share; n++;
+  }
+  console.log(`  ${worst <= 0.12 ? "ok  " : "FAIL"} skin tiles text pixels: ${n} tiles, mean ${((total / n) * 100).toFixed(2)}%, worst ${(worst * 100).toFixed(2)}% (limit 12%)`);
+  if (worst > 0.12) failures.push(`skin tile text pixels worst ${(worst * 100).toFixed(2)}%`);
 }
 await ref.screenshot({ path: join(OUT, "reference-skins.png") });
 await ours.screenshot({ path: join(OUT, "ours-skins.png") });

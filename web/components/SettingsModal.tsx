@@ -261,11 +261,11 @@ function SkinTile({ id, name, tagline, selected, onPick }: { id: string; name: s
           <div className="mt-0.5 flex h-4 items-center justify-end rounded-full bg-composer px-1 ring-1 ring-ink/10"><span className="size-2.5 rounded-full bg-accent" /></div>
         </div>
       </div>
-      <div className="mx-0.5 mt-[10px] flex items-center text-[13px] font-medium leading-[19.5px] text-ink">
+      <div className="mx-0.5 mt-[9px] flex items-center text-[13px] font-medium leading-[19.5px] text-ink">
         <span className="min-w-0 flex-1 truncate">{name}</span>
         {selected && <Check size={14} className="shrink-0 text-accent" />}
       </div>
-      <div className="mx-0.5 mt-0.5 text-[11px] leading-[15.125px] text-ink-secondary">{tagline}</div>
+      <div className="mx-0.5 mb-[3px] mt-0 text-[11px] leading-[15.125px] text-ink-secondary">{tagline}</div>
     </button>
   );
 }
