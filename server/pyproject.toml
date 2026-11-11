@@ -15,6 +15,7 @@ dependencies = [
   "sse-starlette",
   "tzdata",
   "pyyaml>=6.0.3",
+  "playwright>=1.65.0",
 ]
 
 [project.scripts]

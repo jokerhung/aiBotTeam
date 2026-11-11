@@ -293,7 +293,7 @@ interface Routine { id: string; title: string; text: string; kind: "interval" | 
 const schedule = (r: Pick<Routine, "kind" | "everyMin" | "at">) => (r.kind === "daily" ? `Daily at ${r.at}` : `Every ${r.everyMin} min`);
 
 /** Messages the bot is sent on a schedule: an interval, or a time every day. */
-function Routines({ bot }: { bot: Bot }) {
+export function Routines({ bot }: { bot: Bot }) {
   const t = useT();
   const [items, setItems] = useState<Routine[]>([]);
   const [adding, setAdding] = useState(false);

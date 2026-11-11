@@ -357,6 +357,8 @@ export type ServerFrame =
   | { kind: "notify"; notification: Notification }
   | { kind: "notifications.read"; ids: string[]; cleared?: boolean }
   | { kind: "mcp.changed"; serverId: string; deleted?: boolean }
+  | { kind: "screen"; botId: string; image: string; url: string; title: string; at: number; width: number; height: number }
+  | { kind: "computer-control"; botId: string; running: boolean; held: boolean; helpReason: string | null }
   | { kind: "assignment"; [k: string]: unknown };
 
 export interface ModelOption {

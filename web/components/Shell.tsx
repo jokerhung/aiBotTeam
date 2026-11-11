@@ -13,6 +13,7 @@ import { UsagePage } from "./Observe";
 import { ImportTeamDialog, ShareTeamDialog } from "./TeamShare";
 import { McpServersPanel } from "./McpServers";
 import { BotPanel } from "./BotPanel";
+import { ComputerPanel } from "./ComputerPanel";
 import { CommandPalette } from "./CommandPalette";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { NewBotDialog } from "./NewBotDialog";
@@ -61,6 +62,7 @@ export function Shell() {
           <>
             <ChatView key={bot.id} bot={bot} />
             {state.panelBotId === bot.id && <BotPanel key={`panel-${bot.id}`} bot={bot} />}
+            {state.computerBotId === bot.id && <ComputerPanel key={`computer-${bot.id}`} bot={bot} />}
           </>
         ) : (
           <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">

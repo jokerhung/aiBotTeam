@@ -72,6 +72,7 @@ class Turns:
         self.config = None  # where a usage limit's reset time is kept for the Usage page
         self.memory = None  # per-bot notes and the team's
         self.skills = None  # the skill library
+        self.browser = None  # the bots' built-in browser
         self.notify = None  # the notification log
         self.delegated: dict[str, asyncio.Future] = {}  # work thread -> the runtime's wait for that turn's result
         self.attachments_dir = attachments_dir or data_dir() / "attachments"

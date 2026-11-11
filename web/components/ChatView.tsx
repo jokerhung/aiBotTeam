@@ -205,7 +205,9 @@ function Header({ bot }: { bot: Bot }) {
               className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, panelOpen && "text-ink")}>
               <PanelRight size={15} />
             </button>
-            <button type="button" data-tour="computer" title="Bot's screen" className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL)}>
+            <button type="button" data-tour="computer" data-testid="open-computer" title="Bot's screen" aria-label="Bot's screen" aria-pressed={state.computerBotId === bot.id}
+              onClick={() => dispatch({ type: "computer", botId: state.computerBotId === bot.id ? null : bot.id })}
+              className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, state.computerBotId === bot.id && "text-ink")}>
               <Monitor size={15} />
             </button>
           </div>

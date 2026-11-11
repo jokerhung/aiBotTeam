@@ -36,6 +36,9 @@ from .runtime import Runtime
 from .webhooks import WebhookService, make_hook_app
 from .store import Store, data_dir, now_ms
 from .turns import Turns
+from pydantic import BaseModel
+
+from .browser import BrowserService, BrowserUnavailable
 from .wire import (
     BotDefaults, ConfigPatch, CreateBot, CreateGroup, GroupMessage, NoteBody, PatchGroup, RoutineBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
     PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage,
@@ -50,6 +53,25 @@ DEFAULT_SETTINGS = {
 WEB_PORT = os.environ.get("WEB_PORT", "5299")
 
 CONFIG_FRAME = {"kind": "config", "version": "0.2.0", "needsSetup": False}
+
+
+class ControlBody(BaseModel):
+    holder: str  # "person" | "bot"
+
+class InputBody(BaseModel):
+    type: str
+    x: float | None = None
+    y: float | None = None
+    text: str | None = None
+    key: str | None = None
+    dy: float | None = None
+    url: str | None = None
+
+class WatchBody(BaseModel):
+    on: bool
+
+class ComputerSettings(BaseModel):
+    allowLocal: bool
 
 
 def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False, remote: bool | None = None, web_dir: Path | None = None) -> FastAPI:
@@ -87,6 +109,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     turns.config = config
     memory, skills = Memory(home), Skills(home)
     turns.memory, turns.skills = memory, skills
+    browser = BrowserService(home, bus, allow_local=bool((config.data.get("browser") or {}).get("allowLocal")) or os.environ.get("BOTTEAM_BROWSER_LOCAL") == "1",
+                             channel=os.environ.get("BOTTEAM_BROWSER_CHANNEL") or None)
+    turns.browser = browser
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
@@ -125,6 +150,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             except Exception:
                 pass
         await routines.stop()
+        await browser.shutdown()
         await runtime.close()
         await turns.stop()
         await broker.stop()
@@ -1264,6 +1290,75 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         lines = path.read_text(encoding="utf8").splitlines()[-limit:]
         return {"events": [json.loads(x) for x in lines if x]}
 
+    # ---- the computer panel: the bot's built-in browser ---------------------------------------------------------------
+    async def computer_state(bot_id: str) -> dict:
+        await need(bot_id)
+        return {**browser.state(bot_id), **(await browser.availability())}
+
+    @app.get("/api/bots/{bot_id}/computer")
+    async def computer_get(bot_id: str):
+        return await computer_state(bot_id)
+
+    @app.post("/api/bots/{bot_id}/computer/wake")
+    async def computer_wake(bot_id: str):
+        await need(bot_id)
+        try:
+            await browser.wake(bot_id)
+        except BrowserUnavailable as e:
+            raise HTTPException(503, str(e))
+        return await computer_state(bot_id)
+
+    @app.post("/api/bots/{bot_id}/computer/sleep")
+    async def computer_sleep(bot_id: str):
+        await need(bot_id)
+        await browser.sleep(bot_id)
+        return await computer_state(bot_id)
+
+    @app.post("/api/bots/{bot_id}/computer/control")
+    async def computer_control(bot_id: str, body: ControlBody):
+        await need(bot_id)
+        if body.holder not in ("person", "bot"):
+            raise HTTPException(400, "holder is person or bot")
+        try:
+            await browser.set_control(bot_id, body.holder)
+        except BrowserUnavailable as e:
+            raise HTTPException(409, str(e))
+        return await computer_state(bot_id)
+
+    @app.post("/api/bots/{bot_id}/computer/input")
+    async def computer_input(bot_id: str, body: InputBody):
+        await need(bot_id)
+        try:
+            ok = await browser.person_input(bot_id, body.model_dump(exclude_none=True))
+        except BrowserUnavailable as e:
+            raise HTTPException(400, str(e))
+        if not ok:
+            raise HTTPException(409, "take control of the browser first")
+        return {"ok": True}
+
+    @app.post("/api/bots/{bot_id}/computer/watch")
+    async def computer_watch(bot_id: str, body: WatchBody):
+        await need(bot_id)
+        return {"ok": await browser.watch(bot_id, body.on)}
+
+    @app.get("/api/bots/{bot_id}/computer/screen")
+    async def computer_screen(bot_id: str):
+        from fastapi.responses import Response
+
+        await need(bot_id)
+        try:
+            data, _url, _title = await browser.screenshot(bot_id)
+        except BrowserUnavailable as e:
+            raise HTTPException(404, str(e))
+        return Response(data, media_type="image/jpeg")
+
+    @app.put("/api/computer/settings")
+    async def computer_settings(body: ComputerSettings):
+        config.data.setdefault("browser", {})["allowLocal"] = body.allowLocal
+        config.save()
+        browser.allow_local = body.allowLocal
+        return {"allowLocal": body.allowLocal}
+
     # ---- live stream ------------------------------------------------------------------
     @app.get("/api/events")
     async def events():
@@ -1305,6 +1400,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.web_dir = static
     app.state.pairing = pairing
     app.state.memory, app.state.skills = memory, skills
+    app.state.browser = browser
     _ = now_ms
     return app
 

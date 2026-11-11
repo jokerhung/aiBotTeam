@@ -1,4 +1,5 @@
 "use client";
+import { onComputerFrame } from "../lib/screens";
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from "react";
 import { api } from "./api";
 import type { AppConfig, AppSettings, Bot, Group, InboxItem, InstanceInfo, Message, Notification, Routine, RoutineRun, Section, ServerFrame, Webhook, WebhookAttempt } from "@/lib/wire";
@@ -28,6 +29,8 @@ export interface AppState {
   configLoaded: boolean;
   sections: Section[];
   panelBotId: string | null;
+  /** The bot whose Computer panel (its browser's live screen) is open. */
+  computerBotId: string | null;
   paletteOpen: boolean;
   shortcutsOpen: boolean;
   findOpen: boolean;
@@ -78,6 +81,7 @@ export type Action =
   | { type: "config"; config: AppConfig }
   | { type: "sections"; sections: Section[] }
   | { type: "panel"; botId: string | null }
+  | { type: "computer"; botId: string | null }
   | { type: "palette"; open: boolean }
   | { type: "shortcuts"; open: boolean }
   | { type: "find"; open: boolean }
@@ -106,7 +110,7 @@ export const initialState: AppState = {
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
   groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, mcpOpen: false, mcpTick: 0,
   routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
-  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null,
+  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
 
@@ -185,7 +189,9 @@ export function reducer(state: AppState, action: Action): AppState {
     case "sections":
       return { ...state, sections: action.sections };
     case "panel":
-      return { ...state, panelBotId: action.botId };
+      return { ...state, panelBotId: action.botId, computerBotId: action.botId ? null : state.computerBotId };
+    case "computer":
+      return { ...state, computerBotId: action.botId, panelBotId: action.botId ? null : state.panelBotId };
     case "palette":
       return { ...state, paletteOpen: action.open };
     case "shortcuts":
@@ -330,6 +336,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       es.onmessage = (e) => {
         try {
           const frame = JSON.parse(e.data) as ServerFrame;
+          if (onComputerFrame(frame)) return;
           if (frame.kind === "instances") api<{ instances: InstanceInfo[] }>("/api/instances").then((r) => dispatch({ type: "instances", instances: r.instances })).catch(() => {});
           dispatch({ type: "frame", frame });
           // the inbox follows the cards: a frame that may open or close one refreshes it, lightly
