@@ -131,12 +131,17 @@ function Toggle({ on, label, onChange }: { on: boolean; label: string; onChange:
   );
 }
 
+/** The reference lists every automation in one rounded card, a hairline between rows. */
+function AutoGroup({ children }: { children: React.ReactNode }) {
+  return <div className="mx-auto w-full max-w-[720px] overflow-hidden rounded-2xl bg-card ring-1 ring-ink/10" data-testid="auto-group">{children}</div>;
+}
+
 /** One automation as the reference lists it: a status dot and title, what it does, when it last ran and runs next, the switch on the right. */
 function AutoCard({ testid, enabled, title, desc, meta, actions, onToggle, toggleLabel, children }: {
   testid: string; enabled: boolean; title: string; desc: string; meta: string; actions: React.ReactNode; onToggle: () => void; toggleLabel: string; children?: React.ReactNode;
 }) {
   return (
-    <div data-testid={testid} className="mx-auto mb-3 w-full max-w-[720px] rounded-2xl bg-card px-4 py-3.5 ring-1 ring-ink/10">
+    <div data-testid={testid} className="w-full border-t border-edge px-4 py-3.5 first:border-t-0">
       <div className="flex items-start gap-3">
         <span className={cn("mt-[7px] size-2.5 shrink-0 rounded-full", enabled ? "bg-success" : "bg-ink/30")} />
         <div className="min-w-0 flex-1">
@@ -161,6 +166,7 @@ function RoutineRows({ routines, onEdit }: { routines: Routine[]; onEdit: (r: Ro
   return (
     <div className="px-5 py-5">
       <p className="mx-auto mb-4 max-w-[720px] text-[13px] leading-5 text-ink-secondary" data-testid="routine-explainer">{t("A task is one piece of work a bot does once. A routine starts a new task on a schedule.")}</p>
+      <AutoGroup>
       {routines.map((r) => (
         <AutoCard key={r.id} testid="routine-row" enabled={r.enabled} title={r.name} desc={`${r.schedule} · ${nameOf(r)}: ${r.prompt}`}
           meta={[r.enabled ? t("On") : t("Paused"), r.lastRun ? `${t("last run")} ${when(r.lastRun)}` : "", r.enabled && r.nextRun ? `${t("next")} ${when(r.nextRun)}` : ""].filter(Boolean).join(" · ")}
@@ -171,6 +177,14 @@ function RoutineRows({ routines, onEdit }: { routines: Routine[]; onEdit: (r: Ro
             <button type="button" title={t("Delete routine")} aria-label={t("Delete routine")} onClick={() => confirm(t("Delete this routine?")) && act(api(`/api/routines/${r.id}`, { method: "DELETE" }))} className={cn(ic, "hover:bg-danger/10 hover:text-danger")}><Trash2 size={14} /></button>
           </>} />
       ))}
+      {state.webhooks.map((w) => (
+        <AutoCard key={w.id} testid="webhook-row-summary" enabled={w.enabled} title={w.name}
+          desc={`${t("When another app sends something")}, ${state.bots.find((b) => b.id === w.targetId)?.name ?? "?"} ${w.prompt ? w.prompt.charAt(0).toLowerCase() + w.prompt.slice(1) : ""}`.trim()}
+          meta={[w.enabled ? t("On") : t("Paused"), w.lastAt ? `${t("last call")} ${when(w.lastAt)}` : t("hasn't run yet")].join(" · ")}
+          toggleLabel={w.enabled ? t("Pause") : t("Resume")} onToggle={() => act(api(`/api/webhooks/${w.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !w.enabled }) }))}
+          actions={null} />
+      ))}
+      </AutoGroup>
     </div>
   );
 }
@@ -221,6 +235,7 @@ function WebhooksTab({ fresh }: { fresh?: { id: string; secret: string; url: str
           </div>
         </div>
       )}
+      <AutoGroup>
       {state.webhooks.map((w) => {
         const bot = state.bots.find((b) => b.id === w.targetId);
         return (
@@ -253,6 +268,7 @@ function WebhooksTab({ fresh }: { fresh?: { id: string; secret: string; url: str
           </AutoCard>
         );
       })}
+      </AutoGroup>
       {state.webhooks.length === 0 && !adding && <div className="py-10 text-center text-[13.5px] text-ink-tertiary">{t("No webhooks yet.")}</div>}
       {adding ? (
         <div className="rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10" data-testid="webhook-form">
@@ -294,7 +310,7 @@ export function AutomationsPage() {
   const routines = state.routines.filter((r) => botFilter === "all" || r.targetId === botFilter);
   const runs = state.runs.filter((r) => routines.some((x) => x.id === r.routineId));
   const seg = (on: boolean) => cn("px-3 py-1 text-[13px]", on ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink");
-  const none = state.routines.length === 0;
+  const none = state.routines.length === 0 && state.webhooks.length === 0;
   const close = () => { setEditing(null); setStep("ask"); setPrefill(undefined); };
   const create = () => { setPrefill(undefined); setStep("ask"); setEditing("new"); };
 

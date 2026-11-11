@@ -29,7 +29,7 @@ function diff(aBuf, bBuf, name) {
 }
 const leftovers = async () => { // what an earlier run that stopped half way left behind
   const J = async (path, method = "GET") => (await fetch((process.env.API || "http://127.0.0.1:8899") + path, { method })).json().catch(() => ({}));
-  for (const x of (await J("/api/bots")).bots ?? []) if (/^(Vis |Viet |Ledger$)/.test(x.name)) await J(`/api/bots/${x.id}`, "DELETE");
+  for (const x of (await J("/api/bots")).bots ?? []) if (/^(Vis |Viet |Ledger$|QA$)/.test(x.name)) await J(`/api/bots/${x.id}`, "DELETE");
   for (const g of (await J("/api/groups")).groups ?? []) if (/^(Vis |Viet )/.test(g.name)) await J(`/api/groups/${g.id}`, "DELETE");
   for (const r of (await J("/api/routines")).routines ?? []) if (/^(Vis |Viet |Keep an eye)/.test(r.name)) await J(`/api/routines/${r.id}`, "DELETE");
   for (const w of (await J("/api/webhooks")).webhooks ?? []) if (/^(Vis |Viet |Deploy events)/.test(w.name)) await J(`/api/webhooks/${w.id}`, "DELETE");
@@ -312,6 +312,43 @@ const dismiss = (p) => p.getByRole("button", { name: "Done", exact: true }).firs
   report("inbox question card vs reference question card", diff(rqs, oqs, "inbox-card"), Number(process.env.LIMIT_QCARD || 0.1), "header and question text");
   await jj(`/api/bots/${bot.id}/interrupt`, "POST");
   await jj(`/api/routines/${routine.id}`, "DELETE"); await jj(`/api/webhooks/${made.webhook.id}`, "DELETE"); await jj(`/api/bots/${bot.id}`, "DELETE");
+}
+
+// 1h. A webhook with data, against the reference's own: the same webhook is made on both sides (paused, so it never fires), compared row to row.
+// The reference's is made through its REST route (no bot turn is started) and removed again straight away.
+{
+  const REFAPI = REF.replace(/\/$/, "");
+  const refBots = await (await fetch(`${REFAPI}/api/bots`)).json();
+  const refQA = (refBots.bots ?? refBots).find((x) => x.name === "QA");
+  const echo = { instanceId: "echo", model: "echo-1" };
+  const qa = await jj("/api/bots", "POST", { name: "QA", modelSelection: echo });
+  const mine = await jj("/api/webhooks", "POST", { name: "Deploy events", targetId: qa.id, prompt: "summarises each deploy event" });
+  await jj(`/api/webhooks/${mine.webhook.id}`, "PATCH", { enabled: false });
+  let theirs = null;
+  try {
+    if (refQA) theirs = await (await fetch(`${REFAPI}/api/webhooks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Deploy events", prompt: "summarises each deploy event", botId: refQA.id, enabled: false }) })).json();
+    const ref = await page(REF);
+    await dismiss(ref);
+    await ref.getByRole("button", { name: "You", exact: true }).click();
+    await ref.getByText("Automations", { exact: true }).first().click();
+    await ref.waitForTimeout(1200);
+    const row = await ref.getByText("Deploy events").first().evaluate((el) => {
+      let n = el; while (n && !(n.getBoundingClientRect().width >= 700 && n.getBoundingClientRect().height < 130)) n = n.parentElement;
+      const r = n.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
+    });
+    const ours = await page(OURS);
+    await ours.getByTitle("Profile and settings").click();
+    await ours.locator('[data-testid="open-automations"]').click();
+    await ours.waitForSelector('[data-testid="webhook-row-summary"]'); await ours.waitForTimeout(500);
+    const orow = await ours.locator('[data-testid="webhook-row-summary"]').first().boundingBox();
+    const clipOf = (bx) => ({ x: bx.x, y: bx.y, width: 720, height: Math.min(bx.height, row.height) });
+    const rs = await ref.screenshot({ clip: clipOf(row) }), os = await ours.screenshot({ clip: clipOf(orow) });
+    writeFileSync(`${OUT}/ref-webhook-row.png`, rs); writeFileSync(`${OUT}/ours-webhook-row.png`, os);
+    report("webhook row (same webhook) vs reference", diff(rs, os, "webhook-row"), Number(process.env.LIMIT_HOOKROW || 0.06), `row ${Math.round(row.width)}x${Math.round(row.height)} vs ${Math.round(orow.width)}x${Math.round(orow.height)}`);
+  } finally {
+    if (theirs?.webhook) await fetch(`${REFAPI}/api/webhooks/${theirs.webhook.id}`, { method: "DELETE" });
+    await jj(`/api/webhooks/${mine.webhook.id}`, "DELETE"); await jj(`/api/bots/${qa.id}`, "DELETE");
+  }
 }
 
 // 2. Our own screens against stored baselines (regression, tighter limit); UPDATE=1 rewrites them

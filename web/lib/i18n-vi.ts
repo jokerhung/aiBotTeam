@@ -127,6 +127,7 @@ export const vi: Record<string, string> = {
   "completed": "hoàn tất", "stopped": "đã dừng", "queued": "đang chờ",
   "On": "Bật", "last run": "chạy gần nhất", "last call": "gọi gần nhất", "no calls yet": "chưa có lượt gọi",
   "Webhook": "Webhook",
+  "hasn't run yet": "chưa chạy lần nào",
 };
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */
