@@ -28,14 +28,11 @@ function RoomHeader({ group }: { group: Group }) {
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(max-content,1fr)] items-center max-md:flex max-md:justify-between">
           <button type="button" aria-label="Open bot list" onClick={() => dispatch({ type: "drawer", open: true })}
             className="-ml-2 rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink md:hidden"><Menu size={20} /></button>
-          <div className="col-start-2 flex min-w-0 items-center justify-self-center gap-2.5">
-            <GroupAvatar members={group.memberInfo} size={34} />
-            <div className="min-w-0 leading-tight">
-              <div data-no-i18n="" className="truncate text-[15px] font-medium text-ink">{group.name}</div>
-              <div data-no-i18n="" className="truncate text-[12px] text-ink-tertiary">{group.memberInfo.map((m) => m.name).join(", ")}</div>
-            </div>
+          <div className="col-start-1 row-start-1 flex min-w-0 items-center justify-self-start">
+            <div data-no-i18n="" className="truncate text-[15px] font-medium text-ink" title={group.memberInfo.map((m) => m.name).join(", ")}>{group.name}</div>
           </div>
           <div className="col-start-3 flex shrink-0 items-center justify-self-end gap-2">
+            <GroupAvatar members={group.memberInfo} size={32} />
             <button type="button" title="Room details" aria-label="Room details" aria-pressed={open}
               onClick={() => dispatch({ type: "groupPanel", id: open ? null : group.id })}
               className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, open && "text-ink")}>
@@ -67,12 +64,10 @@ function RoomMessage({ group, list, i }: { group: Group; list: Message[]; i: num
   const members = group.memberInfo;
   return (
     <div data-message-id={m.id} className={cn("group flex w-full gap-2", mine ? "justify-end" : "justify-start")}>
-      {!mine && (
-        <span className="mt-0.5 w-7 shrink-0">{!sameAuthor && author ? <Mascot color={author.color} size={28} /> : null}</span>
-      )}
-      <div className={cn("flex min-w-0 max-w-[min(var(--chat-bubble-max),calc(100%-44px))] flex-col", mine ? "items-end" : "items-start")}>
+      <div className={cn("flex min-w-0 max-w-[min(var(--chat-bubble-max),100%)] flex-col", mine ? "items-end" : "items-start")}>
         {!mine && !sameAuthor && (
-          <span data-no-i18n="" className="mb-0.5 px-1 text-[12px] font-medium" style={{ color: `var(--identity-${author?.color ?? "green"})` }}>
+          <span data-no-i18n="" className="mb-1 flex items-center gap-1 px-0.5 text-[11px] font-medium" style={{ color: `var(--identity-${author?.color ?? "green"})` }}>
+            {author && <Mascot color={author.color} size={14} />}
             {author?.name ?? m.sender ?? "Bot"}{author?.id === group.leader && <span className="ml-1 text-ink-tertiary">· leader</span>}
           </span>
         )}
@@ -142,7 +137,6 @@ function RoomComposer({ group, dock }: { group: Group; dock?: React.ReactNode })
   };
   void state;
   const round = "flex size-7 shrink-0 items-center justify-center rounded-full";
-  const hint = group.responder === "mention" ? "Mention a member with @ to ask them" : group.responder === "auto" ? "A member is chosen for each message" : "The leader answers, or mention a member with @";
   return (
     <div className="chat-column-dock pointer-events-none absolute inset-x-0 bottom-0 z-[2]">
       <div className="pointer-events-none relative px-5 pb-4">
@@ -153,7 +147,7 @@ function RoomComposer({ group, dock }: { group: Group; dock?: React.ReactNode })
           <div className="relative z-[1] rounded-[22px] bg-composer p-2 ring-[0.5px] ring-ink/10 hover:ring-ink/[0.22] focus-within:ring-ink/[0.22]">
             <div className="flex items-end gap-1.5">
               <MentionEditor value={text} onChange={save} onSubmit={send} members={members} disabled={!!dock} label={`Message ${group.name}`}
-                placeholder={dock ? t("Answer the approval above to continue") : `${t("Message")} ${group.name} — ${t(hint)}`} />
+                placeholder={dock ? t("Answer the approval above to continue") : `${t("Message")} ${group.name}`} />
               {group.busy && !text.trim() ? (
                 <button type="button" title="Stop" aria-label="Stop" onClick={() => api(`/api/groups/${group.id}/interrupt`, { method: "POST" })} className={cn(round, "bg-ink text-app")}>
                   <Square size={11} fill="currentColor" />

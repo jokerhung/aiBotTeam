@@ -17,6 +17,11 @@ const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"}  ${msg}`); if
 const echo = { instanceId: "echo", model: "echo-1" };
 const mk = async (name, title) => (await j("/api/bots", "POST", { name, title, modelSelection: echo, approvalMode: "full" })).json;
 const stamp = process.env.STAMP || 4242; // fixed so the screens can be compared with their baselines
+// leftovers of an earlier run that stopped half way
+for (const b0 of (await j("/api/bots")).json.bots) if (b0.name.endsWith(String(stamp))) await j(`/api/bots/${b0.id}`, "DELETE");
+for (const g0 of (await j("/api/groups")).json.groups) if (g0.name.endsWith(String(stamp))) await j(`/api/groups/${g0.id}`, "DELETE");
+for (const r0 of (await j("/api/routines")).json.routines) if (r0.name.endsWith(String(stamp))) await j(`/api/routines/${r0.id}`, "DELETE");
+for (const w0 of (await j("/api/webhooks")).json.webhooks) if (w0.name.endsWith(String(stamp))) await j(`/api/webhooks/${w0.id}`, "DELETE");
 const A = await mk(`Ada${stamp}`, "Lead"), B = await mk(`Bo${stamp}`, "Developer"), C = await mk(`Cy${stamp}`, "Tester");
 await j(`/api/bots/${A.id}`, "PATCH", { approvalMode: "ask" });
 const room = (await j("/api/groups", "POST", { name: `Crew ${stamp}`, members: [A.id, B.id, C.id], leader: A.id, responder: "leader" })).json;
@@ -39,7 +44,7 @@ const box = p.getByLabel(`Message Crew ${stamp}`);
 await box.click();
 await box.pressSequentially("@");
 await p.waitForSelector('[data-testid="mention-picker"]');
-ok((await p.locator('[data-testid="mention-picker"] [role=option]').count()) === 3, "mention picker lists the three members");
+ok((await p.locator('[data-testid="mention-picker"] [role=option]').count()) === 4, "mention picker lists everyone plus the three members");
 await p.screenshot({ clip: { x: 280, y: 0, width: 1080, height: 860 }, path: `${SHOTS}/p4-mention-picker.png` });
 await box.pressSequentially(`Bo`);
 await p.keyboard.press("Enter");
@@ -81,6 +86,19 @@ if (!existing.length) {
   await p.screenshot({ clip: { x: 280, y: 0, width: 1080, height: 860 }, path: `${SHOTS}/p4-automations-empty.png` });
 }
 await p.getByRole("button", { name: /New routine/ }).first().click();
+await p.waitForSelector('[data-testid="routine-ask"]');
+await p.screenshot({ clip: { x: 280, y: 0, width: 1080, height: 860 }, path: `${SHOTS}/p4-routine-ask.png` });
+// plain words: the chosen bot is asked to set the routine up with its own tools
+await p.locator('[data-testid="routine-ask"] textarea').fill("every morning at 9 say hello");
+await p.getByLabel("Who should do it?").selectOption(B.id);
+await p.getByRole("button", { name: "Set it up", exact: true }).click();
+await p.waitForTimeout(2500);
+const asked = (await j(`/api/bots/${B.id}/messages?thread=${B.threadId}`)).json.messages;
+ok(asked.some((m) => m.role === "user" && m.text.includes("every morning at 9 say hello")), "'Set it up' sends the request to the chosen bot");
+await p.getByTitle("Profile and settings").click();
+await p.locator('[data-testid="open-automations"]').click();
+await p.getByRole("button", { name: /New routine/ }).first().click();
+await p.getByRole("button", { name: "Set it up yourself" }).click();
 await p.waitForSelector('[data-testid="routine-editor"]');
 await p.screenshot({ clip: { x: 280, y: 0, width: 1080, height: 860 }, path: `${SHOTS}/p4-routine-editor.png` });
 await p.getByLabel("Send to").selectOption(`bot:${B.id}`);

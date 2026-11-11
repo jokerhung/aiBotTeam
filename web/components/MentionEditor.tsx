@@ -1,4 +1,5 @@
 "use client";
+import { Users } from "lucide-react";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { mentionParts } from "@/lib/team";
@@ -40,7 +41,8 @@ export const MentionEditor = forwardRef<MentionEditorHandle, {
   const options = useMemo(() => {
     if (!frag || frag.start === dismissed) return [];
     const q = frag.text.toLowerCase();
-    return members.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
+    const all: MemberInfo[] = members.length > 1 ? [{ id: "everyone", name: "everyone", color: "silver", title: `${members.length} bots in this chat` }] : [];
+    return [...all, ...members].filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
   }, [frag, members, dismissed]);
 
   const pick = (m: MemberInfo) => {
@@ -58,14 +60,17 @@ export const MentionEditor = forwardRef<MentionEditorHandle, {
     <div className="mention-editor relative min-w-0 flex-1 self-center">
       {options.length > 0 && (
         <div role="listbox" aria-label="Mention a member" data-testid="mention-picker"
-          className="absolute bottom-full left-0 z-20 mb-2 w-[260px] overflow-hidden rounded-xl bg-menu p-1 text-ink shadow-(--shadow-float) ring-1 ring-ink/10">
+          className="absolute bottom-full left-0 z-20 mb-3 w-[290px] overflow-hidden rounded-2xl bg-menu p-1 text-ink shadow-(--shadow-float) ring-1 ring-ink/10">
           {options.map((m, i) => (
             <button key={m.id} type="button" role="option" aria-selected={i === index} onMouseDown={(e) => { e.preventDefault(); pick(m); }}
               onMouseEnter={() => setIndex(i)}
-              className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[14px]", i === index && "bg-menu-hover")}>
-              <Mascot color={m.color as never} size={22} />
-              <span data-no-i18n="" className="min-w-0 flex-1 truncate">{m.name}</span>
-              {m.title && <span data-no-i18n="" className="max-w-[90px] truncate text-[11.5px] text-ink-tertiary">{m.title}</span>}
+              className={cn("flex w-full items-center gap-2.5 rounded-xl px-2 py-[9px] text-left", i === index && "bg-menu-hover")}>
+              {m.id === "everyone" ? <span className="flex size-7 items-center justify-center rounded-full bg-ink/[0.06] text-ink-secondary"><Users size={14} /></span> : <Mascot color={m.color as never} size={28} />}
+              <span className="min-w-0 flex-1 leading-tight">
+                <span data-no-i18n="" className="block truncate text-[14px] font-medium">{m.name}</span>
+                {m.title && <span data-no-i18n={m.id === "everyone" ? undefined : ""} className="block truncate text-[12px] text-ink-tertiary">{m.title}</span>}
+              </span>
+              <span className="shrink-0 text-[12px] text-ink-tertiary">{m.id === "everyone" ? "Group chat" : "Agent"}</span>
             </button>
           ))}
         </div>

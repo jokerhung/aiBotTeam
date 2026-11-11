@@ -19,7 +19,7 @@ TRANSCRIPT_LINES = 24
 
 def mentions_in(text: str, members: list[tuple[str, str]]) -> list[str]:
     """Bot ids named with @ in the text, in the order they appear; the longest name wins (`@Dev Lead` before `@Dev`)."""
-    found: list[tuple[int, str]] = []
+    found: list[tuple[float, str]] = []
     spans: list[tuple[int, int]] = []
     for bid, name in sorted(members, key=lambda m: -len(m[1])):
         for m in re.finditer(r"(?<![\w@])@" + re.escape(name) + r"(?![\w])", text, flags=re.I):
@@ -27,6 +27,8 @@ def mentions_in(text: str, members: list[tuple[str, str]]) -> list[str]:
                 continue  # already part of a longer name
             spans.append((m.start(), m.end()))
             found.append((m.start(), bid))
+    for m in re.finditer(r"(?<![\w@])@everyone(?![\w])", text, flags=re.I):  # @everyone names every member, at its place
+        found.extend((m.start() + i / 1000, bid) for i, (bid, _) in enumerate(members))
     found.sort()
     out: list[str] = []
     for _, bid in found:

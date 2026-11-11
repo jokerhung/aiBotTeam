@@ -1,5 +1,5 @@
 "use client";
-import { ArrowLeft, CalendarClock, ChevronLeft, ChevronRight, Copy, Menu, Pencil, Play, Plus, Trash2, Webhook as WebhookIcon, X, Zap } from "lucide-react";
+import { ArrowLeft, CalendarClock, ChevronLeft, ChevronRight, Copy, Menu, Pencil, Play, Plus, Send, Trash2, Webhook as WebhookIcon, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,50 @@ function useTargets() {
 }
 
 // ---- editor ----------------------------------------------------------------------------------------------------------
+/** Step one of a new routine, as in the reference: say what should happen and who does it; the bot sets it up with its own tools. */
+function RoutineAsk({ onForm, onClose }: { onForm: () => void; onClose: () => void }) {
+  const { state, dispatch } = useStore();
+  const t = useT();
+  const bots = state.bots.filter((b) => !b.hidden);
+  const [text, setText] = useState("");
+  const [who, setWho] = useState(bots[0]?.id ?? "");
+  const send = async () => {
+    if (!text.trim() || !who) return;
+    const bot = bots.find((b) => b.id === who);
+    if (!bot) return;
+    await api(`/api/bots/${bot.id}/messages`, { method: "POST", body: JSON.stringify({ text: `Set up a routine for this: ${text.trim()}`, threadId: bot.threadId }) }).catch(() => {});
+    onClose();
+    dispatch({ type: "select", id: bot.id });
+  };
+  return (
+    <div role="dialog" aria-modal="true" aria-label="What should happen?" data-testid="routine-ask"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-[560px] rounded-[20px] bg-panel p-5 text-ink shadow-xl ring-1 ring-ink/10">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[17px] font-semibold">{t("What should happen?")}</h2>
+          <button type="button" aria-label="Close" onClick={onClose} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><X size={15} /></button>
+        </div>
+        <textarea autoFocus data-no-i18n="" value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={t("What should happen?")}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}
+          placeholder={t("e.g. every morning at 9, send me a summary of my inbox")}
+          className="mt-3.5 block w-full resize-none rounded-xl bg-inset px-3.5 py-3 text-[14px] leading-5 text-ink outline-none ring-1 ring-inset ring-accent placeholder:text-ink-tertiary" />
+        <div className="mt-4 flex items-center gap-2 text-[13px] text-ink-secondary">
+          {t("Who should do it?")}
+          <select value={who} onChange={(e) => setWho(e.target.value)} aria-label={t("Who should do it?")} className="h-8 rounded-lg bg-raised px-2.5 text-[13.5px] text-ink">
+            {bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <button type="button" onClick={onForm} className="rounded-full px-2 py-1.5 text-[13.5px] text-ink-secondary hover:text-ink">{t("Set it up yourself")}</button>
+          <button type="button" disabled={!text.trim() || !who} onClick={send} className="flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)] disabled:bg-ink/10 disabled:text-ink-tertiary">
+            <Send size={14} /> {t("Set it up")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RoutineEditor({ routine, onClose }: { routine: Routine | null; onClose: () => void }) {
   const { state } = useStore();
   const t = useT();
@@ -379,6 +423,7 @@ export function AutomationsPage() {
   const [anchor, setAnchor] = useState(() => Date.now());
   const [botFilter, setBotFilter] = useState("all");
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
+  const [form, setForm] = useState(false); // a new routine starts with the plain-words step; true once "Set it up yourself" is chosen
   const routines = state.routines.filter((r) => botFilter === "all" || r.targetId === botFilter);
   const runs = state.runs.filter((r) => routines.some((x) => x.id === r.routineId));
   const step = range === 7 ? 7 * DAY : range * DAY;
@@ -431,7 +476,8 @@ export function AutomationsPage() {
           <RunLog routines={routines} runs={runs} />
         </div>
       )}
-      {editing && <RoutineEditor key={editing === "new" ? "new" : editing.id} routine={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {editing === "new" && !form && <RoutineAsk onForm={() => setForm(true)} onClose={() => setEditing(null)} />}
+      {editing && (editing !== "new" || form) && <RoutineEditor key={editing === "new" ? "new" : editing.id} routine={editing === "new" ? null : editing} onClose={() => { setEditing(null); setForm(false); }} />}
     </main>
   );
 }

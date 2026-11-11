@@ -33,6 +33,8 @@ def test_mentions_use_the_longest_name_and_word_boundaries():
     members = [("b1", "Dev"), ("b2", "Dev Lead"), ("b3", "Tester")]
     assert mentions_in("@Dev Lead please look, then @tester", members) == ["b2", "b3"]
     assert mentions_in("@dev", members) == ["b1"]
+    assert mentions_in("hey @everyone", members) == [m[0] for m in members]  # everyone = every member
+    assert mentions_in("@tester first, @everyone", members)[0] == "b3"
     assert mentions_in("mail me at x@Dev.com or @Developer", members) == []  # not a mention: inside a word / email
     assert mentions_in("@Tester @Dev @Tester", members) == ["b3", "b1"]  # in order, once each
 

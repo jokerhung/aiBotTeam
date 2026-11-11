@@ -116,6 +116,7 @@ export const vi: Record<string, string> = {
   "Chief of Staff": "Chánh văn phòng", "The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.": "Chánh văn phòng trả lời thay bạn khi được phép và giao việc cho đội. Chỉ một bot là Chief; nếu chọn section thì chỉ làm việc trong các section đó.", "Sections it manages": "Các section nó quản lý",
   "Team map": "Sơ đồ đội",
   "Reports to": "Báo cáo cho", "Who this bot answers to. A Chief of Staff can hand work to the bots that report to it.": "Bot này chịu trách nhiệm trước ai. Chánh văn phòng có thể giao việc cho các bot báo cáo cho nó.", "Chooser model": "Model chọn người trả lời", "Off: the leader answers": "Tắt: trưởng phòng trả lời", "A quick model picks who answers each message. If it is off or unsure, the leader answers.": "Một model nhanh chọn ai trả lời mỗi tin nhắn. Nếu tắt hoặc không chắc, trưởng phòng trả lời.", "a bot cannot report to itself or to one that reports to it": "một bot không thể báo cáo cho chính nó hoặc cho bot đang báo cáo cho nó",
+  "What should happen?": "Chuyện gì sẽ xảy ra?", "e.g. every morning at 9, send me a summary of my inbox": "vd: mỗi sáng lúc 9 giờ, gửi tôi bản tóm tắt hộp thư", "Who should do it?": "Ai sẽ làm?", "Set it up yourself": "Tự thiết lập", "Set it up": "Thiết lập", "Group chat": "Nhóm chat", "Agent": "Agent",
 };
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */

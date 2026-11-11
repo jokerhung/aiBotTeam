@@ -27,6 +27,18 @@ describe("Vietnamese interface", () => {
     expect(missing.map((m) => `${m.file}: ${m.text}`)).toEqual([]);
   });
 
+  it("has an entry for every string passed to t() or tr() as a literal, and for the labels of option lists", () => {
+    const missing: string[] = [];
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".tsx"))) {
+      const src = readFileSync(join(dir, file), "utf8");
+      const found = new Set<string>();
+      for (const m of src.matchAll(/\b(?:t|tr)\("((?:[^"\\]|\\.)+)"\)/g)) found.add(m[1]);
+      for (const m of src.matchAll(/\[\s*"[a-z]+",\s*"([A-Z][^"]+)"\s*\]/g)) found.add(m[1]); // [id, "Label"] pairs rendered through t()
+      for (const text of found) if (!SAME.has(text) && !(text in dictionaries.vi) && translate("vi", text) === text) missing.push(`${file}: ${text}`);
+    }
+    expect(missing).toEqual([]);
+  });
+
   it("falls back to English for text it does not know", () => {
     expect(translate("vi", "A message someone wrote")).toBe("A message someone wrote");
     expect(translate("en", "Deny")).toBe("Deny");
