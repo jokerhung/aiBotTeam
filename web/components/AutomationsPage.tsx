@@ -1,27 +1,20 @@
 "use client";
-import { ArrowLeft, CalendarClock, ChevronLeft, ChevronRight, Copy, Menu, Pencil, Play, Plus, Send, Trash2, Webhook as WebhookIcon, X, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, CalendarClock, Copy, Menu, Pencil, Play, Plus, Send, Trash2, Webhook as WebhookIcon, X, Zap } from "lucide-react";
+import { useMemo, useState } from "react";
 import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { occurrences } from "@/lib/team";
 import type { Routine, RoutineRun, Webhook, WebhookAttempt } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { type Range, CalendarView } from "./AutomationsCalendar";
 import { Mascot } from "./Mascot";
+import { AutomationForm, WhenStep } from "./RoutineWizard";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
-const DAY = 86_400_000;
-const HOUR_PX = 44;
-const DAY_LETTERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STATUS_TONE: Record<string, string> = {
   done: "bg-success/20 text-success", running: "bg-accent/20 text-accent-text", failed: "bg-danger/15 text-danger", timeout: "bg-danger/15 text-danger",
   skipped: "bg-warning/20 text-warning", cancelled: "bg-ink/10 text-ink-secondary", stopped: "bg-ink/10 text-ink-secondary",
 };
-
-type Range = 1 | 3 | 7;
-const startOfDay = (ms: number) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
-const clock = (ms: number) => new Date(ms).toLocaleTimeString([locale()], { hour: "numeric", minute: "2-digit" });
-const mondayOf = (ms: number) => { const s = startOfDay(ms); const wd = (new Date(s).getDay() + 6) % 7; return s - wd * DAY; };
 
 function EmptyState({ onNew }: { onNew: () => void }) {
   const t = useT();
@@ -88,164 +81,10 @@ function RoutineAsk({ onForm, onClose }: { onForm: () => void; onClose: () => vo
   );
 }
 
-function RoutineEditor({ routine, onClose }: { routine: Routine | null; onClose: () => void }) {
-  const { state } = useStore();
-  const t = useT();
-  const targets = useTargets();
-  const localTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
-  const [name, setName] = useState(routine?.name ?? "");
-  const [prompt, setPrompt] = useState(routine?.prompt ?? "");
-  const [target, setTarget] = useState(routine ? `${routine.targetKind}:${routine.targetId}` : targets[0] ? `${targets[0].kind}:${targets[0].id}` : "");
-  const [kind, setKind] = useState<"interval" | "weekly" | "once">(routine ? (routine.kind === "daily" ? "weekly" : routine.kind) : "interval");
-  const [every, setEvery] = useState(routine?.everyMin ?? 60);
-  const [at, setAt] = useState(routine?.at ?? "09:00");
-  const [days, setDays] = useState<number[]>(routine?.days?.length ? routine.days : [0, 1, 2, 3, 4, 5, 6]);
-  const [runAt, setRunAt] = useState(() => {
-    const d = new Date(routine?.runAt ?? Date.now() + 3_600_000);
-    d.setSeconds(0, 0);
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-  });
-  const [tz, setTz] = useState(routine?.tz ?? localTz);
-  const [maxRun, setMaxRun] = useState(routine?.maxRunMin ?? 60);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  void state;
-
-  const save = async () => {
-    const [targetKind, ...rest] = target.split(":");
-    const body: Record<string, unknown> = { name: name.trim() || prompt.trim().slice(0, 40), prompt: prompt.trim(), kind, tz, maxRunMin: maxRun };
-    if (!routine) { body.targetKind = targetKind; body.targetId = rest.join(":"); }
-    if (kind === "interval") body.everyMin = every;
-    if (kind === "weekly") { body.at = at; body.days = days; }
-    if (kind === "once") body.runAt = new Date(runAt).getTime();
-    setBusy(true);
-    setError("");
-    try {
-      await api(routine ? `/api/routines/${routine.id}` : "/api/routines", { method: routine ? "PATCH" : "POST", body: JSON.stringify(body) });
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const label = "mb-1.5 mt-4 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary";
-  return (
-    <div role="dialog" aria-modal="true" aria-label={routine ? "Edit routine" : "New routine"} data-testid="routine-editor"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="flex max-h-[92vh] w-full max-w-[480px] flex-col overflow-y-auto rounded-2xl bg-panel p-5 text-ink shadow-xl ring-1 ring-ink/10">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[17px] font-semibold">{routine ? t("Edit routine") : t("New routine")}</h2>
-          <button type="button" aria-label="Close" onClick={onClose} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><X size={15} /></button>
-        </div>
-        <div className={label}>{t("Name")}</div>
-        <input data-no-i18n="" value={name} onChange={(e) => setName(e.target.value)} aria-label={t("Name")} placeholder={t("Morning summary")} className={cn(INPUT, "h-10")} />
-        <div className={label}>{t("Send to")}</div>
-        <select value={target} disabled={!!routine} onChange={(e) => setTarget(e.target.value)} aria-label={t("Send to")} className={cn(INPUT, "h-10")}>
-          {targets.map((x) => <option key={`${x.kind}:${x.id}`} value={`${x.kind}:${x.id}`}>{x.kind === "group" ? `${x.name} (${t("room")})` : x.name}</option>)}
-        </select>
-        <div className={label}>{t("Message")}</div>
-        <textarea data-no-i18n="" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} aria-label={t("Routine message")} placeholder={t("What should it be asked?")} className={cn(INPUT, "py-2 leading-5")} />
-        <div className={label}>{t("Repeat")}</div>
-        <div role="radiogroup" className="flex gap-1.5">
-          {([["interval", "Every N minutes"], ["weekly", "On days"], ["once", "Once"]] as const).map(([id, text]) => (
-            <button key={id} type="button" role="radio" aria-checked={kind === id} onClick={() => setKind(id)}
-              className={cn("flex-1 rounded-lg px-2 py-1.5 text-[13px] ring-1 ring-ink/10 hover:bg-ink/[0.04]", kind === id && "bg-accent/12 ring-accent/60")}>{t(text)}</button>
-          ))}
-        </div>
-        {kind === "interval" && (
-          <div className="mt-3 flex items-center gap-2 text-[14px]">
-            {t("Every")}
-            <input type="number" min={5} max={1440} value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label={t("Minutes")} className={cn(INPUT, "h-9 w-24")} />
-            {t("minutes (5–1440)")}
-          </div>
-        )}
-        {kind === "weekly" && (
-          <>
-            <div className="mt-3 flex gap-1" role="group" aria-label={t("Days")}>
-              {DAY_LETTERS.map((d, i) => (
-                <button key={d} type="button" aria-pressed={days.includes(i)} onClick={() => setDays((x) => (x.includes(i) ? x.filter((y) => y !== i) : [...x, i]))}
-                  className={cn("flex-1 rounded-lg py-1.5 text-[12.5px] ring-1 ring-ink/10", days.includes(i) ? "bg-accent text-[var(--color-accent-ink)] ring-accent" : "hover:bg-ink/[0.04]")}>{d}</button>
-              ))}
-            </div>
-            <div className="mt-3 flex items-center gap-2 text-[14px]">{t("At")} <input type="time" value={at} onChange={(e) => setAt(e.target.value)} aria-label={t("Time")} className={cn(INPUT, "h-9 w-32")} /></div>
-          </>
-        )}
-        {kind === "once" && <input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} aria-label={t("Date and time")} className={cn(INPUT, "mt-3 h-10")} />}
-        <div className={label}>{t("Time zone")}</div>
-        <input value={tz} onChange={(e) => setTz(e.target.value)} aria-label={t("Time zone")} placeholder="Europe/Paris" className={cn(INPUT, "h-10")} />
-        <div className={label}>{t("Time limit per run (minutes)")}</div>
-        <input type="number" min={1} max={1440} value={maxRun} onChange={(e) => setMaxRun(Number(e.target.value))} aria-label={t("Time limit per run (minutes)")} className={cn(INPUT, "h-10 w-28")} />
-        {error && <div role="alert" className="mt-3 text-[13px] text-danger">{error}</div>}
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-full px-4 py-2 text-[14px] text-ink-secondary hover:bg-ink/10">{t("Cancel")}</button>
-          <button type="button" disabled={busy || !prompt.trim() || (kind === "weekly" && !days.length)} onClick={save}
-            className="rounded-full bg-accent px-4 py-2 text-[14px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Save routine")}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---- calendar --------------------------------------------------------------------------------------------------------
-function CalendarGrid({ routines, runs, anchor, range, onEdit }: { routines: Routine[]; runs: RoutineRun[]; anchor: number; range: Range; onEdit: (r: Routine) => void }) {
-  const start = range === 7 ? mondayOf(anchor) : startOfDay(anchor);
-  const days = Array.from({ length: range }, (_, i) => start + i * DAY);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(id); }, []);
-  const scroller = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (scroller.current) scroller.current.scrollTop = Math.max(0, (new Date().getHours() - 1) * HOUR_PX); }, [range]);
-  const byId = new Map(routines.map((r) => [r.id, r]));
-  const blocks = (day: number) => {
-    const end = day + DAY;
-    const future = routines.flatMap((r) => occurrences(r, Math.max(day, now), end).map((at) => ({ key: `${r.id}-${at}`, r, at, run: null as RoutineRun | null })));
-    const past = runs.filter((x) => x.startedAt >= day && x.startedAt < end).map((x) => ({ key: x.id, r: byId.get(x.routineId), at: x.startedAt, run: x }));
-    return [...past, ...future].filter((b) => b.r);
-  };
-  return (
-    <div ref={scroller} data-testid="calendar-grid" className="min-h-0 flex-1 overflow-auto">
-      <div className="sticky top-0 z-10 grid border-b border-edge bg-app" style={{ gridTemplateColumns: `52px repeat(${range}, minmax(0, 1fr))` }}>
-        <div />
-        {days.map((d) => {
-          const today = startOfDay(now) === d;
-          return (
-            <div key={d} className="px-2 py-2 text-center text-[12.5px] text-ink-secondary">
-              <div>{new Date(d).toLocaleDateString([locale()], { weekday: "short" })}</div>
-              <div className={cn("mx-auto mt-0.5 flex size-7 items-center justify-center rounded-full text-[14px] font-medium", today ? "bg-accent text-[var(--color-accent-ink)]" : "text-ink")}>{new Date(d).getDate()}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="relative grid" style={{ gridTemplateColumns: `52px repeat(${range}, minmax(0, 1fr))`, height: 24 * HOUR_PX }}>
-        <div className="relative">
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="absolute right-2 -translate-y-1/2 text-[11px] tabular-nums text-ink-tertiary" style={{ top: h * HOUR_PX, display: h === 0 ? "none" : undefined }}>
-              {new Date(2000, 0, 1, h).toLocaleTimeString([locale()], { hour: "numeric" })}
-            </div>
-          ))}
-        </div>
-        {days.map((d) => (
-          <div key={d} className="relative border-l border-edge">
-            {Array.from({ length: 24 }, (_, h) => <div key={h} className="absolute inset-x-0 border-t border-edge/60" style={{ top: h * HOUR_PX }} />)}
-            {startOfDay(now) === d && <div className="absolute inset-x-0 z-[5] h-px bg-danger" style={{ top: ((now - d) / 3_600_000) * HOUR_PX }}><span className="absolute -left-1 -top-[3px] size-[7px] rounded-full bg-danger" /></div>}
-            {blocks(d).map((b) => (
-              <button key={b.key} type="button" data-testid="routine-block" onClick={() => b.r && onEdit(b.r)} title={`${b.r!.name} · ${clock(b.at)}${b.run ? ` · ${b.run.status}` : ""}`}
-                className={cn("absolute inset-x-1 z-[3] overflow-hidden rounded-md px-1.5 text-left text-[11.5px] leading-[16px] ring-1 ring-ink/10", b.run ? (STATUS_TONE[b.run.status] ?? "bg-ink/10") : "bg-accent/15 text-accent-text")}
-                style={{ top: ((b.at - d) / 3_600_000) * HOUR_PX, height: 18 }}>
-                <span data-no-i18n="" className="truncate">{clock(b.at)} {b.r!.name}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ---- run log ---------------------------------------------------------------------------------------------------------
-function RunLog({ routines, runs }: { routines: Routine[]; runs: RoutineRun[] }) {
+function RunLog({ routines, runs, compact }: { routines: Routine[]; runs: RoutineRun[]; compact?: boolean }) {
   const t = useT();
+  const [shownLog, setShownLog] = useState(!compact);
   const { state, dispatch } = useStore();
   const [filter, setFilter] = useState<string>("all");
   const byId = new Map(routines.map((r) => [r.id, r]));
@@ -258,14 +97,16 @@ function RunLog({ routines, runs }: { routines: Routine[]; runs: RoutineRun[] })
   };
   void state;
   return (
-    <section aria-label={t("Run log")} data-testid="run-log" className="border-t border-edge">
+    <section aria-label={t("Run log")} data-testid="run-log" className="shrink-0 border-t border-edge">
       <div className="flex items-center gap-2 px-5 py-2.5">
-        <h3 className="text-[14px] font-medium text-ink">{t("Run log")}</h3>
+        <h3 className="text-[14px] font-medium text-ink">
+          {compact ? <button type="button" aria-expanded={shownLog} onClick={() => setShownLog((v) => !v)} className="hover:underline">{t("Run log")} {shownLog ? "▾" : "▸"}</button> : t("Run log")}
+        </h3>
         <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label={t("Status")} className="ml-auto rounded-lg bg-inset px-2 py-1 text-[13px] text-ink ring-1 ring-ink/10">
           {["all", "done", "running", "failed", "skipped", "timeout", "cancelled"].map((s) => <option key={s} value={s}>{t(s === "all" ? "All statuses" : s)}</option>)}
         </select>
       </div>
-      <div className="max-h-[220px] overflow-y-auto px-5 pb-3">
+      {shownLog && <div className="max-h-[220px] overflow-y-auto px-5 pb-3">
         {shown.length === 0 && <div className="py-4 text-center text-[13px] text-ink-tertiary">{t("No runs yet.")}</div>}
         {shown.map((r) => (
           <button key={r.id} type="button" data-testid="run-row" onClick={() => open(r)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-raised/60">
@@ -275,7 +116,7 @@ function RunLog({ routines, runs }: { routines: Routine[]; runs: RoutineRun[] })
             <span className="shrink-0 tabular-nums text-ink-tertiary">{new Date(r.startedAt).toLocaleString([locale()], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
           </button>
         ))}
-      </div>
+      </div>}
     </section>
   );
 }
@@ -289,6 +130,7 @@ function RoutineRows({ routines, onEdit }: { routines: Routine[]; onEdit: (r: Ro
   const act = (p: Promise<unknown>) => void p.catch(() => {});
   return (
     <div className="px-5 py-3">
+      <p className="mb-3 text-[13px] leading-5 text-ink-secondary" data-testid="routine-explainer">{t("A task is one piece of work a bot does once. A routine starts a new task on a schedule.")}</p>
       {routines.map((r) => (
         <div key={r.id} data-testid="routine-row" className="mb-2 flex items-center gap-3 rounded-xl bg-card p-3 ring-[0.5px] ring-ink/10">
           <span className="shrink-0">{colorOf(r) ? <Mascot color={colorOf(r)!} size={32} /> : <span className="flex size-8 items-center justify-center rounded-full bg-raised"><CalendarClock size={15} /></span>}</span>
@@ -420,64 +262,62 @@ export function AutomationsPage() {
   const [tab, setTab] = useState<"routines" | "webhooks">("routines");
   const [layout, setLayout] = useState<"list" | "calendar">("list");
   const [range, setRange] = useState<Range>(7);
-  const [anchor, setAnchor] = useState(() => Date.now());
+  const [anchor, setAnchorRaw] = useState(() => Date.now());
+  const setAnchor = (f: ((a: number) => number) | number) => setAnchorRaw((a) => (typeof f === "function" ? f(a) : f));
   const [botFilter, setBotFilter] = useState("all");
+  // a new routine goes: plain words -> when -> the form (or a webhook); a bot dropped on the calendar goes straight to the form
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
-  const [form, setForm] = useState(false); // a new routine starts with the plain-words step; true once "Set it up yourself" is chosen
+  const [step, setStep] = useState<"ask" | "when" | "form">("ask");
+  const [prefill, setPrefill] = useState<{ botId?: string; at?: number } | undefined>();
   const routines = state.routines.filter((r) => botFilter === "all" || r.targetId === botFilter);
   const runs = state.runs.filter((r) => routines.some((x) => x.id === r.routineId));
-  const step = range === 7 ? 7 * DAY : range * DAY;
-  const first = range === 7 ? mondayOf(anchor) : startOfDay(anchor);
-  const title = new Date(first).toLocaleDateString([locale()], { month: "long", year: "numeric" });
   const seg = (on: boolean) => cn("px-3 py-1 text-[13px]", on ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink");
   const none = state.routines.length === 0;
+  const close = () => { setEditing(null); setStep("ask"); setPrefill(undefined); };
+  const create = () => { setPrefill(undefined); setStep("ask"); setEditing("new"); };
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app" data-testid="automations-page">
+    <main className={cn("flex min-w-0 flex-1 flex-col bg-app", layout === "calendar" && tab === "routines" ? "fixed inset-0 z-40" : "relative h-full")} data-testid="automations-page">
       <header className="flex h-[60px] shrink-0 items-center gap-3 border-b-[0.5px] border-edge px-5 max-md:pl-14">
         <button type="button" aria-label="Open bot list" onClick={() => dispatch({ type: "drawer", open: true })} className="-ml-2 rounded-md p-1.5 text-ink-secondary hover:bg-raised md:hidden"><Menu size={20} /></button>
         <button type="button" aria-label={t("Back")} title={t("Back")} onClick={() => dispatch({ type: "automations", open: false })} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><ArrowLeft size={18} /></button>
+        <CalendarClock size={17} className="shrink-0 text-accent-text" aria-hidden />
         <h1 className="min-w-0 truncate text-[17px] font-semibold text-ink">{t("Automations")}</h1>
+        <div role="tablist" className="ml-3 flex gap-0.5 rounded-lg bg-raised/70 p-0.5">
+          {(["routines", "webhooks"] as const).map((id) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+              className={cn("rounded-md px-2.5 py-1 text-[13px]", tab === id ? "bg-app text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}>{t(id === "routines" ? "Routines" : "Webhooks")}</button>
+          ))}
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <select value={botFilter} onChange={(e) => setBotFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 rounded-xl bg-raised px-3 text-[13.5px] text-ink">
             <option value="all">{t("All bots")}</option>
             {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             {state.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
-          <div role="group" aria-label={t("Layout")} className="flex overflow-hidden rounded-full ring-1 ring-ink/10">
+          <div role="group" aria-label={t("Layout")} className="flex overflow-hidden rounded-xl ring-1 ring-ink/10">
             <button type="button" aria-pressed={layout === "list"} onClick={() => setLayout("list")} className={seg(layout === "list")}>{t("List")}</button>
             <button type="button" aria-pressed={layout === "calendar"} onClick={() => setLayout("calendar")} className={seg(layout === "calendar")}>{t("Calendar")}</button>
           </div>
-          <button type="button" aria-label={t("New routine")} onClick={() => setEditing("new")} className="flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("New")}</button>
+          <button type="button" aria-label={t("New routine")} onClick={create} className="flex h-9 items-center gap-1.5 rounded-xl bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("New")}</button>
         </div>
       </header>
-      <div role="tablist" className="flex shrink-0 gap-1 border-b border-edge px-5">
-        {(["routines", "webhooks"] as const).map((id) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={cn("-mb-px border-b-2 px-3 py-2 text-[14px]", tab === id ? "border-accent text-ink" : "border-transparent text-ink-secondary hover:text-ink")}>{t(id === "routines" ? "Routines" : "Webhooks")}</button>
-        ))}
-      </div>
-      {tab === "webhooks" ? <div className="min-h-0 flex-1 overflow-y-auto"><WebhooksTab /></div> : none ? <EmptyState onNew={() => setEditing("new")} /> : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {layout === "calendar" && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 py-2">
-              <div className="flex items-center gap-1" role="group" aria-label={t("Navigate")}>
-                <button type="button" aria-label={t("Previous")} onClick={() => setAnchor((a) => a - step)} className="rounded-full p-1.5 hover:bg-ink/10"><ChevronLeft size={16} /></button>
-                <button type="button" onClick={() => setAnchor(Date.now())} className="rounded-full px-3 py-1 text-[13px] ring-1 ring-ink/10 hover:bg-ink/10">{t("Today")}</button>
-                <button type="button" aria-label={t("Next")} onClick={() => setAnchor((a) => a + step)} className="rounded-full p-1.5 hover:bg-ink/10"><ChevronRight size={16} /></button>
-              </div>
-              <div data-no-i18n="" className="text-[15px] font-medium text-ink">{title}</div>
-              <div role="group" aria-label={t("Range")} className="ml-auto flex overflow-hidden rounded-full ring-1 ring-ink/10">
-                {([[1, "Day"], [3, "3 days"], [7, "Week"]] as const).map(([n, text]) => <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} className={seg(range === n)}>{t(text)}</button>)}
-              </div>
-            </div>
-          )}
-          {layout === "calendar" ? <CalendarGrid routines={routines} runs={runs} anchor={anchor} range={range} onEdit={setEditing} /> : <div className="min-h-0 flex-1 overflow-y-auto"><RoutineRows routines={routines} onEdit={setEditing} /></div>}
-          <RunLog routines={routines} runs={runs} />
-        </div>
-      )}
-      {editing === "new" && !form && <RoutineAsk onForm={() => setForm(true)} onClose={() => setEditing(null)} />}
-      {editing && (editing !== "new" || form) && <RoutineEditor key={editing === "new" ? "new" : editing.id} routine={editing === "new" ? null : editing} onClose={() => { setEditing(null); setForm(false); }} />}
+      {tab === "webhooks" ? <div className="min-h-0 flex-1 overflow-y-auto"><WebhooksTab /></div>
+        : layout === "calendar" ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <CalendarView routines={routines} runs={runs} anchor={anchor} setAnchor={setAnchor} range={range} setRange={setRange} onEdit={(r) => { setEditing(r); setStep("form"); }}
+              onDropBot={(botId, at) => { setPrefill({ botId, at }); setEditing("new"); setStep("form"); }} />
+            <RunLog routines={routines} runs={runs} compact />
+          </div>
+        ) : none ? <EmptyState onNew={create} /> : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto"><RoutineRows routines={routines} onEdit={(r) => { setEditing(r); setStep("form"); }} /></div>
+            <RunLog routines={routines} runs={runs} />
+          </div>
+        )}
+      {editing === "new" && step === "ask" && <RoutineAsk onForm={() => setStep("when")} onClose={close} />}
+      {editing === "new" && step === "when" && <WhenStep onBack={() => setStep("ask")} onClose={close} onSchedule={() => setStep("form")} onWebhook={() => { close(); setTab("webhooks"); }} />}
+      {editing && step === "form" && <AutomationForm key={editing === "new" ? "new" : editing.id} routine={editing === "new" ? null : editing} prefill={prefill} onClose={close} />}
     </main>
   );
 }

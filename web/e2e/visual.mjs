@@ -28,6 +28,7 @@ function diff(aBuf, bBuf, name) {
   return n / (w * h);
 }
 let failed = false;
+const ok2 = (c, m) => { console.log(`${c ? "PASS" : "FAIL"}  ${m}`); failed ||= !c; };
 const report = (name, ratio, max, what) => { const ok = ratio <= max; failed ||= !ok; console.log(`${ok ? "PASS" : "FAIL"}  ${name}: ${(ratio * 100).toFixed(2)}% of pixels differ (limit ${(max * 100).toFixed(1)}%) — ${what}`); };
 
 // 1. Automations, empty: ours against the reference app
@@ -131,6 +132,54 @@ const dismiss = (p) => p.getByRole("button", { name: "Done", exact: true }).firs
     writeFileSync(`${OUT}/ref-notif-${name.split(" ")[0]}.png`, r); writeFileSync(`${OUT}/ours-notif-${name.split(" ")[0]}.png`, o);
     report(`notifications panel ${name} vs reference`, diff(r, o, `notif-${name.split(" ")[0]}`), Number(process.env.LIMIT_NOTIF || limit), "panel chrome");
   }
+}
+
+// 1e. Automations calendar with data and the full "New automation" form, ours against the reference. The reference keeps its own
+// routines, so what is compared is what both draw from the same inputs: the month, the week header, the hour axis, the form's top.
+{
+  const echo = { instanceId: "echo", model: "echo-1" };
+  const bot = await jj("/api/bots", "POST", { name: "Vis Cal", modelSelection: echo });
+  const routine = await jj("/api/routines", "POST", { name: "Vis routine", prompt: "ping", targetKind: "bot", targetId: bot.id, kind: "interval", everyMin: 60 });
+  const ref = await page(REF);
+  await dismiss(ref);
+  await ref.getByRole("button", { name: "You", exact: true }).click();
+  await ref.getByText("Automations", { exact: true }).first().click();
+  await ref.waitForTimeout(500);
+  await ref.getByRole("button", { name: "Calendar", exact: true }).click();
+  await ref.waitForTimeout(1000);
+  const ours = await page(OURS);
+  await ours.getByTitle("Profile and settings").click();
+  await ours.locator('[data-testid="open-automations"]').click();
+  await ours.getByRole("button", { name: "Calendar", exact: true }).click();
+  await ours.waitForSelector('[data-testid="calendar-grid"]');
+  await ours.waitForTimeout(800);
+  ok2((await ours.locator('[data-testid="routine-block"]').count()) > 0, "calendar shows our routine's blocks");
+  const crops = [
+    ["month grid", { x: 0, y: 112, width: 320, height: 250 }, 0.06],
+    ["week header", { x: 320, y: 110, width: 1040, height: 70 }, 0.08],
+    ["navigation row", { x: 0, y: 60, width: 1000, height: 50 }, 0.08],
+  ];
+  for (const [name, clip, limit] of crops) {
+    const r = await ref.screenshot({ clip }), o = await ours.screenshot({ clip });
+    const slug = name.replace(/ /g, "-");
+    writeFileSync(`${OUT}/ref-cal-${slug}.png`, r); writeFileSync(`${OUT}/ours-cal-${slug}.png`, o);
+    report(`calendar ${name} vs reference`, diff(r, o, `cal-${slug}`), Number(process.env.LIMIT_CAL || limit), "same month, same week");
+  }
+  // the form: open it on both sides and compare the top of the dialog (title, When, date and time, repeat chips)
+  await ref.getByRole("button", { name: /New/ }).last().click(); await ref.waitForTimeout(500);
+  await ref.getByText("Set it up yourself").click(); await ref.waitForTimeout(500);
+  await ref.getByRole("button", { name: "Continue" }).click(); await ref.waitForTimeout(800);
+  await ours.getByRole("button", { name: "New routine" }).first().click();
+  await ours.getByRole("button", { name: "Set it up yourself" }).click();
+  await ours.getByRole("button", { name: "Continue" }).click();
+  await ours.waitForSelector('[data-testid="routine-editor"]'); await ours.waitForTimeout(600);
+  const rbx = await ref.getByRole("dialog").first().boundingBox();
+  const obx = await ours.locator('[data-testid="routine-editor"] > div').boundingBox();
+  const clipOf = (bx) => ({ x: bx.x, y: bx.y, width: 760, height: 300 });
+  const rf = await ref.screenshot({ clip: clipOf(rbx) }), of = await ours.screenshot({ clip: clipOf(obx) });
+  writeFileSync(`${OUT}/ref-form.png`, rf); writeFileSync(`${OUT}/ours-form.png`, of);
+  report("new-automation form vs reference", diff(rf, of, "form"), Number(process.env.LIMIT_FORM || 0.1), `top of the dialog; dialogs ${Math.round(rbx.width)}px vs ${Math.round(obx.width)}px wide`);
+  await jj(`/api/routines/${routine.id}`, "DELETE"); await jj(`/api/bots/${bot.id}`, "DELETE");
 }
 
 // 2. Our own screens against stored baselines (regression, tighter limit); UPDATE=1 rewrites them
