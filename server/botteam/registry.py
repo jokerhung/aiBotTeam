@@ -72,6 +72,7 @@ class Registry:
         self.instances: dict[str, Instance] = {}
         self._listeners: list[Listener] = []
         self.broker = None  # set by the app: drivers hand its port and token to the MCP bridge
+        self.agents = None  # set by the app: the team tools the demo engine can call directly
 
     def on_event(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -133,7 +134,7 @@ class Registry:
     async def _detect(self, inst: Instance, cfg: dict) -> None:
         kind = inst.driver_kind
         if kind == "echo":
-            inst.driver, inst.state, inst.version = EchoDriver(broker=self.broker), "available", "0.1.0"
+            inst.driver, inst.state, inst.version = EchoDriver(broker=self.broker, agents=self.agents), "available", "0.1.0"
             inst.models = [{"id": "echo-1", "label": "Echo 1", "default": True}]
         elif kind in ("claude", "codex"):
             binary = cfg.get("path") or shutil.which(kind)

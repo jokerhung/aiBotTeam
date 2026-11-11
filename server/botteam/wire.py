@@ -112,6 +112,8 @@ class WireMessage(BaseModel):
     tool: Optional[ToolInfo] = None
     error: Optional[ErrorInfo] = None
     request: Optional[RequestInfo] = None
+    sender: Optional[str] = None  # who this line came from when it is a teammate's or a routine's, not the person's
+    author: Optional[str] = None  # the bot that wrote a bot message (rooms show it)
     attachments: list[Attachment] = Field(default_factory=list)
     siblings: list[str] = Field(default_factory=list)  # ids of alternative versions of this message
 

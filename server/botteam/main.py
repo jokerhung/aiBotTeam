@@ -19,7 +19,10 @@ from .broker import Broker
 from .bus import Bus
 from .config import ConfigStore
 from .registry import KEY_CATALOG, KEY_IDS, Registry
+from .agents import AgentTools
+from .host import RuntimeHost
 from .routines import Scheduler, next_run_after, valid_schedule
+from .runtime import Runtime
 from .store import Store, data_dir, now_ms
 from .turns import Turns
 from .wire import (
@@ -57,6 +60,12 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     turns = Turns(store, bus, registry, home / "threads", broker=broker, attachments_dir=home / "attachments")
     turns_ref.append(turns)
     scheduler = Scheduler(store, turns)
+    host = RuntimeHost(store, turns, registry, bus)
+    runtime = Runtime(str(home / "runtime.db"), host)
+    host.runtime, turns.runtime, turns.host = runtime, runtime, host
+    agents = AgentTools(store, turns, runtime, host)
+    broker.agent_call = agents.call
+    registry.agents = agents
     attachments_dir = home / "attachments"
     broker.read_dirs.append(str(attachments_dir))
 
@@ -65,11 +74,16 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await store.open()
         await store.expire_open_requests()
         await broker.start()
+        await host.refresh()
         await registry.load()
+        await runtime.open()
+        await runtime.recover()  # a cut turn runs again at most once, and never after it acted outward
+        runtime.start()
         turns.start()
         scheduler.start()
         yield
         await scheduler.stop()
+        await runtime.close()
         await turns.stop()
         await broker.stop()
         await registry.stop_all()
@@ -229,6 +243,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     @app.delete("/api/bots/{bot_id}")
     async def delete_bot(bot_id: str):
         bot = await need(bot_id)
+        host.forget(bot_id)
         for t in await store.list_threads(bot_id):
             await turns.interrupt(bot, t["id"])
             await broker.cancel_thread(t["id"])
@@ -496,6 +511,25 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             raise HTTPException(409, "the bot is still answering")
         return await store.get_routine(bot_id, routine_id)
 
+    # ---- work handed between bots (the job runtime) --------------------------------------------------------------
+    @app.get("/api/assignments")
+    async def assignments(root: str | None = None):
+        rows = await runtime.all(root)
+        return {"assignments": [runtime.public(a) | {"requester": a["requester"], "origin": a["origin"], "brief": a["brief"]} for a in rows if not a["host_turn"] or a["children_since_turn"] or any(k["parent_id"] == a["id"] for k in rows)]}
+
+    @app.get("/api/assignments/{aid}")
+    async def assignment(aid: str):
+        a = await runtime.get(aid)
+        if not a:
+            raise HTTPException(404, "assignment not found")
+        return {"assignment": runtime.public(a), "events": await runtime.events(aid), "children": [runtime.public(k) for k in await runtime.children(aid)]}
+
+    @app.post("/api/assignments/{aid}/cancel")
+    async def cancel_assignment(aid: str):
+        if not await runtime.get(aid):
+            raise HTTPException(404, "assignment not found")
+        return {"stopped": await runtime.cancel(aid)}
+
     # ---- search -------------------------------------------------------------------------------
     @app.get("/api/search")
     async def search(q: str = "", limit: int = 30):
@@ -593,6 +627,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     app.state.turns, app.state.registry, app.state.store, app.state.broker = turns, registry, store, broker
     app.state.scheduler = scheduler
+    app.state.runtime, app.state.host, app.state.agents = runtime, host, agents
     _ = now_ms
     return app
 

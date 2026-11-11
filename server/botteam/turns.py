@@ -14,10 +14,12 @@ from .bus import Bus
 from .drivers.base import SendTurnInput
 from .events import RuntimeEvent
 from .registry import Registry
+from .runtime import RunResult
 from .store import Store, data_dir, new_id, now_ms
 from .wire import Attachment, ErrorInfo, RequestInfo, ToolInfo, WireBot, WireMessage, WireTask
 
 RETRY_DELAYS = (1.0, 3.0)
+READ_ONLY_TOOLS = {"Read", "Glob", "Grep", "LS", "WebSearch", "WebFetch", "ToolSearch", "TodoWrite", "Task"}
 LIVE_ONLY = {"content.delta", "item.output", "item.updated"}  # never written to the thread log
 
 
@@ -35,6 +37,12 @@ class ThreadRun:
     retry_pending: bool = False
     failed: bool = False
     interrupted: bool = False
+    level: Optional[str] = None  # the approval level this turn runs with (a delegated turn's is on its record)
+    assignment_id: Optional[str] = None
+    origin: str = "person"
+    final_text: str = ""
+    acted: bool = False
+    group_id: Optional[str] = None
 
 
 def persona(bot: WireBot) -> str:
@@ -54,6 +62,9 @@ class Turns:
         self.store, self.bus, self.registry = store, bus, registry
         self.broker = broker
         self.req_msgs: dict[str, str] = {}  # request id -> the transcript message that shows it
+        self.runtime = None  # set by the app: the job runtime that tracks work handed between bots
+        self.host = None  # the runtime's host: keeps the names it needs in step with the bots
+        self.delegated: dict[str, asyncio.Future] = {}  # work thread -> the runtime's wait for that turn's result
         self.attachments_dir = attachments_dir or data_dir() / "attachments"
         if broker:
             broker.on_open, broker.on_resolved = self._request_opened, self._request_resolved
@@ -88,7 +99,7 @@ class Turns:
         if not bot:
             return None
         run = self.runs.get(thread_id)
-        return Policy(mode=normalize_mode(bot.approvalMode), cwd=(run.inp.cwd if run else None) or bot.cwd or os.getcwd(),
+        return Policy(mode=normalize_mode(run.level if run and run.level else bot.approvalMode), cwd=(run.inp.cwd if run else None) or bot.cwd or os.getcwd(),
                       instance=bot.modelSelection.instanceId)
 
     async def _request_opened(self, thread_id: str, req: dict) -> None:
@@ -137,6 +148,8 @@ class Turns:
         return out.model_dump()
 
     async def publish_bot(self, bot: WireBot) -> None:
+        if self.host:
+            self.host.note(bot)
         self.bus.publish({"kind": "bot", "bot": await self.bot_dict(bot)})
 
     def _frame(self, kind: str, bot_id: str, thread_id: str, m: WireMessage | dict) -> None:
@@ -198,13 +211,14 @@ class Turns:
         bot.lastText, bot.lastAt = msg.text, msg.at
 
     async def _start_turn(self, bot: WireBot, thread_id: str, text: str, run: Optional[ThreadRun] = None,
-                          files: Optional[list[Attachment]] = None) -> None:
+                          files: Optional[list[Attachment]] = None, level: Optional[str] = None, origin: str = "person",
+                          assignment_id: Optional[str] = None) -> bool:
         inst = self.registry.get(bot.modelSelection.instanceId)
         if not inst or not inst.driver or inst.state != "available" or not inst.enabled:
             reason = inst.reason if inst and inst.reason else "that engine is not available"
             await self._add_error(bot, thread_id, f"{inst.display_name if inst else bot.modelSelection.instanceId} is unavailable: {reason}", setup=True)
             await self.publish_bot(bot)
-            return
+            return False
         t = await self.store.get_thread(thread_id) or {}
         transcript: list[tuple[str, str]] = []
         if inst.driver.provider == "openai-compat":
@@ -213,11 +227,11 @@ class Turns:
         inp = SendTurnInput(
             thread_id=thread_id, bot_id=bot.id, text=text, model=bot.modelSelection.model,
             effort=bot.modelSelection.effort, system=await self._system(bot), resume_cursor=t.get("cursor"),
-            cwd=bot.cwd, transcript=transcript, approval_mode=normalize_mode(bot.approvalMode),
+            cwd=bot.cwd, transcript=transcript, approval_mode=normalize_mode(level or bot.approvalMode),
             attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or []],
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
         )
-        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp)
+        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id)
         await self.publish_bot(bot)
         try:
             self.runs[thread_id].turn_id = await inst.driver.send_turn(inp)
@@ -225,6 +239,8 @@ class Turns:
             await self._add_error(bot, thread_id, f"Could not start the turn: {e}", terminal=True)
             self.runs.pop(thread_id, None)
             await self.publish_bot(bot)
+            return False
+        return True
 
     async def interrupt(self, bot: WireBot, thread_id: str) -> None:
         run = self.runs.get(thread_id)
@@ -238,7 +254,30 @@ class Turns:
             self.bus.publish({"kind": "message.deleted", "botId": bot.id, "threadId": thread_id, "messageId": qid})
         if self.broker:
             await self.broker.cancel_thread(thread_id)
+        if self.runtime:
+            await self.runtime.cancel_for_thread(thread_id)  # Stop cascades down the tree of work handed on
         await inst.driver.interrupt_turn(thread_id)
+
+    # ---- work handed between bots ------------------------------------------------------------------------------------
+    async def _after_turn(self, thread_id: str, run: ThreadRun, d: dict) -> None:
+        """A turn ended: the runtime's wait for it resolves, or (a turn of the host's own) its root ends."""
+        if not self.runtime:
+            return
+        ok = not run.failed and not run.interrupted and d.get("ok", True) is not False
+        res = RunResult("completed" if ok else "failed", run.final_text, "" if ok else ("stopped" if run.interrupted else "the turn failed"), run.acted)
+        fut = self.delegated.pop(thread_id, None)
+        if fut is not None:
+            if not fut.done():
+                fut.set_result(res)
+        elif run.assignment_id is None:
+            await self.runtime.turn_ended_for_thread(thread_id, ok, run.final_text, run.acted, res.detail)
+
+    async def start_delegated(self, bot: WireBot, thread_id: str, text: str, sender: str, level: str, assignment_id: str, origin: str) -> bool:
+        """Start a turn the runtime dispatched: the harness-written envelope is the user line, labelled with who it is from."""
+        msg = WireMessage(id=new_id("msg"), role="user", text=text, at=now_ms(), sender=sender)
+        await self.store.add_message(bot.id, thread_id, msg)
+        self._frame("message", bot.id, thread_id, msg)
+        return await self._start_turn(bot, thread_id, text, level=level, origin=origin, assignment_id=assignment_id)
 
     async def drop_queued(self, bot_id: str, thread_id: str, message_id: str) -> bool:
         q = self.queues.get(thread_id, [])
@@ -325,6 +364,8 @@ class Turns:
         self._frame("message.patch", bot.id, thread_id, {"id": run.live.id, "text": run.live.text, "streaming": True})
 
     async def _final_text(self, bot: WireBot, thread_id: str, run: ThreadRun, text: str) -> None:
+        if text.strip():
+            run.final_text = text
         if run.live is None and text.strip():
             run.live = WireMessage(id=new_id("msg"), role="bot", text="", at=now_ms(), streaming=True)
             await self.store.add_message(bot.id, thread_id, run.live)
@@ -333,6 +374,8 @@ class Turns:
 
     async def _tool_started(self, bot: WireBot, thread_id: str, run: ThreadRun, d: dict) -> None:
         run.had_output = True
+        if (d.get("title") or "") not in READ_ONLY_TOOLS and not str(d.get("title") or "").startswith("mcp__bt__"):
+            run.acted = True  # something went outward: a restart must not run this turn again
         await self._finalize_live(bot, thread_id, run)
         m = WireMessage(id=new_id("msg"), role="bot", kind="activity", at=now_ms(), tool=ToolInfo(
             name=d.get("title") or "tool", itemId=d.get("itemId"), summary=d.get("summary") or "", input=d.get("input") or ""))
@@ -398,6 +441,7 @@ class Turns:
                 u["cost"] = round(u.get("cost", 0) + d["cost"], 6)
             await self.store.patch_thread(thread_id, usage=u)
         self.runs.pop(thread_id, None)
+        await self._after_turn(thread_id, run, d)
         bot = await self.store.get_bot(bot.id) or bot
         bot.unread = True
         await self.store.save_bot(bot)

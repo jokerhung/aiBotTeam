@@ -12,6 +12,7 @@ DEFAULT_APPROVAL_MODE: ApprovalMode = "full"
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell", "BashOutput"}
 OWN_TOOLS = {"mcp__bt__ask_user"}  # our own question tool never needs a permission card
+OWN_PREFIX = "mcp__bt__"  # every tool of our own bridge (team tools included) is answered by the harness, not by a card
 
 _SAFE = {
     "ls", "dir", "pwd", "cat", "head", "tail", "wc", "echo", "printf", "type", "whoami", "date", "which", "where",

@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
-from .approval import EDIT_TOOLS, OWN_TOOLS, command_of, is_readonly_command, needs_explicit_approval
+from .approval import EDIT_TOOLS, OWN_PREFIX, OWN_TOOLS, command_of, is_readonly_command, needs_explicit_approval
 from .config import ConfigStore
 from .store import new_id, now_ms
 
@@ -47,6 +47,7 @@ class Broker:
         self._futures: dict[str, asyncio.Future] = {}
         self._thread_of: dict[str, str] = {}
         self._ctx: dict[str, tuple[Optional[tuple[str, str]], str]] = {}
+        self.agent_call: Optional[Callable[[str, str, dict], Awaitable[dict]]] = None  # the team tools (agents.py)
         self.read_dirs: list[str] = []  # folders whose files a bot may read without asking (the attachment store)
 
     # ---- lifecycle ---------------------------------------------------------
@@ -125,7 +126,7 @@ class Broker:
         def allow(source: str) -> dict:
             return {"behavior": "allow", "source": source}
 
-        if tool in OWN_TOOLS or pol.mode == "full":
+        if tool in OWN_TOOLS or tool.startswith(OWN_PREFIX) or pol.mode == "full":
             return allow("auto")
         if tool == "Read" and isinstance(inp, dict) and isinstance(inp.get("file_path"), str) and self._in_read_dirs(inp["file_path"]):
             return allow("auto")
@@ -198,12 +199,28 @@ class Broker:
                 except (ConnectionError, OSError):
                     pass
 
+            async def agent(msg: dict) -> None:
+                rid = str(msg.get("id") or new_id("req"))
+                try:
+                    out = await self.agent_call(thread_id, str(msg.get("tool", "")), msg.get("args") or {}) if self.agent_call else {"ok": False, "reason": "unavailable"}
+                except Exception as e:  # a tool failure is an answer, never a crash of the bridge
+                    out = {"ok": False, "reason": "internal", "detail": f"{type(e).__name__}: {e}"}
+                try:
+                    writer.write((json.dumps({"t": "answer", "id": rid, "agent": out}) + "\n").encode())
+                    await writer.drain()
+                except (ConnectionError, OSError):
+                    pass
+
             while line := await reader.readline():
                 try:
                     msg = json.loads(line)
                 except ValueError:
                     continue
-                if msg.get("t") == "ask":
+                if msg.get("t") == "agent":
+                    t = asyncio.create_task(agent(msg))
+                    tasks.add(t)
+                    t.add_done_callback(tasks.discard)
+                elif msg.get("t") == "ask":
                     t = asyncio.create_task(one(msg))
                     tasks.add(t)
                     t.add_done_callback(tasks.discard)

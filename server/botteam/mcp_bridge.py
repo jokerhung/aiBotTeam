@@ -16,6 +16,7 @@ PORT = int(os.environ.get("BT_BROKER_PORT", "0") or 0)
 TOKEN = os.environ.get("BT_BROKER_TOKEN", "")
 THREAD = os.environ.get("BT_THREAD_ID", "")
 ASK_USER_QUESTION = "AskUserQuestion"
+AGENTS = os.environ.get("BT_AGENTS") == "1"
 
 UNREACHABLE = {
     "question": "The question service did not answer. Do not retry this tool. Ask in your reply instead: end it with the exact question and wait.",
@@ -131,8 +132,46 @@ def _answers_for(questions: list, ans: dict) -> dict:
     return {}
 
 
+def agent_call(tool: str, args: dict) -> dict:
+    """One team tool, answered by the host over the same socket."""
+    rid = uuid.uuid4().hex
+    conn = connection()
+    if conn is None:
+        return {"ok": False, "reason": "unavailable", "detail": "the team service did not answer"}
+    ev, box = threading.Event(), {}
+    _waiting[rid] = (ev, box)
+    try:
+        conn.sendall((json.dumps({"t": "agent", "id": rid, "tool": tool, "args": args}) + "\n").encode())
+    except OSError:
+        _waiting.pop(rid, None)
+        return {"ok": False, "reason": "unavailable", "detail": "the team service did not answer"}
+    ev.wait()
+    if box.get("unreachable"):
+        return {"ok": False, "reason": "unavailable", "detail": "the team service did not answer"}
+    return box.get("agent") or {"ok": False, "reason": "internal", "detail": "empty answer"}
+
+
+TEAM_TOOLS = [
+    {"name": "list_bots", "description": "List the bots on this team: id, name, role, whether they are busy.", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "coordinate_bots", "description": "Hand work to teammates (or ask one a question). They work in their own threads and report back; you are woken once with every result. Set consult for a question that acts on nothing, reply 'none' for a one-way notice, answers to answer a teammate's open question.",
+     "inputSchema": {"type": "object", "properties": {"bot_ids": {"type": "array", "items": {"type": "string"}}, "message": {"type": "string"}, "reply": {"type": "string", "enum": ["resume", "none"]}, "consult": {"type": "boolean"}, "thread": {"type": "string"}, "done_when": {"type": "string"}, "rework": {"type": "boolean"}, "answers": {"type": "string"}}, "required": ["bot_ids", "message"]}},
+    {"name": "assignment_status", "description": "Status of one assignment, or everything this conversation still waits on. Read-only.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}}},
+    {"name": "start_thread", "description": "Open a new thread on yourself for a job; report_back resumes you with its result.", "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}, "report_back": {"type": "boolean"}}, "required": ["message"]}},
+    {"name": "list_threads", "description": "List the threads of a bot (yourself by default).", "inputSchema": {"type": "object", "properties": {"bot": {"type": "string"}}}},
+    {"name": "post_to_room", "description": "Post a message to a room you are a member of.", "inputSchema": {"type": "object", "properties": {"room": {"type": "string"}, "message": {"type": "string"}}, "required": ["room", "message"]}},
+    {"name": "list_rooms", "description": "List the rooms and their members.", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "trigger_info", "description": "Describe the routines you can create (schedules, time zone) and the ones that exist for you.", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "trigger", "description": "Create, update, pause, resume or run a routine now. action: create | update | pause | resume | run.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string"}, "id": {"type": "string"}, "name": {"type": "string"}, "prompt": {"type": "string"}, "kind": {"type": "string", "enum": ["once", "weekly", "interval"]}, "at": {"type": "string"}, "days": {"type": "array", "items": {"type": "integer"}}, "every_min": {"type": "integer"}, "timezone": {"type": "string"}}, "required": ["action"]}},
+    {"name": "delete_trigger", "description": "Delete a routine.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}},
+]
+TEAM_NAMES = {t["name"] for t in TEAM_TOOLS}
+
+
 def tool_call(name: str, args: dict) -> tuple[str, bool]:
     """(text, is_error) for one tools/call."""
+    if name in TEAM_NAMES:
+        out = agent_call(name, args)
+        return json.dumps(out, ensure_ascii=False), False
     if name == "ask_user":
         ans = ask_broker("question", "ask_user", {"question": args.get("question"), "choices": args.get("choices"),
                                                     "multiSelect": bool(args.get("multiSelect"))})
@@ -162,7 +201,7 @@ def handle(msg: dict) -> None:
             "protocolVersion": (msg.get("params") or {}).get("protocolVersion", "2024-11-05"),
             "capabilities": {"tools": {}}, "serverInfo": {"name": "botteam-permissions", "version": "1"}}})
     elif method == "tools/list":
-        send({"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}})
+        send({"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS + (TEAM_TOOLS if AGENTS else [])}})
     elif method == "tools/call":
         params = msg.get("params") or {}
         text, is_error = tool_call(str(params.get("name")), params.get("arguments") or {})

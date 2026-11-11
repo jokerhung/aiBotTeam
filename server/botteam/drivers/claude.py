@@ -49,6 +49,7 @@ def with_attachments(inp: SendTurnInput) -> str:
 
 class ClaudeDriver(Emitter):
     provider = "claude"
+    engine_caps = {"edits": True, "nativeReviewer": True, "agentsMcp": True, "resume": True}
     capabilities = Capabilities(queueing=True, images=True, effortLevels=["low", "medium", "high"], strictResume=True)
 
     def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None, broker=None) -> None:
@@ -118,7 +119,7 @@ class ClaudeDriver(Emitter):
             server_dir = str(__import__("pathlib").Path(__file__).resolve().parents[2])
             cfg = {"mcpServers": {"bt": {
                 "command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
-                "env": {"PYTHONPATH": server_dir, "BT_BROKER_PORT": str(self.broker.port),
+                "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_BROKER_PORT": str(self.broker.port),
                         "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id},
             }}}
             args += ["--mcp-config", json.dumps(cfg), "--permission-prompt-tool", "mcp__bt__approve"]

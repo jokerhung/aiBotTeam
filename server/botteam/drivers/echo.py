@@ -18,11 +18,13 @@ MD_REPLY = (
 
 class EchoDriver(Emitter):
     provider = "echo"
+    engine_caps = {"edits": True, "nativeReviewer": True, "agentsMcp": True, "resume": False}
     capabilities = Capabilities(queueing=False)
 
-    def __init__(self, delay: float = 0.03, broker=None) -> None:
+    def __init__(self, delay: float = 0.03, broker=None, agents=None) -> None:
         super().__init__()
         self.broker = broker
+        self.agents = agents  # the team tools (agents.py): lets the demo engine hand work to teammates
         self._tasks: dict[str, asyncio.Task] = {}
         self.delay = delay
 
@@ -44,6 +46,15 @@ class EchoDriver(Emitter):
             if text.startswith("/error"):
                 self.emit("runtime.error", t, turn_id, message="Simulated failure", terminal=True)
                 self.emit("turn.completed", t, turn_id, ok=False)
+                return
+            if text.startswith("/coordinate") and self.agents is not None:
+                # "/coordinate B, C | message": hand work to teammates the way a real engine's coordinate_bots call does
+                head, _, msg = text[len("/coordinate"):].partition("|")
+                out = await self.agents.call(t, "coordinate_bots", {"bot_ids": [x.strip() for x in head.split(",") if x.strip()], "message": msg.strip() or "Please help"})
+                reply = "Handed out: " + ", ".join(f"{r['bot']} {'ok' if r.get('ok') else 'refused (' + str(r.get('reason')) + ')'}" for r in out.get("results", []))
+                await self._stream(t, turn_id, reply)
+                self.emit("item.completed", t, turn_id, itemType="assistant_text", text=reply)
+                self.emit("turn.completed", t, turn_id, ok=True)
                 return
             if text.startswith(("/approve", "/ask")) and self.broker is not None:
                 if text.startswith("/approve"):

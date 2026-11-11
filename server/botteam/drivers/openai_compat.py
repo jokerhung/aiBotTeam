@@ -11,6 +11,7 @@ from .base import Capabilities, Emitter, SendTurnInput, new_turn_id
 
 class OpenAICompatDriver(Emitter):
     provider = "openai-compat"
+    engine_caps = {"edits": False, "nativeReviewer": False, "agentsMcp": False, "resume": False}
     capabilities = Capabilities(sessionModelSwitch="in-session")
 
     def __init__(self, base_url: str, api_key: str | None = None, transport: httpx.AsyncBaseTransport | None = None) -> None:

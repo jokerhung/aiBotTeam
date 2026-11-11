@@ -43,6 +43,7 @@ class Session:
 
 class CodexAppDriver(Emitter):
     provider = "codex"
+    engine_caps = {"edits": False, "nativeReviewer": True, "agentsMcp": False, "resume": True}
     capabilities = Capabilities(images=True, effortLevels=["low", "medium", "high"], strictResume=True)
 
     def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None, broker=None) -> None:
