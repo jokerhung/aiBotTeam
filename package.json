@@ -17,6 +17,7 @@
     "test:reference-shots": "node scripts/reference-shots.mjs",
     "test:noflash": "node scripts/noflash.mjs",
     "test:instant": "node scripts/instant.mjs",
+    "test:ui": "node scripts/reference.mjs && node scripts/reference-shots.mjs && node scripts/reference-cards.mjs && node scripts/noflash.mjs && node scripts/instant.mjs && node scripts/visual.mjs",
     "test:cards": "node scripts/reference-cards.mjs",
     "start:web": "node scripts/run.mjs web-start",
     "typecheck": "pnpm --filter web exec tsc --noEmit"

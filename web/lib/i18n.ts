@@ -5,6 +5,11 @@ import { dictionaries, translate } from "./translate";
 
 export { dictionaries, translate };
 
+let currentLang = "en";
+/** For code outside React (window.prompt, confirm): the text in the language now chosen. */
+export const tr = (text: string) => translate(currentLang, text);
+export const locale = () => currentLang;
+
 /** Interface languages. English is the source text; a missing entry simply shows the English. */
 export const LANGUAGES = [
   { id: "en", label: "English" },
@@ -77,6 +82,7 @@ export function useLocalizer() {
   const { state } = useStore();
   const lang = state.config.settings.language;
   useEffect(() => {
+    currentLang = lang;
     let own = false;
     let queued = false;
     const pending = new Set<Node>();

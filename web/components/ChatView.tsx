@@ -1,6 +1,7 @@
 "use client";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { locale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, Message } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -22,9 +23,10 @@ const FLOAT_PILL =
 
 function dayLabel(at: number): string {
   const d = new Date(at);
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const lang = locale();
+  const time = d.toLocaleTimeString([lang], { hour: "numeric", minute: "2-digit" });
   if (d.toDateString() === new Date().toDateString()) return `Today ${time}`;
-  return `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} ${time}`;
+  return `${d.toLocaleDateString([lang], { weekday: "short", day: "numeric", month: "short" })} ${time}`;
 }
 
 type Tail = "first" | "last" | "single" | "mid";
@@ -126,6 +128,7 @@ function Row({ bot, list, i, busy }: { bot: Bot; list: Message[]; i: number; bus
           </div>
         ) : (
           <div
+            data-no-i18n=""
             title={new Date(m.at).toLocaleString()}
             className={cn(
               "w-fit min-w-9 max-w-[min(var(--chat-bubble-max),var(--chat-bubble-pct),calc(100%-82px))] rounded-[18px] px-3 py-[7px] text-[15px] leading-[22px]",
@@ -275,12 +278,12 @@ export function ChatView({ bot }: { bot: Bot }) {
           }}
           className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 pt-14 [overflow-anchor:none]", openApproval ? "pb-72" : "pb-32")}
         >
-          <div role="log" data-no-i18n="" aria-label={`Conversation with ${bot.name}`} className="chat-column relative flex w-full flex-col gap-3">
+          <div role="log" aria-label={`Conversation with ${bot.name}`} className="chat-column relative flex w-full flex-col gap-3">
             {hasMore && <div className="py-2 text-center text-[13px] text-ink-tertiary">Loading earlier messages…</div>}
             {messages.length > 0 && (
               <div className="pb-1 pt-5 text-center text-[13px] leading-[18px] text-ink-secondary">{dayLabel(messages[0].at)}</div>
             )}
-            {messages.length === 0 && <div className="py-20 text-center text-[14px] text-ink-secondary">Say hello to {bot.name}.</div>}
+            {messages.length === 0 && <div className="py-20 text-center text-[14px] text-ink-secondary">{`Say hello to ${bot.name}.`}</div>}
             {messages.map((m, i) => {
               const group = tailOf(messages, i);
               return (

@@ -2,6 +2,7 @@
 import { ChevronRight, MessageSquare, Pencil, Pin, PinOff, Plus, Trash2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { tr } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -46,7 +47,7 @@ export function TaskMenu({ bot, face }: { bot: Bot; face: ReactNode }) {
                   {t.pinned ? <PinOff size={13} /> : <Pin size={13} />}
                 </RowButton>
                 <RowButton title="Rename" onClick={() => {
-                  const title = window.prompt("Rename task", t.title);
+                  const title = window.prompt(tr("Rename task"), t.title);
                   if (title?.trim()) void api(`/api/bots/${bot.id}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ title: title.trim() }) });
                 }}>
                   <Pencil size={13} />

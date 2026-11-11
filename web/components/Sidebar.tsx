@@ -3,7 +3,7 @@
 import { Archive, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, Pencil, Plus, Search, Settings, Hash, Trash2, User } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useT } from "@/lib/i18n";
+import { tr, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, SearchHit, Section } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -157,7 +157,7 @@ function SectionHeader({ section, count, drag }: { section: Section; count: numb
       <button type="button" title="Rename section" aria-label={`Rename ${section.name}`} onClick={() => { setName(section.name); setRenaming(true); }}
         className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-ink group-hover/sec:opacity-100 focus-visible:opacity-100"><Pencil size={12} /></button>
       <button type="button" title="Delete section" aria-label={`Delete ${section.name}`}
-        onClick={() => { if (confirm(`Delete the section “${section.name}”? Its bots stay in the list.`)) void api(`/api/sidebar-sections/${section.id}`, { method: "DELETE" }); }}
+        onClick={() => { if (confirm(tr(`Delete the section “${section.name}”? Its bots stay in the list.`))) void api(`/api/sidebar-sections/${section.id}`, { method: "DELETE" }); }}
         className="rounded p-1 text-ink-tertiary opacity-0 hover:bg-ink/10 hover:text-danger group-hover/sec:opacity-100 focus-visible:opacity-100"><Trash2 size={12} /></button>
     </div>
   );
@@ -195,7 +195,7 @@ function BulkSelectBar() {
     dispatch({ type: "selecting", on: false });
   };
   const remove = () => {
-    if (!picked.length || !confirm(`Delete ${picked.length} bot${picked.length > 1 ? "s" : ""}? You can undo for a few seconds.`)) return;
+    if (!picked.length || !confirm(tr(`Delete ${picked.length} bot${picked.length > 1 ? "s" : ""}? You can undo for a few seconds.`))) return;
     const hideLocal = (id: string, hidden: boolean) => {
       const b = state.bots.find((x) => x.id === id);
       if (b) dispatch({ type: "frame", frame: { kind: "bot", bot: { ...b, hidden } } });
@@ -288,7 +288,7 @@ export function Sidebar() {
 
   const row = (b: Bot) => <BotRow key={b.id} bot={b} icons={icons} selected={b.id === state.selectedId} onSelect={() => select(b)} drag={drag} />;
   const addSection = async () => {
-    const name = window.prompt("Name of the new section");
+    const name = window.prompt(tr("Name of the new section"));
     if (name?.trim()) await api("/api/sidebar-sections", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
   };
 
@@ -370,7 +370,7 @@ export function Sidebar() {
                   </div>
                 );
               })}
-              {needle && !visible.length && hits.length === 0 && <div className="px-2 py-6 text-center text-[13px] text-ink-tertiary">No bots match “{q.trim()}”.</div>}
+              {needle && !visible.length && hits.length === 0 && <div className="px-2 py-6 text-center text-[13px] text-ink-tertiary">{`No bots match “${q.trim()}”.`}</div>}
               {!icons && !needle && (
                 <button type="button" onClick={addSection} className="mt-2 self-start rounded-md px-2 py-1 text-[12px] text-ink-tertiary hover:bg-raised/60 hover:text-ink">{t("+ New section")}</button>
               )}

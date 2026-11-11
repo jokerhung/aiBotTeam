@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useT } from "@/lib/i18n";
+import { tr, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, Section } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -46,7 +46,7 @@ export function useBotMenu(bot: Bot) {
     if (b) dispatch({ type: "frame", frame: { kind: "bot", bot: { ...b, hidden } } });
   };
   const newSection = async () => {
-    const name = window.prompt("Name of the new section");
+    const name = window.prompt(tr("Name of the new section"));
     if (!name?.trim()) return;
     const sec = await api<Section>("/api/sidebar-sections", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
     await api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: sec.id }) });

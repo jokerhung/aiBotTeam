@@ -36,4 +36,14 @@ describe("Vietnamese interface", () => {
   it("does not leave an entry empty", () => {
     for (const [k, v] of Object.entries(dictionaries.vi)) expect(v.trim(), k).not.toBe("");
   });
+
+  it("translates text with a name or number inside it, leaving the name alone", () => {
+    const cases: [string, string][] = [
+      ["Say hello to Maple.", "Chào Maple một tiếng."], ["Ledger asks", "Ledger hỏi"], ["Deleted Alpha", "Đã xóa Alpha"],
+      ["Today 9:41 AM", "Hôm nay 9:41 AM"], ["3 selected", "3 đã chọn"], ["Actions for Dev", "Thao tác cho Dev"],
+      ["Delete 2 bots? You can undo for a few seconds.", "Xóa 2 bot? Bạn có thể hoàn tác trong vài giây."],
+      ["Upload failed (413)", "Tải lên thất bại (413)"], ["Echo cannot read images", "Echo không đọc được ảnh"], ["1m 5s", "1 phút 5 giây"], ["Notes Maple keeps", "Ghi chú Maple lưu giữ"], ["No bots match “x”.", "Không có bot nào khớp “x”."],
+    ];
+    for (const [en, out] of cases) expect(translate("vi", en), en).toBe(out);
+  });
 });

@@ -154,6 +154,28 @@ await page.keyboard.press("Escape");
 await page.locator("[role=button][title=Instant]").click({ button: "right" });
 await check("bot menu");
 await page.keyboard.press("Escape");
+// ---- text assembled at run time, native prompts and toasts ----
+const dialogs = [];
+page.on("dialog", (d) => { dialogs.push(d.message()); void d.dismiss(); });
+await page.getByRole("button", { name: "+ Nhóm mới" }).click();
+await page.waitForTimeout(300);
+const promptOk = dialogs.some((m) => m === "Tên của nhóm mới");
+console.log(`  ${promptOk ? "ok  " : "FAIL"} Vietnamese: native prompt text (${JSON.stringify(dialogs[0])})`);
+if (!promptOk) failures.push("prompt not translated");
+const fresh = await j("POST", "/api/bots", { name: "Fresh", modelSelection: { instanceId: "echo", model: "echo-1" } });
+await page.locator("[role=button][title=Fresh]").click();
+await expect("empty chat 'Chào Fresh một tiếng.'", page.getByText("Chào Fresh một tiếng."));
+await page.getByLabel(/Fresh/).last().fill("xin chào");
+await page.getByLabel(/Fresh/).last().press("Enter");
+await expect("day label 'Hôm nay …'", page.getByText(/^Hôm nay /));
+await page.getByLabel("Chi tiết bot").click();
+await expect("routines block 'Quy trình định kỳ'", page.getByText("Quy trình định kỳ", { exact: true }));
+await expect("routines row 'Thêm quy trình định kỳ'", page.getByText("Thêm quy trình định kỳ", { exact: true }));
+await page.getByLabel("Đóng bảng").click();
+await page.locator("[role=button][title=Fresh]").click({ button: "right" });
+await page.getByRole("menuitem", { name: "Xóa" }).click();
+await expect("delete toast 'Đã xóa Fresh'", page.getByText("Đã xóa Fresh"));
+await j("DELETE", `/api/bots/${fresh.id}`).catch(() => {});
 console.log(`  checked ${screens.length} screens`);
 
 await j("DELETE", `/api/bots/${bot.id}`);

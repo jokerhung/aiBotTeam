@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Bug, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
+import { Bug, CalendarPlus, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
 import { useT } from "@/lib/i18n";
@@ -150,6 +150,11 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
       <Row icon={RotateCcw} label={t("Start fresh")} onClick={fresh} />
       <Row icon={ListChecks} label={t("Activity")} chevron onClick={() => go("activity")} />
       <Row icon={Bug} label={t("Inspector")} chevron onClick={() => go("inspector")} />
+      <div className="mt-4 flex items-center justify-between text-[14px] font-medium text-ink-secondary">
+        <span>{t("Routines")}</span>
+        <span className="text-[13px] font-normal text-ink-tertiary" title={t("Routines arrive with automations in phase 4")}>{t("Automations")}</span>
+      </div>
+      <Row icon={CalendarPlus} label={t("Add a routine")} />
     </div>
   );
 }
@@ -297,7 +302,7 @@ function LibraryTab({ bot }: { bot: Bot }) {
   return (
     <div className="px-5 py-4" data-testid="library-tab">
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">Notes {bot.name} keeps</span>
+        <span className="text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{`Notes ${bot.name} keeps`}</span>
         <button type="button" onClick={add} className="flex items-center gap-1 rounded-full bg-raised px-2.5 py-1 text-[12.5px] font-medium text-ink hover:bg-raised-hover"><Plus size={13} /> Add</button>
       </div>
       {notes.length === 0 && <div className="py-8 text-center text-[13px] text-ink-tertiary">No notes yet. Anything you save here is part of what the bot knows.</div>}

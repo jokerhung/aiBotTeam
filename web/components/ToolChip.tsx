@@ -10,7 +10,7 @@ export function ToolChip({ tool }: { tool: ToolInfo }) {
   const running = tool.ok === null || tool.ok === undefined;
   const hasDetail = Boolean(tool.input || tool.output);
   return (
-    <div className="flex max-w-[min(var(--chat-bubble-max),100%)] flex-col items-start">
+    <div data-no-i18n="" className="flex max-w-[min(var(--chat-bubble-max),100%)] flex-col items-start">
       <button
         type="button"
         aria-expanded={open}

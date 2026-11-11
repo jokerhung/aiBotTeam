@@ -3,7 +3,7 @@
 import { ArrowUp, AudioLines, FileUp, FolderOpen, ImagePlus, Pencil, Plus, Shield, Square, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useT } from "@/lib/i18n";
+import { tr, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { APPROVAL_MODES, type ApprovalMode, type Attachment, type Bot } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -124,7 +124,7 @@ export function Composer({ bot, dock }: { bot: Bot; dock?: React.ReactNode }) {
     setModeOpen(false);
   };
   const chooseFolder = () => {
-    const dir = window.prompt("Working folder for this bot (absolute path)", bot.cwd ?? "");
+    const dir = window.prompt(tr("Working folder for this bot (absolute path)"), bot.cwd ?? "");
     if (dir !== null) void api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ cwd: dir.trim() || null }) });
   };
 
@@ -162,7 +162,7 @@ export function Composer({ bot, dock }: { bot: Bot; dock?: React.ReactNode }) {
                 <div className="mb-1.5 flex flex-col gap-1 px-1">
                   {queued.map((q) => (
                     <div key={q.id} className="flex items-center gap-2 rounded-lg bg-ink/[0.05] px-2.5 py-1 text-[13px] text-ink-secondary opacity-80">
-                      <span className="min-w-0 flex-1 truncate">Queued: {q.text}</span>
+                      <span className="min-w-0 flex-1 truncate" data-no-i18n={undefined}>{`Queued: ${q.text}`}</span>
                       <button type="button" title="Edit" aria-label="Edit queued message" onClick={() => editQueued(q.id, q.text)} className="rounded-full p-1 hover:bg-ink/10"><Pencil size={12} /></button>
                       <button type="button" title="Remove" aria-label="Remove queued message" onClick={() => api(`/api/bots/${bot.id}/queue/${q.id}?thread=${thread}`, { method: "DELETE" }).catch(() => {})} className="rounded-full p-1 hover:bg-ink/10"><X size={12} /></button>
                     </div>
