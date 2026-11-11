@@ -4,7 +4,7 @@ import { useState } from "react";
 import { desktopAlertsOn, enableDesktopAlerts, DESKTOP_ALERTS_KEY } from "./useTeamBehaviors";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { InboxItem, Message, Notification, RequestInfo } from "@/lib/wire";
+import type { Bot, InboxItem, Message, Notification, RequestInfo } from "@/lib/wire";
 import { ApprovalDock, QuestionCard } from "./RequestCard";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
@@ -118,6 +118,42 @@ function InboxCard({ item }: { item: InboxItem }) {
   );
 }
 
+/** Under the cards, as in the reference: the conversations that are working now, or have something unread. */
+function ActiveThreads() {
+  const { state, dispatch } = useStore();
+  const t = useT();
+  type Row = { key: string; bot: Bot; title: string; state: "Working" | "Unread"; threadId: string };
+  const rows = state.bots.filter((b) => !b.hidden).flatMap((b): Row[] => {
+    const busy = b.tasks.filter((x) => x.busy && !x.closed).map((x) => ({ key: `${b.id}-${x.threadId}`, bot: b, title: x.title || t("Main conversation"), state: "Working" as const, threadId: x.threadId }));
+    if (busy.length) return busy;
+    return b.unread ? [{ key: `${b.id}-unread`, bot: b, title: b.lastText || t("New messages"), state: "Unread" as const, threadId: b.threadId }] : [];
+  });
+  if (!rows.length) return null;
+  const open = async (r: Row) => {
+    if (r.threadId !== r.bot.threadId) await api(`/api/bots/${r.bot.id}`, { method: "PATCH", body: JSON.stringify({ threadId: r.threadId }) }).catch(() => {});
+    dispatch({ type: "select", id: r.bot.id });
+  };
+  return (
+    <div className="shrink-0 border-t-[0.5px] border-edge" data-testid="active-threads">
+      <div className="flex items-center px-4 pb-1 pt-3.5 text-[12px] text-ink-secondary">
+        <span className="flex-1">{t("Active Threads")}</span>
+        <Pin size={13} className="text-ink-tertiary" />
+      </div>
+      <div className="max-h-[260px] overflow-y-auto pb-2">
+        {rows.map((r) => (
+          <button key={r.key} type="button" onClick={() => open(r)} className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-raised/60">
+            {r.state === "Working" ? <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-success/30 border-t-success" /> : <Bell size={15} className="shrink-0 text-ink-secondary" />}
+            <span className="min-w-0 flex-1 leading-tight">
+              <span data-no-i18n="" className="block truncate text-[13.5px] text-ink">{r.title}</span>
+              <span className="block truncate text-[11.5px] text-ink-tertiary"><span data-no-i18n="">{r.bot.name}</span> · {t(r.state)}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Every card waiting on the person, across all bots and rooms, answered in place: a right-hand panel like the reference's, which can be widened. */
 export function InboxPanel() {
   const { state, dispatch } = useStore();
@@ -135,7 +171,7 @@ export function InboxPanel() {
         <button type="button" aria-label="Close" onClick={() => dispatch({ type: "inboxPanel", open: false })}
           className="flex size-8 items-center justify-center rounded-full bg-composer text-ink-secondary ring-1 ring-ink/10 hover:text-ink"><X size={14} /></button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+      <div className="max-h-[62%] min-h-0 shrink-0 overflow-y-auto px-4 pb-6">
         {state.inbox.length === 0 && (
           <div className="flex flex-col items-center gap-1.5 px-6 pt-8 text-center">
             <InboxIcon size={20} className="mb-1 text-ink-tertiary" />
@@ -145,6 +181,7 @@ export function InboxPanel() {
         )}
         {state.inbox.map((it) => <InboxCard key={it.requestId} item={it} />)}
       </div>
+      <ActiveThreads />
     </aside>
   );
 }

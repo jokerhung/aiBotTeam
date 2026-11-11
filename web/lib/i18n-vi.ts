@@ -128,6 +128,7 @@ export const vi: Record<string, string> = {
   "On": "Bật", "last run": "chạy gần nhất", "last call": "gọi gần nhất", "no calls yet": "chưa có lượt gọi",
   "Webhook": "Webhook",
   "hasn't run yet": "chưa chạy lần nào",
+  "Active Threads": "Cuộc trò chuyện đang hoạt động", "New messages": "Tin nhắn mới", "Main conversation": "Cuộc trò chuyện chính",
 };
 
 /** Text with a name or number inside it. `$1` is the captured part, which is left as written. */

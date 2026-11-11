@@ -226,6 +226,22 @@ const dismiss = (p) => p.getByRole("button", { name: "Done", exact: true }).firs
   writeFileSync(`${OUT}/ref-inbox-panel.png`, ri); writeFileSync(`${OUT}/ours-inbox-panel.png`, oi);
   report("inbox panel (empty) vs reference", diff(ri, oi, "inbox-panel"), Number(process.env.LIMIT_INBOX || 0.1), `panel ${Math.round(rbx.width)}px vs ${Math.round(obx.width)}px wide`);
 
+  // "Active Threads" under the cards: the reference's panel with it (a capture kept in the repo, 1360x860, from :5199) against ours with one bot working
+  {
+    const echo = { instanceId: "echo", model: "echo-1" };
+    const worker = await jj("/api/bots", "POST", { name: "Vis Worker", modelSelection: echo });
+    await jj(`/api/bots/${worker.id}/messages`, "POST", { text: "/slow keep going", threadId: worker.threadId });
+    await ours.waitForSelector('[data-testid="active-threads"]'); await ours.waitForTimeout(600);
+    const stored = PNG.sync.read(readFileSync("web/e2e/reference/inbox-active-threads-1360x860.png"));
+    const region = { x: 1040, y: 245, width: 320, height: 40 };  // the divider, the "Active Threads" title and the pin
+    const refPart = new PNG({ width: region.width, height: region.height });
+    PNG.bitblt(stored, refPart, region.x, region.y, region.width, region.height, 0, 0);
+    const mineAT = await ours.screenshot({ clip: region });
+    writeFileSync(`${OUT}/ref-active-threads.png`, PNG.sync.write(refPart)); writeFileSync(`${OUT}/ours-active-threads.png`, mineAT);
+    report("inbox 'Active Threads' header vs reference", diff(PNG.sync.write(refPart), mineAT, "active-threads"), Number(process.env.LIMIT_AT || 0.1), "divider, title and pin");
+    await jj(`/api/bots/${worker.id}/interrupt`, "POST"); await jj(`/api/bots/${worker.id}`, "DELETE");
+  }
+
   await ref.getByRole("button", { name: "You", exact: true }).click();
   await ref.getByText("Automations", { exact: true }).first().click(); await ref.waitForTimeout(500);
   await ref.getByRole("button", { name: /New/ }).last().click(); await ref.waitForTimeout(500);
