@@ -131,7 +131,11 @@ async def test_read_state_and_tasks_in_a_room(ctx):
     c, _ = ctx
     g, (a, *_rest) = await room(c)
     await c.post(f"/api/groups/{g['id']}/messages", json={"text": "hi"})
-    cur = await wait_idle(c, g)
+    for _ in range(100):  # the room is idle for a moment before the first answer starts
+        cur = await wait_idle(c, g)
+        if cur["unread"] and "heard" in cur["lastText"]:
+            break
+        await asyncio.sleep(0.1)
     assert cur["unread"] is True and "heard" in cur["lastText"]
     await c.post(f"/api/groups/{g['id']}/read")
     assert next(x for x in (await c.get("/api/groups")).json()["groups"] if x["id"] == g["id"])["unread"] is False
