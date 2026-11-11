@@ -1,10 +1,19 @@
 {
   "name": "botteam",
   "private": true,
+  "packageManager": "pnpm@11.18.0",
   "scripts": {
-    "dev:server": "server/.venv/Scripts/python -m uvicorn botteam.main:app --app-dir server --host 127.0.0.1 --port 8899 --reload",
-    "dev:web": "npm --prefix web run dev",
-    "test:server": "cd server && .venv/Scripts/python -m pytest -q",
-    "typecheck": "npm --prefix web exec tsc -- --noEmit"
+    "setup": "pnpm install && pnpm setup:server",
+    "setup:server": "uv sync --project server",
+    "dev": "concurrently -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev:server": "uv run --project server python -m uvicorn botteam.main:app --app-dir server --host 127.0.0.1 --port 8899 --reload --loop botteam.loop:loop_factory",
+    "dev:web": "pnpm --filter web dev",
+    "test": "pnpm test:server && pnpm test:web",
+    "test:server": "uv run --project server pytest -q server",
+    "test:web": "pnpm --filter web test",
+    "typecheck": "pnpm --filter web exec tsc --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
   }
 }

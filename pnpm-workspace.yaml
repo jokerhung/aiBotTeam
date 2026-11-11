@@ -1,0 +1,5 @@
+packages:
+  - web
+minimumReleaseAgeExclude:
+  - lucide-react@1.71.0
+verifyDepsBeforeRun: false
