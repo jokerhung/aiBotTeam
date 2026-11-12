@@ -232,19 +232,3 @@ async def test_connected_apps_have_a_read_or_write_scope_and_a_send_out_policy(c
     assert broker._auto(asking, f"mcp__{key}__send", {}) is None  # a custom server's tool is asked about
     assert broker._auto(Policy(mode="ask", cwd="/", instance="claude", allow_prefixes=prefixes), f"mcp__{key}__send", {})["behavior"] == "allow"
     assert broker._auto(Policy(mode="ask", cwd="/", instance="claude", allow_prefixes=prefixes), "mcp__other__send", {}) is None
-
-
-async def test_the_catalog_connects_an_app_by_token_and_disconnects_it(ctx):
-    c, _ = ctx
-    apps = (await c.get("/api/apps")).json()["apps"]
-    assert {"github", "linear", "notion"} <= {a["id"] for a in apps} and not any(a["connected"] for a in apps)
-    assert (await c.post("/api/apps/github/connect", json={})).status_code == 400  # a token is needed
-    assert (await c.post("/api/apps/nope/connect", json={"token": "t"})).status_code == 404
-    # no network in tests: the token is kept and the test result says it could not be reached
-    made = (await c.post("/api/apps/context7/connect", json={})).json()
-    assert made["status"]["state"] in ("ok", "failed")
-    gh = (await c.post("/api/apps/github/connect", json={"token": "ghp_secret"})).json()
-    assert "ghp_secret" not in json.dumps(gh) and "ghp_secret" not in (await c.get("/api/mcp/servers")).text
-    now = {a["id"]: a for a in (await c.get("/api/apps")).json()["apps"]}
-    assert now["github"]["connected"] and now["github"]["serverId"] == gh["serverId"]
-    assert (await c.delete("/api/apps/github")).status_code == 200 and (await c.delete("/api/apps/github")).status_code == 404

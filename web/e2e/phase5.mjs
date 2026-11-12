@@ -30,19 +30,25 @@ const ctx = await b.newContext({ viewport: { width: 1360, height: 860 } });
 const p = await ctx.newPage();
 const errors = [];
 p.on("pageerror", (e) => errors.push(String(e)));
-p.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+p.on("console", (m) => m.type() === "error" && !/status of 400/.test(m.text()) && errors.push(m.text())); // the refused key is a deliberate 400
 await p.goto(WEB);
 await p.waitForSelector('[data-testid="connect-apps"]', { timeout: 20000 });
 
 // --- 1 + 2: Connected apps, and a custom MCP server added from the UI
 await p.locator('[data-testid="connect-apps"]').click();
 await p.waitForSelector('[data-testid="connected-apps"]');
+await p.waitForSelector('[data-testid="apps-warning"]');
+await p.waitForSelector('[data-testid="app-row"]');
 ok(await p.locator('[data-testid="apps-warning"]').isVisible(), "Connected apps warns when nothing is connected");
 ok((await p.locator('[data-testid="app-row"]').count()) >= 5, "the catalog lists the apps");
 await p.getByLabel("Search apps").fill("git");
 ok((await p.locator('[data-testid="app-row"]').count()) === 1, "the search narrows the list");
-await p.getByRole("button", { name: "Connect", exact: true }).click();
-ok(await p.locator('input[type=password]').isVisible(), "Connect asks for a token (kept as a secret field)");
+ok(await p.locator('input[type=password]').isVisible(), "without a key the dialog asks for the Composio project key (a secret field)");
+ok(await p.getByRole("button", { name: "Connect", exact: true }).isDisabled(), "Connect waits until a Composio key is saved");
+await p.getByLabel("Composio project key").fill("ck_personal");
+await p.locator('[data-testid="save-composio-key"]').click();
+await p.waitForSelector('[data-testid="connected-apps"] [role=alert]', { timeout: 10000 });
+ok(/ak_/.test(await p.locator('[data-testid="connected-apps"] [role=alert]').first().innerText()), "a key that does not start with ak_ is refused");
 await p.screenshot({ path: `${SHOTS}/p5-connected-apps.png` });
 await p.locator('[data-testid="open-mcp"]').click();
 await p.waitForSelector('[data-testid="mcp-panel"]');

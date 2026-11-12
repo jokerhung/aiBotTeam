@@ -24,7 +24,7 @@ from .groups import Groups
 from .host import RuntimeHost
 from .notifications import Notifications
 from .routines import RoutineService
-from .apps_catalog import CATALOG, by_id as catalog_app
+from .composio import Composio, ComposioError, slug_of
 from . import teams as teamlib
 from . import observe
 from .auth import COOKIE, OPEN_PATHS, Pairing
@@ -74,6 +74,14 @@ class ComputerSettings(BaseModel):
     allowLocal: bool
 
 
+class ComposioKey(BaseModel):
+    key: str
+
+
+class ConnectBody(BaseModel):
+    alias: str | None = None
+
+
 def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False, remote: bool | None = None, web_dir: Path | None = None) -> FastAPI:
     home = home or data_dir()
     store = Store(db_path or home / "messages.db")
@@ -112,6 +120,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     browser = BrowserService(home, bus, allow_local=bool((config.data.get("browser") or {}).get("allowLocal")) or os.environ.get("BOTTEAM_BROWSER_LOCAL") == "1",
                              channel=os.environ.get("BOTTEAM_BROWSER_CHANNEL") or None)
     turns.browser = browser
+    composio = Composio(config, mcp, bus)
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
@@ -1032,39 +1041,57 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         return await mcp.test(spec, sid)
 
     # ---- connected apps: the catalog, and a server made from an entry of it ------------------------------------------------------
+    # ---- connected apps: all of them through Composio -----------------------------------------------------------------------------
+    def composio_failed(e: ComposioError):
+        return HTTPException(e.status if 400 <= e.status < 600 else 400, str(e))
+
+    @app.get("/api/composio")
+    async def composio_state():
+        return composio.public()
+
+    @app.put("/api/composio/key")
+    async def composio_set_key(body: ComposioKey):
+        try:
+            return await composio.set_key(body.key)
+        except ComposioError as e:
+            raise composio_failed(e)
+
+    @app.delete("/api/composio/key")
+    async def composio_clear_key():
+        await composio.clear_key()
+        return composio.public()
+
     @app.get("/api/apps")
     async def apps():
-        have = {s.get("appId"): i for i, s in await mcp.list() if s.get("appId")}
-        return {"apps": [{**a, "connected": a["id"] in have, "serverId": have.get(a["id"]), "status": mcp.status.get(have.get(a["id"], ""))} for a in CATALOG]}
+        cards, source = await composio.catalog()
+        out = {**composio.public(), "source": source, "apps": cards, "connections": {}, "error": None}
+        if composio.configured():
+            try:
+                out["connections"] = await composio.status()
+            except ComposioError as e:
+                out["error"] = str(e)
+        return out
 
-    @app.post("/api/apps/{app_id}/connect", status_code=201)
-    async def connect_app(app_id: str, body: dict):
-        entry = catalog_app(app_id)
-        if not entry:
-            raise HTTPException(404, "app not found")
-        token = str(body.get("token") or "").strip()
-        if entry["tokenLabel"] and not token:
-            raise HTTPException(400, f"paste {entry['tokenLabel'].lower()} to connect {entry['name']}")
-        spec = {"name": entry["name"], "transport": entry["transport"], "url": entry["url"], "appId": app_id,
-                "headers": {"Authorization": f"Bearer {token}"} if token else {}}
-        existing = next((i for i, s in await mcp.list() if s.get("appId") == app_id), None)
+    @app.get("/api/apps/{slug}")
+    async def app_status(slug: str):
         try:
-            if existing:
-                await mcp.update(existing, spec)
-                sid = existing
-            else:
-                sid, _ = await mcp.create(spec)
-        except SpecError as e:
-            raise HTTPException(400, str(e))
-        status = await mcp.test(await mcp.get(sid), sid)  # say at once whether the token works
-        return {"serverId": sid, "status": status}
+            return (await composio.status([slug]))[slug_of(slug)]
+        except ComposioError as e:
+            raise composio_failed(e)
 
-    @app.delete("/api/apps/{app_id}")
-    async def disconnect_app(app_id: str):
-        sid = next((i for i, s in await mcp.list() if s.get("appId") == app_id), None)
-        if not sid or not await mcp.delete(sid):
-            raise HTTPException(404, "app is not connected")
-        return {"ok": True}
+    @app.post("/api/apps/{slug}/connect")
+    async def connect_app(slug: str, body: ConnectBody):
+        try:
+            return await composio.authorize(slug, body.alias)
+        except ComposioError as e:
+            raise composio_failed(e)
+
+    @app.delete("/api/apps/{slug}/accounts/{account_id}")
+    async def disconnect_account(slug: str, account_id: str):
+        try:
+            return await composio.remove_account(slug, account_id)
+        except ComposioError as e:
+            raise composio_failed(e)
 
     # ---- webhooks (management; the receiver is a separate app on its own port) ---------------------------------------------------
     async def need_webhook(wid: str):
@@ -1401,6 +1428,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.pairing = pairing
     app.state.memory, app.state.skills = memory, skills
     app.state.browser = browser
+    app.state.composio = composio
     _ = now_ms
     return app
 

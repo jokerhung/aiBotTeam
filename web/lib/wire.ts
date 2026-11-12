@@ -283,17 +283,6 @@ export interface McpServer {
   status: McpStatus;
 }
 
-export interface AppEntry {
-  id: string;
-  name: string;
-  description: string;
-  url: string;
-  tokenLabel: string;
-  tokenUrl: string;
-  connected: boolean;
-  serverId: string | null;
-  status: McpStatus | null;
-}
 
 export interface ToolInfo {
   name: string;
