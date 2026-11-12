@@ -12,7 +12,8 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY server /app/server
 COPY --from=web /app/web/.next-export /app/server/botteam/webui
-RUN pip install --no-cache-dir /app/server
+COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
+RUN uv pip install --system --no-cache /app/server
 ENV BOTTEAM_DATA_DIR=/data \
     BOTTEAM_HOST=0.0.0.0 \
     SERVER_PORT=8899 \
