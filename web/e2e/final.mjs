@@ -17,12 +17,15 @@ const j = async (path, method = "GET", body) => {
 const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"}  ${msg}`); if (!cond) process.exitCode = 1; };
 const SKINS = ["atelier", "aurora", "daylight", "diwali", "dusk", "foundry", "graphite", "halloween", "lagoon", "linen", "meadow", "midnight", "pop"];
 const SIZES = { desktop: { width: 1360, height: 860 }, phone: { width: 390, height: 844 } };
-const cleanup = async () => { for (const x of (await j("/api/bots")).json.bots) if (x.name.endsWith("FIN")) await j(`/api/bots/${x.id}`, "DELETE"); };
+const cleanup = async () => { for (const x of (await j("/api/groups")).json.groups) if (x.name.endsWith("FIN")) await j(`/api/groups/${x.id}`, "DELETE"); for (const x of (await j("/api/bots")).json.bots) if (x.name.endsWith("FIN")) await j(`/api/bots/${x.id}`, "DELETE"); };
 await cleanup();
 const echo = { instanceId: "echo", model: "echo-1" };
 const bot = (await j("/api/bots", "POST", { name: "ShortFIN", modelSelection: echo, approvalMode: "full" })).json;
 const long = (await j("/api/bots", "POST", { name: "LongFIN", modelSelection: echo, approvalMode: "full" })).json;
 await j(`/api/bots/${bot.id}/messages`, "POST", { text: "/md", threadId: bot.threadId });
+const ask = (await j("/api/bots", "POST", { name: "AskFIN", modelSelection: echo, approvalMode: "ask" })).json;
+await j("/api/groups", "POST", { name: "CrewFIN", members: [bot.id, ask.id], leader: bot.id, responder: "leader" });
+await j(`/api/bots/${ask.id}/messages`, "POST", { text: "/approve mkdir demo", threadId: ask.threadId });
 await new Promise((r) => setTimeout(r, 2500));
 
 const b = await chromium.launch({ executablePath: process.env.EDGE || "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless: true });
@@ -82,12 +85,29 @@ const newPage = async (size, skin) => {
 // --- every main screen, 13 skins x 2 sizes
 const rows = [];
 const screens = [
-  ["chat", async (p) => { await p.locator("text=ShortFIN").first().click(); await p.waitForTimeout(500); }],
-  ["bot-panel", async (p) => { await p.locator("text=ShortFIN").first().click(); await p.getByRole("button", { name: "Bot details" }).click(); await p.waitForSelector('[data-testid="bot-panel"]'); }],
-  ["computer", async (p) => { await p.locator("text=ShortFIN").first().click(); await p.getByRole("button", { name: "Bot's screen" }).click(); await p.waitForSelector('[data-testid="computer-panel"]'); }],
+  ["chat", async (p) => { await p.getByRole("button", { name: /^ShortFIN/ }).first().click(); await p.waitForTimeout(500); }],
+  ["bot-panel", async (p) => { await p.getByRole("button", { name: /^ShortFIN/ }).first().click(); await p.getByRole("button", { name: "Bot details" }).click(); await p.waitForSelector('[data-testid="bot-panel"]'); }],
+  ["computer", async (p) => { await p.getByRole("button", { name: /^ShortFIN/ }).first().click(); await p.getByRole("button", { name: "Bot's screen" }).click(); await p.waitForSelector('[data-testid="computer-panel"]'); }],
   ["automations", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.locator('[data-testid="open-automations"]').click(); await p.waitForTimeout(600); }],
   ["connected-apps", async (p) => { await p.locator('[data-testid="connect-apps"]').click(); await p.waitForSelector('[data-testid="connected-apps"]'); }],
   ["usage", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.locator('[data-testid="open-usage"]').click(); await p.waitForTimeout(600); }],
+  ["settings", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.getByRole("button", { name: /^Settings/ }).first().click(); await p.getByRole("dialog").first().waitFor(); }],
+  ["settings-skins", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.getByRole("button", { name: /^Settings/ }).first().click(); await p.getByRole("dialog").first().waitFor(); await p.getByText("Appearance", { exact: true }).first().click().catch(() => {}); await p.waitForTimeout(300); }],
+  ["room", async (p) => { await p.locator('[data-testid="group-row"]', { hasText: "CrewFIN" }).click(); await p.waitForSelector('[data-testid="group-view"]'); }],
+  ["room-panel", async (p) => { await p.locator('[data-testid="group-row"]', { hasText: "CrewFIN" }).click(); await p.waitForSelector('[data-testid="group-view"]'); await p.getByRole("button", { name: /Room details|Room info|details/i }).first().click(); await p.waitForSelector('[data-testid="room-panel"]'); }],
+  ["team-map", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.locator('[data-testid="open-team-map"]').click(); await p.waitForTimeout(600); }],
+  ["inbox", async (p) => { await p.locator('[data-testid="inbox-button"]').click(); await p.waitForTimeout(500); }],
+  ["notifications", async (p) => { await p.getByRole("button", { name: "Notifications" }).click(); await p.waitForTimeout(500); }],
+  ["webhooks", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.locator('[data-testid="open-automations"]').click(); await p.getByRole("tab", { name: "Webhooks" }).click(); await p.waitForTimeout(400); }],
+  ["routine-new", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.locator('[data-testid="open-automations"]').click(); await p.getByRole("button", { name: /New routine/ }).first().click(); await p.waitForTimeout(500); }],
+  ["mcp-servers", async (p) => { await p.locator('[data-testid="connect-apps"]').click(); await p.waitForSelector('[data-testid="connected-apps"]'); await p.locator('[data-testid="open-mcp"]').click(); await p.waitForSelector('[data-testid="mcp-panel"]'); }],
+  ["import-team", async (p) => { await p.getByRole("button", { name: "New or share" }).click(); await p.locator('[data-testid="import-team-item"]').click(); await p.waitForSelector('[data-testid="import-team"]'); }],
+  ["whats-new", async (p) => { await p.getByRole("button", { name: "Profile and settings" }).click(); await p.locator('[data-testid="open-whats-new"]').click(); await p.waitForTimeout(500); }],
+  ["bot-settings", async (p) => { await p.getByRole("button", { name: /^ShortFIN/ }).first().click(); await p.getByRole("button", { name: "Bot details" }).click(); await p.getByRole("button", { name: "Bot settings" }).click(); await p.waitForTimeout(400); }],
+  ["activity", async (p) => { await p.getByRole("button", { name: /^ShortFIN/ }).first().click(); await p.getByRole("button", { name: "Bot details" }).click(); await p.getByText("Activity", { exact: true }).first().click(); await p.waitForTimeout(500); }],
+  ["inspector", async (p) => { await p.getByRole("button", { name: /^ShortFIN/ }).first().click(); await p.getByRole("button", { name: "Bot details" }).click(); await p.getByText("Inspector", { exact: true }).first().click(); await p.waitForTimeout(500); }],
+  ["palette", async (p) => { await p.keyboard.press("Control+k"); await p.waitForTimeout(400); }],
+  ["approval-card", async (p) => { await p.getByRole("button", { name: /^AskFIN/ }).first().click(); await p.getByRole("button", { name: "Allow once" }).waitFor({ timeout: 15000 }); }],
   ["new-bot", async (p) => { await p.getByRole("button", { name: "New or share" }).click(); await p.getByRole("button", { name: "New bot", exact: true }).click(); await p.getByRole("dialog", { name: "New bot" }).waitFor(); }],
 ];
 let shots = 0, bad = 0;

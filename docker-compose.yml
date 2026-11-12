@@ -4,8 +4,8 @@ services:
     build: .
     image: botteam:latest
     ports:
-      - "127.0.0.1:8899:8899"   # the app; change the left side to publish it elsewhere
-      - "127.0.0.1:8900:8900"   # webhook receiver
+      - "127.0.0.1:${BOTTEAM_PORT:-8899}:8899"   # the app; change the left side to publish it elsewhere
+      - "127.0.0.1:${BOTTEAM_HOOK_PORT:-8900}:8900"   # webhook receiver
     volumes:
       - botteam-data:/data       # everything BotTeam keeps; back it up with `docker compose exec botteam botteam backup /data/backup.zip`
     environment:

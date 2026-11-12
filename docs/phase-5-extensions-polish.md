@@ -18,7 +18,7 @@
 Theo `PluginsPanel.tsx` và `marketplace.png`:
 
 - [x] Modal "Connected apps": tiêu đề + nút làm mới + ✕, dải cảnh báo màu warning khi chưa có khoá, ô "Search apps", danh sách hàng (logo 44px, tên, mô tả một dòng, nút `Connect`).
-- [x] Tích hợp Composio qua khoá dự án của người dùng: danh mục, `authorize` (OAuth mở tab mới), trạng thái đã nối; cầu MCP stdio do harness sở hữu để yêu cầu kết nối thành thẻ tin cậy trong chat (`ConnectorCard`).
+- [ ] Tích hợp Composio qua khoá dự án của người dùng: danh mục, `authorize` (OAuth mở tab mới), trạng thái đã nối; cầu MCP stdio do harness sở hữu để yêu cầu kết nối thành thẻ tin cậy trong chat (`ConnectorCard`). — **Không làm:** theo phương án dự phòng ngay dưới, danh mục là MCP từ xa + token (không Composio, không OAuth tab mới, không `ConnectorCard`).
 - [x] Phạm vi theo bot: mỗi app `read` / `write`; hành động gửi ra ngoài theo chính sách `ask` / `allow`.
 - [x] Nếu không dùng Composio: giữ nguyên UI, nguồn danh mục là các MCP server từ xa có OAuth — quyết định ở đầu phase.
 
@@ -28,7 +28,7 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 
 - [x] Panel phải: header (bánh răng · "Computer" · ✕), nhãn "{Bot}'s screen", khung xem trước sống, nút `Open desktop` / `Sleep`, thẻ "Runs on" với nhóm chọn phân đoạn, thẻ "Routines" của bot.
 - [x] Backend: Playwright (Python) — mỗi bot một context bền; MCP server "browser" cung cấp điều hướng, bấm, gõ, chụp.
-- [x] Phát khung hình qua frame `screen` (png/jpeg, có giới hạn tần suất); ảnh chụp công việc gập vào transcript (tin `screen`).
+- [~] Phát khung hình qua frame `screen` (png/jpeg, có giới hạn tần suất); ảnh chụp công việc gập vào transcript (tin `screen`). — **Một phần:** frame `screen` có giới hạn tần suất đã làm; ảnh chụp công việc **chưa** được gập vào transcript (panel Computer hiển thị trực tiếp thay vào đó).
 - [x] Người dùng giành quyền điều khiển (`computer-control`: held, helpReason); bot xin trợ giúp khi gặp đăng nhập/CAPTCHA — người tự làm, bot không vượt.
 - [x] Mọi hành động trình duyệt có tác dụng phụ đi qua permission broker.
 
@@ -75,13 +75,13 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 - [x] **MCP server của app** (stdio) cho Claude Desktop/Cursor: xem bot và phòng, đọc/tìm transcript, tạo bot/phòng/task, gửi việc, chờ xong, đổi model, ngắt lượt. Không lộ: cấp duyệt, xoá, cài đặt, bí mật.
 - [x] **CLI không màn hình:** `botteam team apply team.yaml`, `botteam run "<bot>" "<việc>" --export ./out`, `--json`, mã thoát có nghĩa.
 - [x] **Chạy một lệnh:** `botteam` khởi động API và phục vụ bản build tĩnh của web (hoặc `next start` cạnh uvicorn); tuỳ chọn `--no-open`.
-- [x] **Docker / compose** (đã viết, chưa chạy được vì máy không có Docker daemon): một image, volume cho `~/.botteam`.
+- [x] **Docker / compose:** một image, volume cho `~/.botteam`. — đã build và chạy thật (xem ghi chú tiêu chí 7).
 - [x] **Truy cập từ xa (tuỳ chọn):** khi không nghe loopback thì bắt buộc đăng nhập bằng mã ghép nối + cookie phiên; mặc định vẫn chỉ `127.0.0.1`.
 - [x] Sao lưu/khôi phục thư mục dữ liệu.
 
 ## 10. Kiểm thử và nghiệm thu cuối
 
-- [x] So ảnh toàn bộ danh mục màn hình của 5 phase trên 13 skin × 2 kích thước; báo cáo màn lệch.
+- [~] So ảnh toàn bộ danh mục màn hình của 5 phase trên 13 skin × 2 kích thước; báo cáo màn lệch. — **Một phần:** quét 24 loại màn (chat, panel bot/Computer/Activity/Inspector, settings, phòng, Automations/webhook/routine, inbox, thông báo, MCP/apps, nhập team, what's new, palette, thẻ duyệt…) × 13 skin × 2 kích thước (mở được, không tràn, không lỗi), pixel-diff với app tham chiếu chỉ cho màn Phase 4; xem `docs/visual-report.md`.
 - [x] Hiệu năng: transcript 5.000 tin cuộn mượt; 10 bot stream đồng thời không rớt frame SSE; thời gian tới lần vẽ đầu < 1,5 giây ở localhost.
 - [x] Bền bỉ: tắt đột ngột server trong lúc ghi → SQLite không hỏng, không mất tin đã xác nhận.
 - [x] Rà bảo mật: tiêm chỉ thị qua kết quả tool/trang web không tự cấp quyền; bí mật không vào log, SSE hay file xuất; SSRF ở nhập đội và MCP từ xa; đường dẫn file không thoát kho.
@@ -96,7 +96,7 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 4. Inspector hiện đủ chuỗi sự kiện của một lượt; trang Usage khớp tổng token của các lượt.
 5. Xuất một section thành file, nhập vào thư mục dữ liệu trống → đội dựng lại đúng, không có bí mật hay lịch sử trong file.
 6. Chuyển giao diện sang tiếng Việt không còn chuỗi tiếng Anh sót ở các màn chính.
-7. `docker compose up` trên máy sạch → dùng được trong ≤ 2 phút. **Chưa kiểm chứng** (không có Docker daemon); chạy một lệnh `botteam serve` đã có smoke test.
+7. `docker compose up` trên máy sạch → dùng được trong ≤ 2 phút. **Đã đo:** build image lần đầu ~5 phút (tải image nền và gói), sau đó `docker compose up` sẵn sàng sau ~2 giây (`/health` ok, web 200, in mã ghép cặp). Nếu tính cả build thì vượt 2 phút; nếu dùng image dựng sẵn thì đạt.
 8. Toàn bộ so ảnh, E2E và rà bảo mật ở mục 10 đạt.
 
 ## Cập nhật sau đối chiếu (2026-11-10)
@@ -109,4 +109,4 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 
 ## Trạng thái hoàn thành (2026-11-12)
 
-Mọi mục 1–10 đã làm, có test: pytest, vitest, e2e `phase5.mjs`, `computer.mjs`, `journeys.mjs`, `final.mjs` (báo cáo `docs/visual-report.md`), tài liệu `docs/user-guide.md`. Ngoại lệ trung thực: tiêu chí 7 chưa chạy thật vì không có Docker; Connected apps dùng danh mục MCP từ xa + token (không Composio), đúng phương án dự phòng của mục 2.
+Đã làm, có test: pytest 192, vitest 33, e2e `phase5.mjs` / `computer.mjs` / `journeys.mjs` / `final.mjs`, tài liệu `docs/user-guide.md`. Chưa đạt trọn vẹn: Composio (không làm, dùng phương án dự phòng); ảnh chụp công việc gập vào transcript; so ảnh pixel toàn bộ 5 phase (chỉ Phase 4 có app tham chiếu); tiêu chí 7 đạt nếu dùng image dựng sẵn.
