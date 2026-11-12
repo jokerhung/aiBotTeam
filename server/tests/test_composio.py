@@ -23,6 +23,7 @@ async def test_without_a_key_apps_ask_for_one_and_a_wrong_key_is_refused_and_for
     assert (await c.get("/api/composio")).json()["configured"] is False
     listed = (await c.get("/api/apps")).json()
     assert listed["configured"] is False and listed["source"] == "curated" and any(a["slug"] == "gmail" for a in listed["apps"])
+    assert listed["apps"][0]["slug"] == "telegram" and listed["apps"][0]["label"] == "Telegram"
     assert (await c.put("/api/composio/key", json={"key": "ck_wrong"})).status_code == 400  # the personal key is a different key
     r = await c.put("/api/composio/key", json={"key": "ak_wrongkey123456"})
     assert r.status_code == 400 and "Invalid API key" in r.text
@@ -110,3 +111,15 @@ def test_plan_and_links_are_checked():
     for bad in ("https://evil.example/x", "http://backend.composio.dev/x", "https://composio.dev.evil.example/x", "javascript:alert(1)"):
         with pytest.raises(ComposioError):
             trusted_url(bad, "link")
+
+
+async def test_telegram_connects_like_any_other_app_with_one_account_per_bot_token(ctx, fake):
+    c, app = ctx
+    await c.put("/api/composio/key", json={"key": GOOD_KEY})
+    first = await c.post("/api/apps/telegram/connect", json={"alias": "shop"})
+    assert first.status_code == 200 and first.json()["url"].startswith("https://connect.composio.dev/")
+    fake.accounts[0]["status"] = "ACTIVE"
+    assert (await c.post("/api/apps/telegram/connect", json={})).status_code == 400  # a second bot needs its own label
+    assert (await c.post("/api/apps/telegram/connect", json={"alias": "support"})).status_code == 200
+    state = (await c.get("/api/apps/telegram")).json()
+    assert state["connected"] is True and {a["alias"] for a in state["accounts"]} == {"shop", "support"}

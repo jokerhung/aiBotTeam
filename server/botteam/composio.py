@@ -28,7 +28,7 @@ USABLE = re.compile(r"^(active|initiated|initializing|pending)$", re.I)
 NEEDS_AUTH_CONFIG = re.compile(r"does not manage auth|auth[_ ]?config", re.I)
 ALIAS_REQUIRED = "Add an account alias so the existing connection is not replaced"
 CURATED = [
-    ("slack", "Slack", "Post updates and read channels"), ("github", "GitHub", "Issues, pull requests, and code"),
+    ("telegram", "Telegram", "Send and read messages with a Telegram bot"), ("slack", "Slack", "Post updates and read channels"), ("github", "GitHub", "Issues, pull requests, and code"),
     ("gmail", "Gmail", "Read and send email"), ("googlecalendar", "Google Calendar", "Read and create events"),
     ("googlesheets", "Google Sheets", "Read and update spreadsheets"), ("googledocs", "Google Docs", "Read and write documents"),
     ("googledrive", "Google Drive", "Browse and manage files"), ("notion", "Notion", "Pages and databases"),
