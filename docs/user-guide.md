@@ -37,7 +37,8 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 ## 5. Tự host
 
 ```bash
-docker compose up -d                       # một image, volume cho dữ liệu
+docker compose up -d                       # một image, volume cho dữ liệu; lần đầu build ~5 phút
+BOTTEAM_IMAGE=ghcr.io/<owner>/<repo>:latest docker compose up -d   # kéo image dựng sẵn (workflow .github/workflows/image.yml): sẵn sàng trong vài giây
 botteam serve --host 0.0.0.0 --port 8899   # nghe ngoài máy này
 ```
 

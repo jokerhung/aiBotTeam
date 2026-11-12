@@ -2,7 +2,7 @@
 services:
   botteam:
     build: .
-    image: botteam:latest
+    image: ${BOTTEAM_IMAGE:-botteam:latest}   # set BOTTEAM_IMAGE=ghcr.io/<owner>/<repo>:latest to pull the published image instead of building
     ports:
       - "127.0.0.1:${BOTTEAM_PORT:-8899}:8899"   # the app; change the left side to publish it elsewhere
       - "127.0.0.1:${BOTTEAM_HOOK_PORT:-8900}:8900"   # webhook receiver
