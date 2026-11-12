@@ -72,7 +72,7 @@ await p.locator('[data-testid="mcp-row"]').first().getByRole("button", { name: "
 await p.waitForFunction(() => /\d+ tools/.test(document.querySelector('[data-testid="mcp-row"]')?.textContent ?? ""), null, { timeout: 15000 });
 ok(true, "the list shows the connection state and the tool count");
 await p.screenshot({ path: `${SHOTS}/p5-mcp-list.png` });
-await p.locator('[data-testid="mcp-panel"]').getByRole("button", { name: "Close" }).click();
+await p.locator('[data-testid="connected-apps"]').getByRole("button", { name: "Close" }).click();
 
 // --- the bot picks the server and how far it may go
 await p.locator(`[role=button][title="E2E5 Bot"]`).click();

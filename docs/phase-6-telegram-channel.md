@@ -5,18 +5,43 @@
 **Tham chiếu:**
 
 - Bot cũ: `maybanhang_03\src\handlers.py` (luồng Telegram), `runner.py` (gọi CLI), `storage.py` (lô và thư mục), `pdf_parser.py`, `report.py`, `workspace\AGENTS.md`, `workspace\skill_src\SKILL.md`.
-- BotTeam: `server/botteam/apps_catalog.py` và các route `/api/apps` trong `main.py` (Connected apps), `mcp_servers.py` (cách một bot được cấp quyền dùng một kết nối), `webhooks.py` (mẫu dịch vụ nhận sự kiện ngoài), `routines.py` (mẫu dịch vụ nền có `run_finished`), `turns.py` (`_start_turn`, `_after_turn`), `config.py` (bí mật chỉ ghi), `web/components/ConnectedApps.tsx`, phần Connected apps trong `web/components/BotPanel.tsx`.
+- BotTeam: `server/botteam/composio.py` và các route `/api/apps`, `/api/composio` trong `main.py` (Connected apps qua Composio, từ commit `8fa1b1f` và `c701aaf`), `mcp_servers.py` (cách một bot được cấp quyền dùng một kết nối), `webhooks.py` (mẫu dịch vụ nhận sự kiện ngoài), `routines.py` (mẫu dịch vụ nền có `run_finished`), `turns.py` (`_start_turn`, `_after_turn`), `config.py` (bí mật chỉ ghi), `web/components/ConnectedApps.tsx`, phần Connected apps trong `web/components/BotPanel.tsx`.
 
 **Khác bản gốc (có chủ ý):** OpenMausBot không có kênh Telegram; trong mã nguồn gốc chỉ có vài chỗ nhắc tên. Đây là tính năng thêm của BotTeam, nên không có màn hình gốc để chép. Giao diện dùng lại thẻ Connected apps và phần cấp quyền theo bot hiện có.
 
-## 0. Mô hình: nhiều tài khoản, cấp cho từng bot
+## 0. Hiện trạng trong BotTeam và phần còn thiếu
 
-Telegram là **một mục trong Connected apps**, có nhiều tài khoản (mỗi tài khoản là một token BotFather), theo đúng bản gốc (`apps/docs/content/docs/connected-apps/multiple-accounts.mdx` và màn hình Apps của bản tham chiếu):
+Đã có trong code (kiểm tra ngày 2026-11-12):
+
+- Connected apps đi qua **Composio** bằng khoá dự án của người dùng (`composio.py`). Telegram đứng đầu danh sách; mỗi token BotFather là một tài khoản có nhãn, tối đa 5 tài khoản, có **Add account** và **Disconnect** theo từng dòng (`ConnectedApps.tsx`, `test_composio.py`).
+- Token Telegram do Composio giữ. BotTeam chỉ lưu khoá dự án Composio, mã người dùng và mã Session; server **không có** token Telegram.
+- Bot dùng app qua một MCP server tên "Composio", bật trong phần "Apps and servers" của bot kèm mức Read/Write và hỏi trước khi gửi (`BotPanel.tsx`). Quyền áp cho cả server Composio: mọi app và mọi tài khoản. Chưa có quyền theo từng app hay từng tài khoản, chưa có dòng "Used by … Change".
+- Test Telegram chạy với Composio giả; chưa có bằng chứng đã thử với Composio và Telegram thật.
+
+Telegram qua Composio làm được gì (theo trang toolkit Telegram của Composio, 18 công cụ, 0 trigger):
+
+| Việc | Qua Composio |
+|---|---|
+| Bot gửi tin, ảnh, file PDF | Có (`TELEGRAM_SEND_MESSAGE`, `TELEGRAM_SEND_PHOTO`, `TELEGRAM_SEND_DOCUMENT`) |
+| Sửa tin, trả lời nút bấm | Có (`TELEGRAM_EDIT_MESSAGE`, `TELEGRAM_ANSWER_CALLBACK_QUERY`) |
+| Tự chạy khi có tin đến | **Không**: toolkit không có trigger nào, và BotTeam cũng chưa có code app event |
+| Đọc tin đến | Chỉ khi bot chủ động gọi `TELEGRAM_GET_UPDATES` trong một lượt |
+| Tải ảnh, PDF người dùng gửi | **Không**: không có công cụ lấy file |
+
+Kết luận: kết nối Composio hiện có đủ cho bot **gửi ra**, không đủ để **nhận tin và lấy file**. Bot kiểm kê cần đúng hai việc này, nên phase này thêm một lớp nhận tin riêng ("kênh") mà server tự giữ token.
+
+Ràng buộc từ Telegram: một token chỉ có một nơi gọi `getUpdates`. Khi một tài khoản đã bật kênh nhận tin, bot không được gọi `TELEGRAM_GET_UPDATES` (và `TELEGRAM_GET_CHAT_HISTORY`, vốn cũng đọc update) qua Composio trên cùng token, nếu không hai bên giành tin của nhau. Hướng dẫn và lời nhắc hệ thống của bot phải ghi rõ điều này.
+
+## 0.1 Mô hình kênh nhận tin: nhiều tài khoản, cấp cho từng bot
+
+Kênh nhận tin nằm trong cùng hộp **Connected apps**, ở tab thứ ba tên **Input** (xem mục 4), gồm **Telegram bot** và **Zalo bot**, mỗi kênh có nhiều tài khoản (mỗi tài khoản là một token), theo cùng cách hiển thị mà Connected apps đang dùng và theo bản gốc (`apps/docs/content/docs/connected-apps/multiple-accounts.mdx`):
 
 | Tầng | Ở đâu | Chứa gì |
 |---|---|---|
-| Tài khoản | Apps → Telegram → **Connect** / **Add account** | Nhãn do người dùng đặt (ví dụ `duchien`, `khach_b`), token, trạng thái nhận tin. Tối đa 5 tài khoản, như bản gốc. |
-| Cấp quyền | Apps → Telegram → **Used by … · Change**, và cài đặt của từng bot | Bot nào dùng tài khoản nào, phục vụ những chat nào, chat admin nào nhận kết quả, giới hạn của lô. |
+| Tài khoản | Connect apps → tab **Input** → Telegram bot / Zalo bot → **Connect** / **Add account** | Nhãn do người dùng đặt (ví dụ `duchien`, `khach_b`), token (server giữ, chỉ ghi), trạng thái nhận tin. Tối đa 5 tài khoản, như Connected apps. |
+| Cấp quyền | Dòng **Used by … · Change** của tài khoản, và cài đặt của từng bot | Bot nào dùng tài khoản nào, phục vụ những chat nào, chat admin nào nhận kết quả, giới hạn của lô. |
+
+Telegram vì thế có mặt ở hai nơi với hai vai trò: mục Telegram của Composio (bot gọi công cụ để gửi) và kênh Telegram (nhận tin, gom lô, trả kết quả). Cùng một token có thể khai ở cả hai. Kênh tự gửi kết quả bằng token của nó, nên bot kiểm kê không cần bật Composio.
 
 Quy tắc theo bản gốc:
 
@@ -34,11 +59,38 @@ Quy tắc theo bản gốc:
 Hai điểm khác bản gốc (có chủ ý):
 
 - **Cấp quyền chọn tài khoản.** Ở bản gốc, quyền của bot áp cho cả dịch vụ và bot tự chọn tài khoản khi gọi công cụ. Với Telegram thì tin đến trên một tài khoản cụ thể, nên quyền phải gắn với từng tài khoản.
-- **Loại app mới.** Connected apps hiện nay đều là MCP server từ xa (bot gọi ra ngoài). Telegram nhận tin vào và tự bắt đầu lượt, nên mục catalog có thêm `kind: "channel"` và không đi qua `mcp_servers`/`mcp_proxy`.
+- **Loại kết nối mới.** Connected apps hiện nay đều đi qua Composio và một MCP server (bot gọi ra ngoài). Kênh nhận tin vào và tự bắt đầu lượt, token do server giữ, nên nó không đi qua `composio.py`, `mcp_servers` hay `mcp_proxy`.
 
-**Zalo Bot** là mục thứ hai cùng loại `kind: "channel"` trong Connected apps, dùng chung toàn bộ mô hình trên: nhiều tài khoản có nhãn, cấp theo bot, định tuyến theo (tài khoản, chat). Phần chung nằm ở `server/botteam/channels/` (`base.py`: gom lô, hàng đợi, trả kết quả; `telegram.py` và `zalo.py`: chỉ lo nhận và gửi). Mỗi bộ nối khai báo khả năng của nó (`files_in`, `files_out`, `buttons`, `edit`, `groups`) để phần chung chọn cách hiển thị. Zalo Bot thiếu nhiều khả năng so với Telegram; xem mục 3.8. Ở các mục 1–3.7, chỗ nào ghi "Telegram" mà không nói riêng thì áp cho cả hai.
+**Zalo Bot** là kênh thứ hai (Composio không có Zalo Bot trong danh sách dự phòng của BotTeam; chưa kiểm tra catalog đầy đủ), dùng chung toàn bộ mô hình trên: nhiều tài khoản có nhãn, cấp theo bot, định tuyến theo (tài khoản, chat). Phần chung nằm ở `server/botteam/channels/` (`base.py`: gom lô, hàng đợi, trả kết quả; `telegram.py` và `zalo.py`: chỉ lo nhận và gửi). Mỗi bộ nối khai báo khả năng của nó (`files_in`, `files_out`, `buttons`, `edit`, `groups`) để phần chung chọn cách hiển thị. Zalo Bot thiếu nhiều khả năng so với Telegram; xem mục 3.8. Ở các mục 1–3.7, chỗ nào ghi "Telegram" mà không nói riêng thì áp cho cả hai.
 
-Phạm vi: phase này chỉ làm nhiều tài khoản cho Telegram và Zalo. Các app MCP trong BotTeam hiện vẫn mỗi app một kết nối (`connect_app` ghi đè kết nối cũ); mở rộng nhiều tài khoản cho chúng là việc riêng.
+Phạm vi: phase này chỉ thêm lớp kênh nhận tin. Phần Connected apps qua Composio (kể cả nhiều tài khoản) đã có và không sửa; hộp thoại chỉ được chia thành ba tab và phase này làm cho tab Input hoạt động.
+
+## 0.2 Bản gốc nối Telegram qua Composio như thế nào, và vì sao không đi đường đó
+
+Bản gốc không có dòng code nào riêng cho Telegram. Telegram chỉ là một toolkit của Composio, đi qua hai cơ chế chung cho mọi app:
+
+| Chiều | Cơ chế ở bản gốc | Mã nguồn |
+|---|---|---|
+| Bot gửi ra | Bot gọi công cụ Composio (ví dụ `TELEGRAM_SEND_MESSAGE`), theo quyền công cụ của từng bot và cài đặt "Sending on your behalf" | `docs/composio.md` mục Per-bot tool grants; `shared/today-outcomes.test.ts` |
+| Tin đến | Automation loại **app event**: trigger của Composio → dịch vụ kết nối của OpenMausBot xếp hàng → server kéo về (`GET /v1/events`) → mỗi sự kiện thành một lần chạy routine | `server/app-triggers.ts`, `server/app-events.ts`, `shared/app-triggers.ts`, `cloudflare/composio-broker/` |
+
+Lý do không dùng đường này cho bot kiểm kê:
+
+- **Không gom lô theo ý người dùng.** Sự kiện đến là chạy ngay (tối đa 20 sự kiện một lần chạy, 3 lần chạy chờ cho mỗi automation). Không có bước "nhận đủ PDF và ảnh rồi mới bấm Kiểm kê".
+- **Sự kiện chỉ là JSON.** Ảnh và PDF không được tải về đĩa; bot phải tự gọi công cụ để lấy từng file trong lượt AI.
+- **Không dùng được với khoá Composio riêng.** App event chỉ chạy qua dịch vụ kết nối của OpenMausBot; server dùng khoá Composio riêng thì không theo dõi được app (`docs/composio.md` mục App events). BotTeam đang dùng đúng kiểu khoá riêng này, chưa có code app event, và phần cloud nằm ngoài phạm vi từ đầu.
+- **Toolkit Telegram của Composio không có trigger và không có công cụ tải file** (xem mục 0), nên dù có làm app event thì Telegram vẫn không nhận được tin và file.
+- **Không có Zalo Bot** trong đường này.
+
+Những gì lấy lại từ bản gốc cho phase này:
+
+- [ ] Khung lời nhắc của `server/app-events.ts`: chỉ dẫn do người dùng cấu hình đặt riêng, dữ liệu từ app đặt trong khối "dữ liệu không tin cậy", ký tự giả mạo khối bị vô hiệu hoá.
+- [ ] Nhật ký từng sự kiện với kết quả `started | joined | filtered | duplicate | skipped | rejected` (kiểu `AppEventAttempt`), thay cho nhật ký lô chỉ có trạng thái.
+- [ ] Con trỏ nhận tin chỉ tiến sau khi sự kiện đã được lưu; sự kiện gửi lại được nhận ra bằng mã của nó.
+- [ ] Giới hạn số lô chờ cho mỗi bot (bản gốc: 3 lần chạy chờ cho mỗi automation).
+- [ ] Bot chỉ nhận tin từ app mà nó được cấp (`botMayWatchApp`), đúng với mô hình cấp quyền ở mục 0.
+- [ ] Kết nối hỏng hiện là **Needs you** kèm **Reconnect**, thay cho chỉ ghi `lastError`.
+- [ ] Gửi ra ngoài theo cài đặt "Sending on your behalf" của bot, nếu sau này bot được tự gửi tin Telegram/Zalo bằng công cụ.
 
 ## 1. Luồng tổng quát
 
@@ -81,11 +133,11 @@ Ba nguyên tắc:
 
 ### 3.1 Dữ liệu
 
-- [ ] Hai mục `telegram` và `zalo` trong `apps_catalog.py` với `kind: "channel"`; `tokenLabel` là token BotFather / token từ Zalo Bot Manager. Các mục cũ mặc định `kind: "mcp"`.
+- [ ] Danh sách kênh cố định trong `channels/__init__.py`: `telegram` (token BotFather) và `zalo` (token từ Zalo Bot Manager). Không đụng tới catalog Composio.
 - [ ] Bảng `channel_accounts`: `id`, `app` (`telegram | zalo`), `label` (duy nhất trong một app), `remoteId` và `username` (từ `getMe`; `remoteId` duy nhất trong một app để chặn kết nối trùng token), `enabled`, `cursor` (Telegram: offset của update cuối; Zalo: các `message_id` gần đây), `lastAt`, `lastError`. Tối đa 5 hàng mỗi app.
 - [ ] Bảng `channel_grants` (cấp quyền theo cặp tài khoản và bot): `accountId`, `botId`, `chats`, `adminChats`, `maxPhotos`, `timeoutSec`, `remindAt`, `retentionDays`, `prompt` (lời nhắc mẫu). Ràng buộc: trong một tài khoản, một chat chỉ nằm trong `chats` của một bot.
 - [ ] Bảng `channel_batches`: `id`, `accountId`, `botId`, `chatId`, `userId`, `status` (`collecting | queued | running | done | failed | cancelled | expired`), `dir`, `threadId`, `statusMessageId`, `files` (JSON), `error`, `createdAt`.
-- [ ] Token lưu bằng `config.set_secret("app:<app>:<accountId>", ...)`: chỉ ghi, UI chỉ thấy nhãn và trạng thái. Token Zalo nằm trong đường dẫn URL khi gọi API, nên không ghi URL đó vào log.
+- [ ] Token lưu bằng `config.set_secret("channel:<app>:<accountId>", ...)`: chỉ ghi, UI chỉ thấy nhãn và trạng thái. Token Zalo nằm trong đường dẫn URL khi gọi API, nên không ghi URL đó vào log.
 - [ ] `adminChats` là danh sách cặp (tài khoản, chat), có thể thuộc kênh khác với kênh nhận lô.
 - [ ] Xoá bot thì xoá các hàng cấp quyền của nó; gỡ một tài khoản thì xoá token, các hàng cấp quyền của tài khoản đó và dừng nhận tin của riêng nó.
 - [ ] Kiểu `WireChannelAccount`, `WireChannelGrant`, `WireChannelBatch` trong `wire.py`; frame `channel.account`, `channel.account.deleted`, `channel.grant`, `channel.batch`.
@@ -137,17 +189,17 @@ Ba nguyên tắc:
 
 ### 3.7 Route
 
-Tài khoản (mở rộng route Connected apps, rẽ nhánh theo `kind`):
+Tài khoản (route riêng `/api/channels`, vì `/api/apps/{slug}/...` đã thuộc về Composio):
 
-- [ ] `GET /api/apps`: mục Telegram và mục Zalo Bot có `connected`, `accounts: [{id, label, username, state, error, usedBy: [botId]}]`.
-- [ ] `POST /api/apps/{app}/accounts` với `{label, token}`: gọi `getMe`, lưu token, bắt đầu nhận tin, trả `@username` ngay để biết token đúng hay sai. Trả 409 nếu trùng nhãn, trùng token, hoặc đã đủ 5 tài khoản.
-- [ ] `PATCH /api/apps/{app}/accounts/{id}` (đổi nhãn, thay token), `DELETE /api/apps/{app}/accounts/{id}` (chỉ gỡ tài khoản này).
+- [ ] `GET /api/channels`: mỗi kênh có `connected`, `accounts: [{id, label, username, state, error, usedBy: [botId]}]`.
+- [ ] `POST /api/channels/{app}/accounts` với `{label, token}`: gọi `getMe`, lưu token, bắt đầu nhận tin, trả `@username` ngay để biết token đúng hay sai. Trả 409 nếu trùng nhãn, trùng token, hoặc đã đủ 5 tài khoản.
+- [ ] `PATCH /api/channels/{app}/accounts/{id}` (đổi nhãn, thay token), `DELETE /api/channels/{app}/accounts/{id}` (chỉ gỡ tài khoản này).
 
 Cấp quyền:
 
-- [ ] `GET /api/apps/{app}/accounts/{id}/grants`, `PUT .../grants/{botId}` (bật và cấu hình), `DELETE .../grants/{botId}` (thu quyền). `PUT` trả 409 kèm tên bot đang giữ chat nếu trùng chat trong cùng tài khoản.
+- [ ] `GET /api/channels/{app}/accounts/{id}/grants`, `PUT .../grants/{botId}` (bật và cấu hình), `DELETE .../grants/{botId}` (thu quyền). `PUT` trả 409 kèm tên bot đang giữ chat nếu trùng chat trong cùng tài khoản.
 - [ ] `GET /api/bots/{id}/channels`: các tài khoản (Telegram, Zalo) bot này đang được cấp, để vẽ phần cài đặt của bot.
-- [ ] `GET /api/apps/{app}/accounts/{id}/batches` (nhật ký lô, lọc theo bot), `POST /api/channels/batches/{id}/retry`, `.../cancel`.
+- [ ] `GET /api/channels/{app}/accounts/{id}/batches` (nhật ký lô, lọc theo bot), `POST /api/channels/batches/{id}/retry`, `.../cancel`.
 
 `{app}` là `telegram` hoặc `zalo`; mọi route trên dùng chung cho cả hai.
 
@@ -185,19 +237,34 @@ Cần kiểm chứng bằng token thật trước khi viết bộ nối, vì tà
 
 ## 4. Giao diện web
 
-Làm theo màn hình **Apps** của bản tham chiếu (<http://localhost:5199/>): tiêu đề, dòng mô tả "Connect an app… once. Then choose which bots may use it.", ô tìm kiếm, nhóm **Connected**.
+### 4.1 Hộp thoại Connect apps có ba tab
 
-Mục Telegram trong `ConnectedApps.tsx`:
+| Tab | Nội dung | Trạng thái |
+|---|---|---|
+| **Connected apps** | App qua Composio: khoá dự án, tìm app, Connect / Add account, Disconnect theo từng tài khoản | Đã chạy, giữ nguyên |
+| **Custom MCP servers** | Danh sách và trình sửa MCP server riêng (`McpServersView`), trước đây là hộp thoại riêng mở từ nút ở chân | Đã chạy, chỉ đổi chỗ |
+| **Input** | Telegram bot và Zalo bot: nhận tin và tự bắt đầu bot | **Làm ở Phase 6** |
+
+- [x] Khung ba tab (`role="tablist"`, mở lại hộp thoại thì về tab đầu) và tab Input dạng chờ: hai dòng Telegram bot / Zalo bot có nhãn "Coming soon", nút Connect bị khoá, và ba giới hạn của Zalo. Phần này đang nằm trong working tree, **chưa commit**, ở `ConnectedApps.tsx`, `McpServers.tsx`, `Shell.tsx`, `state/store.tsx`.
+- [ ] Commit khung ba tab kèm test e2e: chuyển tab, nút "Custom MCP servers" cũ (`data-testid="open-mcp"`) vẫn mở đúng nội dung, bàn phím đi được giữa các tab.
+- [ ] Bản tham chiếu đặt MCP servers thành một nút ở góc màn hình Apps chứ không phải tab; ba tab là khác bản gốc có chủ ý, để có chỗ cho Input.
+
+### 4.2 Tab Input (Phase 6)
+
+Dùng lại kiểu hiển thị của tab Connected apps: dòng app, **Add account**, ô nhãn, mỗi tài khoản một dòng có **Disconnect**. Tab này không cần khoá Composio. Khi làm xong thì bỏ nhãn "Coming soon" và mở nút Connect. Dòng Telegram bot:
 
 - [ ] Chưa có tài khoản: nút **Connect**. Đã có: tên app, dấu tích, chồng avatar các bot đang dùng, nút **Add account** bên cạnh.
-- [ ] Hộp thoại Connect / Add account: nhãn (bắt buộc, không trùng) và token. Lưu xong hiện `@username`.
+- [ ] Connect / Add account mở ô nhập ngay trong dòng: nhãn (bắt buộc, không trùng) và token. Khác app Composio ở chỗ không mở trang đăng nhập ngoài. Lưu xong hiện `@username`.
+- [x] Dòng chú thích đầu tab phân biệt với mục Telegram của Composio (đã có trong khung): Input nhận tin và tự chạy bot; mục Telegram ở tab Connected apps chỉ cho bot công cụ để gửi.
 - [ ] Dòng **Used by <tên các bot>** kèm liên kết **Change** mở bộ chọn bot được dùng.
 - [ ] Mỗi tài khoản một dòng: dấu trạng thái, nhãn, `active` hoặc lỗi, nút **Disconnect** của riêng dòng đó.
 - [ ] Hướng dẫn ngắn: tắt privacy mode ở BotFather, thêm bot vào nhóm, gõ `/id` để lấy mã chat.
 
-Mục **Zalo Bot** nằm cạnh Telegram, cùng cách hiển thị và cùng các nút. Khác ở hướng dẫn: tạo bot trong OA "Zalo Bot Manager", nhân viên nhắn riêng cho bot rồi gõ `/id` để lấy mã chat. Thẻ ghi rõ ba giới hạn: không nhận file PDF, không gửi được file, nhóm chat chưa dùng được.
+Dòng **Zalo bot** nằm dưới Telegram bot, cùng cách hiển thị và cùng các nút. Khác ở hướng dẫn: tạo bot trong OA "Zalo Bot Manager", nhân viên nhắn riêng cho bot rồi gõ `/id` để lấy mã chat. Thẻ ghi rõ ba giới hạn: không nhận file PDF, không gửi được file, nhóm chat chưa dùng được.
 
-Cấp quyền (mở từ **Change**, và từ phần Connected apps của `BotPanel.tsx`):
+### 4.3 Cấp quyền cho bot (Phase 6)
+
+Mở từ **Change** trong tab Input, và từ phần "Apps and servers" của `BotPanel.tsx`:
 
 - [ ] Chọn tài khoản theo nhãn, rồi bật/tắt cho từng bot.
 - [ ] Khi bật: chat được phục vụ, chat admin, số ảnh tối đa, thời gian chờ, giờ nhắc, lời nhắc mẫu.
@@ -241,7 +308,8 @@ Phần xử lý cố định vẫn là code, bot gọi qua dòng lệnh.
 |---|---|---|
 | 1 | Mục 3.1–3.5, 3.7 và test với Telegram giả | Gửi ảnh vào nhóm thử, bấm Kiểm kê, bot trả lời trong Telegram |
 | 2 | Mục 5 (script, skill) và mục 3.6 | Ra phiếu PDF đúng mẫu từ bộ ảnh chuẩn |
-| 3 | Mục 4 (thẻ Telegram trong Connected apps, cấp quyền trong cài đặt bot) và các quy tắc riêng của kiểm kê ở 3.3 | Kết nối và cấp quyền hoàn toàn trong app, không sửa file tay |
+| 0 | Mục 4.1: commit khung ba tab của hộp thoại Connect apps (tab Input còn ở dạng chờ) | Ba tab chuyển được, hai tab cũ chạy như trước |
+| 3 | Mục 4.2 và 4.3 (tab Input hoạt động, cấp quyền trong cài đặt bot) và các quy tắc riêng của kiểm kê ở 3.3 | Kết nối và cấp quyền hoàn toàn trong app, không sửa file tay |
 | 4 | Chạy song song với bot cũ bằng token thử, rồi chuyển token thật | Tắt bot cũ, xoá phần code đã liệt kê ở mục 5 |
 | 5 | Mục 3.8: thử API Zalo bằng token thật, bộ nối Zalo, bảng slot theo máy, giao phiếu qua kênh khác | Nhân viên nhắn riêng bot Zalo, gửi ảnh, gõ `/kiemke`, nhận tóm tắt; admin nhận phiếu PDF qua Telegram |
 
@@ -255,6 +323,7 @@ Một token Telegram chỉ có một tiến trình nhận tin, nên trong lúc c
 2. **Mức duyệt `full` cho bot kiểm kê** ở giai đoạn đầu có chấp nhận được không, hay phải làm danh sách lệnh tự duyệt ngay.
 3. **Có cần chat tự do qua Telegram không** (mỗi tin là một lượt, không gom lô)? Plan này chỉ làm chế độ gom lô.
 4. **Dữ liệu cũ** trong `maybanhang_03\data\` giữ nguyên chỗ, hay chuyển về cùng thư mục lô mới.
-5. **Nhiều tài khoản cho các app MCP khác** (GitHub, Linear…) có làm luôn trong phase này không? Plan đang chỉ làm cho Telegram và Zalo.
+5. **Telegram có mặt ở hai nơi có chấp nhận được không?** Mục Telegram của Composio (đã có, để bot gửi) và kênh Telegram (mới, để nhận tin). Cách khác là ẩn mục Telegram của Composio khi đã có kênh, và cho bot công cụ gửi tin riêng của kênh.
 6. **Zalo dùng cho kiểm kê hay chỉ để chat?** Vì Zalo không nhận và không gửi được file, kiểm kê qua Zalo cần bảng slot lưu sẵn theo máy và một kênh khác để giao phiếu PDF. Nếu bạn chỉ cần Zalo để hỏi đáp bằng chữ và ảnh thì bỏ được hai việc này.
+8. **Cấu hình nhận tin đặt ở đâu?** Bản gốc tách ba chỗ: kết nối ở Apps, quyền ở cài đặt bot, còn "khi có sự kiện thì bot làm gì" là một automation loại app event trong trang Automations. Plan này đang gộp phần thứ ba (chat, lời nhắc mẫu, giới hạn lô) vào phần cấp quyền. Tách ra thành automation thì giống bản gốc hơn, đổi lại phải khai báo thêm một bước.
 7. **Zalo chạy thật bằng `getUpdates` có chấp nhận được không?** Tài liệu Zalo khuyên dùng webhook cho chạy thật để không sót sự kiện; webhook cần một URL HTTPS công khai trỏ về máy chạy BotTeam.

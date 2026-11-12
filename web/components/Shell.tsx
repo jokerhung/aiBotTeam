@@ -11,7 +11,6 @@ import { ConnectedApps } from "./ConnectedApps";
 import { GuidedTour, WelcomeGate, WhatsNew } from "./Welcome";
 import { UsagePage } from "./Observe";
 import { ImportTeamDialog, ShareTeamDialog } from "./TeamShare";
-import { McpServersPanel } from "./McpServers";
 import { BotPanel } from "./BotPanel";
 import { ComputerPanel } from "./ComputerPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -100,7 +99,6 @@ export function Shell() {
       <UsagePage />
       <ShareTeamDialog />
       <ImportTeamDialog />
-      <McpServersPanel />
       <NewBotDialog />
       <SettingsModal />
       <CommandPalette />

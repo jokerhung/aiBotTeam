@@ -106,9 +106,9 @@ export function McpServerEditor({ server, onClose }: { server: McpServer | null;
   );
 }
 
-/** Custom MCP servers: the list, its status, and a quick import from the JSON Claude Desktop uses. */
-export function McpServersPanel() {
-  const { state, dispatch } = useStore();
+/** Custom MCP servers (the second tab of Connected apps): the list, its status, and a quick import from the JSON Claude Desktop uses. */
+export function McpServersView() {
+  const { state } = useStore();
   const t = useT();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [editing, setEditing] = useState<McpServer | "new" | null>(null);
@@ -116,50 +116,43 @@ export function McpServersPanel() {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const load = useCallback(() => api<{ servers: McpServer[] }>("/api/mcp/servers").then((r) => setServers(r.servers)).catch(() => {}), []);
-  useEffect(() => { if (state.mcpOpen) void load(); }, [state.mcpOpen, state.mcpTick, load]);
-  if (!state.mcpOpen) return null;
-  const close = () => dispatch({ type: "mcp", open: false });
+  useEffect(() => { void load(); }, [state.mcpTick, load]);
   const importJson = async () => {
     setError("");
     try { await api("/api/mcp/import", { method: "POST", body: JSON.stringify({ json: text }) }); setPasting(false); setText(""); await load(); } catch (e) { setError((e as Error).message); }
   };
   return (
-    <div role="dialog" aria-modal="true" aria-label="Custom MCP servers" data-testid="mcp-panel" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
-      <div className="flex max-h-[88vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10">
-        <div className="flex h-[60px] shrink-0 items-center gap-2 px-5">
-          <h2 className="flex-1 text-[17px] font-semibold">{t("Custom MCP servers")}</h2>
-          <button type="button" onClick={() => setPasting((v) => !v)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-ink/10"><ClipboardPaste size={14} /> {t("Paste JSON")}</button>
-          <button type="button" onClick={() => setEditing("new")} data-testid="add-mcp" className="flex h-9 items-center gap-1.5 rounded-full bg-accent px-3.5 text-[13.5px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("Add a server")}</button>
-          <button type="button" aria-label="Close" onClick={close} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10"><X size={16} /></button>
-        </div>
-        {pasting && (
-          <div className="px-5 pb-3" data-testid="mcp-paste">
-            <textarea data-no-i18n="" value={text} onChange={(e) => setText(e.target.value)} rows={6} aria-label={t("Configuration JSON")} placeholder={'{ "mcpServers": { "files": { "command": "npx", "args": ["-y", "…"] } } }'} className={cn(INPUT, "py-2 font-mono text-[12.5px]")} />
-            {error && <div role="alert" className="mt-1.5 text-[13px] text-danger">{error}</div>}
-            <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => setPasting(false)} className="rounded-full px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-ink/10">{t("Cancel")}</button>
-              <button type="button" disabled={!text.trim()} onClick={importJson} className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Import")}</button></div>
-          </div>
-        )}
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-          {servers.length === 0 && !pasting && <div className="px-6 py-12 text-center text-[13.5px] text-ink-tertiary">{t("No servers yet. Add one, or paste the JSON you use in Claude Desktop.")}</div>}
-          {servers.map((s) => (
-            <div key={s.id} data-testid="mcp-row" className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-raised/50">
-              <div className="min-w-0 flex-1 leading-tight">
-                <div data-no-i18n="" className={cn("truncate text-[14.5px] font-medium", !s.enabled && "opacity-50")}>{s.name}</div>
-                <div data-no-i18n="" className="truncate font-mono text-[12px] text-ink-tertiary">{s.transport === "stdio" ? `${s.command} ${(s.args ?? []).join(" ")}` : s.url}</div>
-              </div>
-              <StatusDot s={s.status} />
-              {s.status.state === "ok" && <span className="text-[12px] tabular-nums text-ink-tertiary">{s.status.tools.length} {t("tools")}</span>}
-              <button type="button" title={t("Test")} aria-label={t("Test")} onClick={async () => { await api(`/api/mcp/servers/${s.id}/test`, { method: "POST" }).catch(() => {}); await load(); }} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Play size={14} /></button>
-              <button type="button" title={t("Edit")} aria-label={t("Edit")} onClick={() => setEditing(s)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Pencil size={14} /></button>
-              <button type="button" title={t("Delete")} aria-label={t("Delete")} onClick={async () => { if (confirm(t("Delete this server?"))) { await api(`/api/mcp/servers/${s.id}`, { method: "DELETE" }).catch(() => {}); await load(); } }} className="rounded-full p-1.5 text-ink-tertiary hover:bg-danger/10 hover:text-danger"><Trash2 size={14} /></button>
-            </div>
-          ))}
-        </div>
-        <div className="shrink-0 border-t border-edge px-5 py-3 text-[12px] text-ink-tertiary">{t("A bot uses a server once you tick it in the bot's settings. Every tool it calls goes through that bot's approval level.")}</div>
+    <div role="tabpanel" aria-label={t("Custom MCP servers")} data-testid="mcp-panel" className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-end gap-2 px-5 pb-3">
+        <button type="button" onClick={() => setPasting((v) => !v)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-ink/10"><ClipboardPaste size={14} /> {t("Paste JSON")}</button>
+        <button type="button" onClick={() => setEditing("new")} data-testid="add-mcp" className="flex h-9 items-center gap-1.5 rounded-full bg-accent px-3.5 text-[13.5px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("Add a server")}</button>
       </div>
+      {pasting && (
+        <div className="px-5 pb-3" data-testid="mcp-paste">
+          <textarea data-no-i18n="" value={text} onChange={(e) => setText(e.target.value)} rows={6} aria-label={t("Configuration JSON")} placeholder={'{ "mcpServers": { "files": { "command": "npx", "args": ["-y", "…"] } } }'} className={cn(INPUT, "py-2 font-mono text-[12.5px]")} />
+          {error && <div role="alert" className="mt-1.5 text-[13px] text-danger">{error}</div>}
+          <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => setPasting(false)} className="rounded-full px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-ink/10">{t("Cancel")}</button>
+            <button type="button" disabled={!text.trim()} onClick={importJson} className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Import")}</button></div>
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        {servers.length === 0 && !pasting && <div className="px-6 py-12 text-center text-[13.5px] text-ink-tertiary">{t("No servers yet. Add one, or paste the JSON you use in Claude Desktop.")}</div>}
+        {servers.filter((s) => s.appId !== "composio").map((s) => (
+          <div key={s.id} data-testid="mcp-row" className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-raised/50">
+            <div className="min-w-0 flex-1 leading-tight">
+              <div data-no-i18n="" className={cn("truncate text-[14.5px] font-medium", !s.enabled && "opacity-50")}>{s.name}</div>
+              <div data-no-i18n="" className="truncate font-mono text-[12px] text-ink-tertiary">{s.transport === "stdio" ? `${s.command} ${(s.args ?? []).join(" ")}` : s.url}</div>
+            </div>
+            <StatusDot s={s.status} />
+            {s.status.state === "ok" && <span className="text-[12px] tabular-nums text-ink-tertiary">{s.status.tools.length} {t("tools")}</span>}
+            <button type="button" title={t("Test")} aria-label={t("Test")} onClick={async () => { await api(`/api/mcp/servers/${s.id}/test`, { method: "POST" }).catch(() => {}); await load(); }} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Play size={14} /></button>
+            <button type="button" title={t("Edit")} aria-label={t("Edit")} onClick={() => setEditing(s)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Pencil size={14} /></button>
+            <button type="button" title={t("Delete")} aria-label={t("Delete")} onClick={async () => { if (confirm(t("Delete this server?"))) { await api(`/api/mcp/servers/${s.id}`, { method: "DELETE" }).catch(() => {}); await load(); } }} className="rounded-full p-1.5 text-ink-tertiary hover:bg-danger/10 hover:text-danger"><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+      <div className="shrink-0 border-t border-edge px-5 py-3 text-[12px] text-ink-tertiary">{t("A bot uses a server once you tick it in the bot's settings. Every tool it calls goes through that bot's approval level.")}</div>
       {editing && <McpServerEditor key={editing === "new" ? "new" : editing.id} server={editing === "new" ? null : editing} onClose={() => { setEditing(null); void load(); }} />}
     </div>
   );
 }
-

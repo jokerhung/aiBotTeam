@@ -1,10 +1,11 @@
 "use client";
-import { Check, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Search, Server, X } from "lucide-react";
+import { Check, ExternalLink, KeyRound, MessageCircle, Plug, Plus, RefreshCw, Search, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { McpServersView } from "./McpServers";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 const TILE = ["bg-[#2d333b] text-white", "bg-[#5e6ad2] text-white", "bg-[#1a1a1a] text-white", "bg-[#362d59] text-white", "bg-[#1d6f42] text-white", "bg-[#0052cc] text-white"];
@@ -17,9 +18,47 @@ interface AppsState { configured: boolean; source: string | null; keyHint: strin
 
 /** "Connected apps" (the Connect apps pill): every app goes through Composio. One project key is pasted once; each app signs in in the person's own
  * browser, several accounts per app are told apart by a label, and no provider token is ever kept here. */
+type Tab = "apps" | "mcp" | "input";
+
+/** Messaging channels that start a bot when a message arrives. The screen is here; receiving messages is Phase 6 (docs/phase-6-telegram-channel.md). */
+const CHANNELS = [
+  { id: "telegram", name: "Telegram bot", icon: Send, tone: "bg-[#229ed9] text-white", blurb: "Receives PDFs and photos from a chat, groups them into a batch, and starts the bot when someone presses Check.",
+    limits: [] as string[] },
+  { id: "zalo", name: "Zalo bot", icon: MessageCircle, tone: "bg-[#0068ff] text-white", blurb: "Receives text and photos from a private chat with your Zalo bot.",
+    limits: ["Cannot receive PDF files", "Cannot send files", "Group chats are not supported yet"] },
+];
+
+function InputView() {
+  const t = useT();
+  return (
+    <div role="tabpanel" aria-label={t("Input")} data-testid="input-panel" className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <div className="mx-2 mb-3 rounded-xl bg-raised px-3.5 py-2.5 text-[13px] leading-5 text-ink-secondary">
+        {t("Inputs receive messages and start a bot by themselves. The Telegram entry under Connected apps only gives a bot tools to send.")}
+      </div>
+      {CHANNELS.map((c) => (
+        <div key={c.id} data-testid="input-row" className="rounded-xl px-2 py-2.5 hover:bg-raised/50">
+          <div className="flex items-center gap-3">
+            <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", c.tone)} aria-hidden><c.icon size={20} /></span>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div data-no-i18n="" className="truncate text-[14.5px] font-medium">{t(c.name)}</div>
+              <div className="text-[12.5px] leading-[1.35] text-ink-tertiary">{t(c.blurb)}</div>
+            </div>
+            <span className="shrink-0 rounded-full bg-ink/[0.07] px-2.5 py-1 text-[11.5px] text-ink-tertiary">{t("Coming soon")}</span>
+            <button type="button" disabled className="h-9 shrink-0 rounded-full bg-accent px-4 text-[13.5px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Connect")}</button>
+          </div>
+          {c.limits.length > 0 && (
+            <ul className="mt-1.5 list-disc pl-[78px] pr-2 text-[12px] leading-[1.5] text-ink-tertiary">{c.limits.map((l) => <li key={l}>{t(l)}</li>)}</ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ConnectedApps() {
   const { state, dispatch } = useStore();
   const t = useT();
+  const [tab, setTab] = useState<Tab>("apps");
   const [data, setData] = useState<AppsState | null>(null);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -29,7 +68,7 @@ export function ConnectedApps() {
   const [note, setNote] = useState<{ id: string; ok: boolean; text: string; url?: string } | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
   const load = useCallback(() => api<AppsState>("/api/apps").then(setData).catch(() => {}), []);
-  useEffect(() => { if (state.appsOpen) void load(); }, [state.appsOpen, load, state.mcpTick]);
+  useEffect(() => { if (state.appsOpen) void load(); }, [state.appsOpen, state.mcpTick, load]);
   useEffect(() => () => { if (poll.current) clearInterval(poll.current); }, []);
   if (!state.appsOpen) return null;
   const apps = data?.apps ?? [];
@@ -74,16 +113,25 @@ export function ConnectedApps() {
     await api(`/api/apps/${slug}/accounts/${id}`, { method: "DELETE" }).catch((e: Error) => setNote({ id: slug, ok: false, text: e.message }));
     await load();
   };
-  const close = () => dispatch({ type: "apps", open: false });
+  const close = () => { setTab("apps"); dispatch({ type: "apps", open: false }); };
   return (
     <div role="dialog" aria-modal="true" aria-label="Connected apps" data-testid="connected-apps"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
-      <div className="flex max-h-[88vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10">
+      <div className="flex h-[min(640px,88vh)] w-full max-w-[560px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10">
         <div className="flex h-[60px] shrink-0 items-center gap-2 px-5">
           <h2 className="flex-1 text-[17px] font-semibold">{t("Connected apps")}</h2>
           <button type="button" title={t("Refresh")} aria-label={t("Refresh")} onClick={() => void load()} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10"><RefreshCw size={15} /></button>
           <button type="button" aria-label="Close" onClick={close} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10"><X size={16} /></button>
         </div>
+        <div role="tablist" aria-label={t("Connected apps")} className="mx-5 mb-3 flex h-9 shrink-0 items-center rounded-full bg-raised p-[3px]" data-testid="apps-tabs">
+          {([["apps", "Connected apps", "tab-apps"], ["mcp", "Custom MCP servers", "open-mcp"], ["input", "Input", "tab-input"]] as const).map(([id, label, testid]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} data-testid={testid} onClick={() => setTab(id)}
+              className={cn("h-[30px] min-w-0 flex-1 truncate rounded-full px-2.5 text-[13px] font-medium", tab === id ? "bg-composer text-ink shadow-sm ring-[0.5px] ring-ink/10" : "text-ink-secondary hover:text-ink")}>{t(label)}</button>
+          ))}
+        </div>
+        {tab === "mcp" && <McpServersView />}
+        {tab === "input" && <InputView />}
+        {tab === "apps" && <>
         {data && !data.configured && (
           <div role="status" data-testid="apps-warning" className="mx-5 mb-3 rounded-xl bg-warning/12 px-3.5 py-3 text-[13px] leading-5 text-warning">
             <div className="flex items-center gap-1.5 font-medium"><KeyRound size={14} /> {t("Add your Composio project key to connect apps")}</div>
@@ -159,11 +207,10 @@ export function ConnectedApps() {
             );
           })}
         </div>
-        <div className="flex h-[56px] shrink-0 items-center justify-between border-t border-edge px-5">
-          <button type="button" onClick={() => { close(); dispatch({ type: "mcp", open: true }); }} data-testid="open-mcp"
-            className="flex items-center gap-2 rounded-full px-3 py-1.5 text-[13.5px] text-ink-secondary hover:bg-ink/10 hover:text-ink"><Server size={14} /> {t("Custom MCP servers")}</button>
+        <div className="flex h-[56px] shrink-0 items-center justify-end border-t border-edge px-5">
           <span className="flex items-center gap-1 text-[12px] text-ink-tertiary"><Plug size={12} /> {t("Tools ask before they act, as set for each bot.")}</span>
         </div>
+        </>}
       </div>
     </div>
   );
