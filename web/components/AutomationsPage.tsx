@@ -316,7 +316,7 @@ export function AutomationsPage() {
 
   return (
     <main className={cn("flex min-w-0 flex-1 flex-col bg-app", layout === "calendar" && tab === "routines" ? "fixed inset-0 z-40" : "relative h-full")} data-testid="automations-page">
-      <header className="flex h-[60px] shrink-0 items-center gap-3 border-b-[0.5px] border-edge px-5 max-md:pl-14">
+      <header className="flex min-h-[60px] shrink-0 items-center gap-3 border-b-[0.5px] border-edge px-5 max-md:flex-wrap max-md:gap-y-2 max-md:py-2 max-md:pl-14">
         <button type="button" aria-label="Open bot list" onClick={() => dispatch({ type: "drawer", open: true })} className="-ml-2 rounded-md p-1.5 text-ink-secondary hover:bg-raised md:hidden"><Menu size={20} /></button>
         <button type="button" aria-label={t("Back")} title={t("Back")} onClick={() => dispatch({ type: "automations", open: false })} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><ArrowLeft size={18} /></button>
         <CalendarClock size={17} className="shrink-0 text-accent-text" aria-hidden />
@@ -330,7 +330,7 @@ export function AutomationsPage() {
               className={cn("rounded-md px-2.5 py-1 text-[13px]", tab === id ? "bg-app text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}>{t(id === "routines" ? "Routines" : "Webhooks")}</button>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2 max-md:max-w-full">
           <select value={botFilter} onChange={(e) => setBotFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 rounded-xl bg-raised px-3 text-[13.5px] text-ink">
             <option value="all">{t("All bots")}</option>
             {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
