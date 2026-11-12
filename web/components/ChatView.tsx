@@ -70,45 +70,6 @@ function BranchSwitcher({ m, thread, onSwitched }: { m: Message; thread: string;
   );
 }
 
-function BatchTranscript({ bot, notice }: { bot: Bot; notice: Message }) {
-  const { state, dispatch } = useStore();
-  const threadId = notice.threadRef!.threadId!;
-  const stored = state.messages[threadId];
-  const messages = useMemo(() => stored ?? [], [stored]);
-  const snapshot = useRef(messages);
-  useLayoutEffect(() => { snapshot.current = messages; }, [messages]);
-  const [error, setError] = useState(false);
-  const generation = (state.reload[threadId] ?? 0) + (state.connected ? 1000 : 0);
-  useEffect(() => {
-    if (!state.connected) return;
-    let cancelled = false;
-    const beforeFetch = snapshot.current;
-    void (async () => {
-      let before = "";
-      let all: Message[] = [];
-      do {
-        const page = await api<{ messages: Message[]; hasMore: boolean }>(`/api/bots/${bot.id}/messages?thread=${threadId}${before ? `&before=${before}` : ""}`);
-        if (cancelled) return;
-        all = [...page.messages, ...all];
-        before = page.hasMore ? page.messages[0]?.id ?? "" : "";
-      } while (before);
-      dispatch({ type: "history", threadId, messages: all, hasMore: false, generation, snapshot: beforeFetch });
-      setError(false);
-    })().catch(() => { if (!cancelled) setError(true); });
-    return () => { cancelled = true; };
-  }, [bot.id, threadId, generation, state.connected, dispatch]);
-  const busy = bot.tasks.some((task) => task.threadId === threadId && task.busy);
-  const batchBot = { ...bot, threadId, threadBusy: busy };
-  return (
-    <section data-testid="batch-transcript" className="flex min-w-0 flex-col gap-3">
-      <div className="whitespace-pre-line text-center text-[13px] text-ink-tertiary">{notice.text}</div>
-      {error && <div role="alert" className="text-[13px] text-danger">Could not load chat history.</div>}
-      {messages.map((m, i) => <Row key={m.id} bot={batchBot} list={messages} i={i} busy={busy} detailed />)}
-      {busy && <TurnPresence bot={batchBot} hasLiveText={messages.some((m) => m.streaming)} />}
-    </section>
-  );
-}
-
 function Row({ bot, list, i, busy, detailed = false }: { bot: Bot; list: Message[]; i: number; busy: boolean; detailed?: boolean }) {
   const m = list[i];
   const { dispatch } = useStore();
@@ -125,7 +86,6 @@ function Row({ bot, list, i, busy, detailed = false }: { bot: Bot; list: Message
     return <RequestCard m={m} thread={bot.threadId} active={lastOpen?.id === m.id} bot={bot} />;
   }
   if (m.kind === "routine" && m.routine) return <RoutineCard m={m} />;
-  if (m.kind === "notice" && m.threadRef?.botId === bot.id && m.threadRef.threadId && m.threadRef.threadId !== bot.threadId) return <BatchTranscript bot={bot} notice={m} />;
   if (m.threadRef) return <ThreadRefCard m={m} />;
   if (m.kind === "stopped" || m.kind === "notice") {
     return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;

@@ -1,4 +1,4 @@
-// Checks inline channel history, pagination and live updates against the dev UI.
+// Checks automatic job-conversation selection, live details and compact main summaries.
 // All bot transcripts and events are mocked; no live bot is run or changed.
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
@@ -21,11 +21,18 @@ try {
     notifications: true, unread: false, busy: true, threadBusy: false, activity: "working", turnStartedAt: Date.now(), statusLine: null,
     modelSelection: { instanceId: "echo", model: "echo-1" }, pinned: false, hidden: false, section: null, cwd: null, approvalMode: "full",
     soul: "", chief: false, fallbackSelection: null, lastText: "", lastAt: null, readAt: 0, usage: {},
-    tasks: [{ threadId: "batch-test", title: "Telegram batch", busy: true, main: false, closed: false, pinned: false, at: Date.now() }],
+    tasks: [{ threadId: "batch-test", title: "b_test", busy: true, main: false, closed: false, pinned: false, at: Date.now() }],
   };
-  let olderLoaded = false;
+  let started = false;
+  const summary = "Telegram shop: counting in conversation b_test.";
   const message = (id, text, extra = {}) => ({ id, text, role: "bot", kind: "text", at: Date.now(), ...extra });
   await page.route("**/api/**", async (route) => {
+    if (route.request().method() === "PATCH" && new URL(route.request().url()).pathname === "/api/bots/inventory-test") {
+      target.threadId = route.request().postDataJSON().threadId;
+      await route.fulfill({ json: target });
+      await page.evaluate((bot) => window.channelEvents.onmessage({ data: JSON.stringify({ kind: "bot", bot }) }), target);
+      return;
+    }
     const payload = {
       "/api/bots": { bots: [target] }, "/api/config": { settings: { language: "en" }, keys: {}, keyCatalog: [] },
       "/api/instances": { instances: [] }, "/api/sidebar-sections": { sections: [] }, "/api/groups": { groups: [] },
@@ -37,31 +44,44 @@ try {
   await page.route("**/api/bots/*/messages?*", async (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("thread") === "batch-test") {
-      if (url.searchParams.has("before")) {
-        olderLoaded = true;
-        return route.fulfill({ json: { messages: [message("older", "Full original Telegram prompt", { role: "user", sender: "telegram shop" })], hasMore: false } });
-      }
       return route.fulfill({ json: { messages: [
+        message("prompt", "Full original Telegram prompt", { role: "user", sender: "telegram shop" }),
         message("answer", "Counting inventory", { streaming: true }),
-        message("tool", "", { kind: "activity", tool: { name: "shell", input: "inspect inventory", output: "Inventory details visible", ok: null } }),
-      ], hasMore: true } });
+        message("tool", "", { kind: "activity", tool: { name: "shell", summary: "Inspect inventory", input: "inspect inventory", output: "Inventory details visible", ok: null } }),
+      ], hasMore: false } });
     }
-    return route.fulfill({ json: { messages: [message("notice", "Telegram shop: running", { kind: "notice", threadRef: { botId: target.id, bot: target.name, threadId: "batch-test" } })], hasMore: false } });
+    return route.fulfill({ json: { messages: [message("notice", started ? summary : "Telegram shop: receiving 6 photos; waiting for Check", {
+      kind: "notice", channelBatchId: "b_test", threadRef: started ? { botId: target.id, bot: target.name, threadId: "batch-test" } : null,
+    })], hasMore: false } });
   });
   await page.goto(process.env.WEB_URL || "http://127.0.0.1:5299");
-  const transcript = page.getByTestId("batch-transcript");
-  await transcript.getByText("Full original Telegram prompt", { exact: true }).waitFor();
-  await transcript.getByText("Inventory details visible", { exact: true }).waitFor();
-  assert(olderLoaded, "loads earlier pages automatically");
-  assert.equal(await transcript.getByTestId("thread-ref").count(), 0);
+  await page.getByText("Telegram shop: receiving 6 photos; waiting for Check", { exact: true }).waitFor();
+  started = true;
+  target.threadId = "batch-test";
+  target.threadBusy = true;
+  await page.evaluate((bot) => window.channelEvents.onmessage({ data: JSON.stringify({ kind: "bot", bot }) }), target);
+  const log = page.getByRole("log");
+  await log.getByText("Full original Telegram prompt", { exact: true }).waitFor();
+  await log.getByText("Inventory details visible", { exact: true }).waitFor();
+  assert.equal(await log.getByText(summary, { exact: true }).count(), 0);
+  await page.getByTitle("Details and conversations").getByText(/b_test/).waitFor();
   await page.evaluate((botId) => {
     const emit = (frame) => window.channelEvents.onmessage({ data: JSON.stringify(frame) });
-    emit({ kind: "message.patch", botId, threadId: "batch-test", message: { id: "answer", text: "Counting live without clicks", streaming: true } });
+    emit({ kind: "message.patch", botId, threadId: "batch-test", message: { id: "answer", text: "Counting live in job conversation", streaming: true } });
     emit({ kind: "message.patch", botId, threadId: "batch-test", message: { id: "tool", tool: { name: "shell", input: "inspect inventory", output: "Live result: 42 items", ok: true } } });
   }, target.id);
-  await transcript.getByText("Counting live without clicks", { exact: true }).waitFor();
-  await transcript.getByText("Live result: 42 items", { exact: true }).waitFor();
-  console.log("PASS: full paginated history and live text/tool results appear without clicks.");
+  await log.getByText("Counting live in job conversation", { exact: true }).waitFor();
+  await log.getByText("Live result: 42 items", { exact: true }).waitFor();
+  target.threadId = "main-test";
+  target.threadBusy = false;
+  await page.evaluate((bot) => window.channelEvents.onmessage({ data: JSON.stringify({ kind: "bot", bot }) }), target);
+  await log.getByText(summary, { exact: true }).waitFor();
+  assert.equal(await log.getByText("Live result: 42 items", { exact: true }).count(), 0);
+  assert.equal(await log.getByText("Full original Telegram prompt", { exact: true }).count(), 0);
+  await page.getByTestId("thread-ref").click();
+  await log.getByText("Inventory details visible", { exact: true }).waitFor();
+  console.log("PASS: job auto-selection shows live details; main contains only a compact reference that reopens the job.");
+
 } finally {
   await browser.close();
 }

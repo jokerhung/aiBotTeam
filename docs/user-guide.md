@@ -36,11 +36,11 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 - **Trí nhớ và kỹ năng:** ghi chú giữ giữa các việc; skill là file `SKILL.md` bạn viết.
 - **Chia sẻ team:** menu **+** → Import team, hoặc chia sẻ một section thành một file Markdown (không kèm lịch sử chat hay khoá).
 
-Lịch sử các lô Telegram/Zalo hiển thị trực tiếp dưới thông báo lô trong cửa sổ chat chính của bot: lời nhắc, nội dung trả lời đang chạy và chi tiết đầu vào/kết quả công cụ đều mở sẵn, không cần bấm mở cuộc trò chuyện. Mỗi lô vẫn có cuộc trò chuyện riêng để giữ đúng ngữ cảnh của engine; cửa sổ chính tự tải toàn bộ lịch sử và cập nhật theo thời gian thực.
+Nhận ảnh qua Telegram/Zalo chỉ tạo/cập nhật thông báo số lượng file trong main conversation. Khi người gửi bấm Kiểm kê hoặc gõ `/kiemke`, bot tạo conversation mới có tên là `job_id` (mã lô, trùng thư mục `jobs/<job_id>/`) và tự chuyển sang conversation đó. Main chỉ giữ thông báo ngắn, ví dụ “Đang kiểm đếm ở conversation b_1234”, kèm liên kết mở job; lời nhắc, nội dung trả lời và chi tiết công cụ nằm trong conversation của job. Nếu bot đang bận, conversation của job được tạo ngay với trạng thái chờ và được dùng tiếp khi đến lượt chạy.
 
 ## 5. Tự host
 
-Để mở web qua LAN/Tailscale khi chạy `pnpm dev`, đặt `WEB_HOST=0.0.0.0` trong `.env`, giữ `SERVER_HOST=127.0.0.1`, rồi khởi động lại cả web và server. Truy cập `http://<IP LAN hoặc IP Tailscale>:5299`; API đi qua proxy của web nên chỉ cần cổng web. Chế độ này tự bật ghép nối bằng mã trong console server. Next tự cho phép các IP hiện có của máy dùng tài nguyên dev/HMR; nếu dùng tên DNS khác, thêm hostname vào `WEB_ALLOWED_HOSTS` (phân cách bằng dấu phẩy).
+Để mở web qua LAN/Tailscale khi chạy `pnpm dev`, đặt `WEB_HOST=0.0.0.0` trong `.env`, giữ `SERVER_HOST=127.0.0.1`, rồi khởi động lại cả web và server. Truy cập `http://<IP LAN hoặc IP Tailscale>:5299`; API đi qua proxy của web nên chỉ cần cổng web. Localhost và IP LAN/Tailscale vào thẳng, không cần ghép nối. Truy cập bằng tên miền (kể cả tên MagicDNS của Tailscale) vẫn cần mã ghép nối trong console server. Next tự cho phép các IP hiện có của máy dùng tài nguyên dev/HMR; nếu dùng tên DNS khác, thêm hostname vào `WEB_ALLOWED_HOSTS` (phân cách bằng dấu phẩy).
 
 ```bash
 docker compose up -d                       # một image, volume cho dữ liệu; lần đầu build ~5 phút
@@ -48,13 +48,15 @@ BOTTEAM_IMAGE=ghcr.io/<owner>/<repo>:latest docker compose up -d   # kéo image 
 botteam serve --host 0.0.0.0 --port 8899   # nghe ngoài máy này
 ```
 
-Khi không nghe loopback, BotTeam bắt buộc ghép cặp: console in một mã dùng một lần (10 phút); nhập mã trên trình duyệt để đăng nhập. Nên đặt sau HTTPS (reverse proxy).
+Khi mở truy cập mạng, BotTeam yêu cầu ghép cặp với truy cập bằng tên miền hoặc IP công cộng: console in một mã dùng một lần (10 phút); nhập mã trên trình duyệt để đăng nhập. Localhost, IP LAN và IP Tailscale không cần ghép cặp. Proxy web ghi đè `X-Forwarded-Host` bằng host thực của trình duyệt; backend chỉ tin header này từ proxy loopback và chạy với `proxy_headers=False` (hoặc `--no-proxy-headers` nếu gọi uvicorn trực tiếp). Nên đặt truy cập tên miền sau HTTPS (reverse proxy).
 
 - Sao lưu: Settings → Backup tải một file zip; khôi phục: dừng server rồi `botteam restore <file>`.
 - Điều khiển không màn hình: `botteam run "<bot>" "<việc>" --json`, `botteam team apply team.yaml`; mã thoát 0 ok, 1 lỗi, 2 sai cú pháp, 3 quá giờ, 4 cần người.
 - `botteam mcp` chạy MCP server của app cho Claude Desktop/Cursor (không có công cụ duyệt, xoá, cấu hình hay bí mật).
 
 ## 6. Xử lý sự cố
+
+- **Windows báo `Accept failed on a socket` / `WinError 87`:** dừng phiên dev cũ bằng `Ctrl+C`, rồi chạy lại `pnpm dev`. Trên Windows, launcher dùng `botteam.dev` để theo dõi file Python và khởi động lại server với socket mới; vẫn giữ Proactor để Codex/Claude và các tiến trình con chạy được. Không chạy trực tiếp Uvicorn với tổ hợp `--reload --loop botteam.loop:loop_factory` trên Windows vì socket chia sẻ của reloader có thể lỗi IOCP.
 
 - Không có engine: banner đỏ trên đầu; làm theo bước 3.
 - Trình duyệt Computer báo không khởi động: cài Edge/Chrome hoặc `playwright install chromium`.

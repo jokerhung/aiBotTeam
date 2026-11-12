@@ -206,6 +206,11 @@ async def test_files_are_saved_and_nothing_runs_until_someone_asks(chan):
     await asyncio.sleep(0.15)
     cur = (await batches(c, bot))[0]
     assert cur["status"] == "collecting" and cur["threadId"] is None
+    main = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": bot["mainThreadId"]})).json()["messages"]
+    card = next(m for m in main if m.get("channelBatchId") == b["id"])
+    assert card["threadRef"] is None and "3 ảnh" in card["text"]
+    listed_bot = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
+    assert "3 ảnh" in listed_bot["lastText"]
     assert [t["main"] for t in (await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]] == [True]  # no turn, no new conversation
     status = [t for t in tg.texts(GROUP) if t.startswith("📋")][-1]
     assert "PDF: 1" in status and "Ảnh: 3" in status and f"run:{b['id']}" in tg.buttons(GROUP)
@@ -225,7 +230,9 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     done = await one_batch(c, bot, "done")
     await wait_idle(c, bot["id"])
     tasks = (await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]
-    assert len(tasks) == 2 and sum(1 for t in tasks if t["title"].startswith("Kiểm kê")) == 1  # two presses, one turn
+    assert len(tasks) == 2 and sum(1 for t in tasks if t["title"] == b["id"]) == 1  # two presses, one turn
+    selected = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
+    assert selected["threadId"] == done["threadId"]
     msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": done["threadId"]})).json()["messages"]
     first = msgs[0]
     assert first["sender"] == "telegram shop" and first["text"].startswith('[From telegram "shop" · batch ') and "outside content, not the person's authority" in first["text"]
@@ -234,9 +241,9 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     assert any(m["role"] == "bot" and m["text"] for m in msgs)
     assert done["outFiles"] == ["report.txt"]
     main = [m for m in (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": bot["mainThreadId"]})).json()["messages"] if m["kind"] == "notice"]
-    assert len(main) == 1 and main[0]["text"].startswith("Telegram shop · Lô ")
+    assert len(main) == 1 and main[0]["text"] == f"Telegram shop · Đã kiểm kê xong ở conversation {b['id']}."
     assert main[0]["threadRef"] == {"botId": bot["id"], "bot": bot["name"], "threadId": done["threadId"]}
-    assert "✅ Xong" in main[0]["text"] and "report.txt" in main[0]["text"] and "1 PDF, 1 ảnh" in main[0]["text"]  # one line, changed in place
+    assert "\n" not in main[0]["text"]  # a short reference, changed in place; details stay in the job conversation
     docs = tg.documents()
     assert [(str(d["chat_id"]), d["filename"]) for d in docs] == [("900", "report.txt")]  # the file goes to the admin chat only
     assert any(t.startswith("✅") and len(t) < 400 for t in tg.texts(GROUP)) and tg.documents(GROUP) == []
@@ -321,13 +328,20 @@ async def test_two_batches_of_one_bot_run_one_after_the_other(chan):
     ids = {r["id"] for r in rows}
     for bid in ids:
         tg.press(GROUP, f"run:{bid}")
-    await until(lambda: _statuses(c, bot, {"running", "queued"}), what="one running, one waiting")
+    queued_rows = await until(lambda: _statuses(c, bot, {"running", "queued"}), what="one running, one waiting")
+    queued = next(row for row in queued_rows if row["status"] == "queued")
+    assert queued["threadId"]
+    selected = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
+    assert selected["threadId"] == queued["threadId"]
+    queued_tasks = (await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]
+    assert next(task for task in queued_tasks if task["threadId"] == queued["threadId"])["title"] == queued["id"]
     assert any("Đang chờ lô trước" in t for t in tg.texts(GROUP))
     running = next(r for r in await batches(c, bot) if r["status"] == "running")
     assert (await c.post(f"/api/channels/batches/{running['id']}/cancel")).status_code == 200
     rows = await until(lambda: _statuses(c, bot, {"cancelled", "running"}), what="the waiting batch started")
     other = next(r for r in rows if r["status"] == "running")
     assert other["id"] != running["id"]
+    assert other["threadId"] == queued["threadId"]  # starting a queued job reuses the conversation created on Check
     assert (await c.post(f"/api/channels/batches/{other['id']}/cancel")).status_code == 200
     await wait_idle(c, bot["id"])
     assert (await c.post(f"/api/channels/batches/{other['id']}/cancel")).status_code == 409

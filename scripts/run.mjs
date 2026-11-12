@@ -26,8 +26,11 @@ const env = {
 };
 
 const targets = {
-  server: ["uv", ["run", "--project", "server", "python", "-m", "uvicorn", "botteam.main:app", "--app-dir", "server",
-    "--host", serverHost, "--port", serverPort, "--reload", "--loop", "botteam.loop:loop_factory"]],
+  // Windows Proactor needs fresh sockets after reload, and is also required by engine CLIs.
+  server: process.platform === "win32"
+    ? ["uv", ["run", "--project", "server", "python", "-m", "botteam.dev", "--host", serverHost, "--port", serverPort]]
+    : ["uv", ["run", "--project", "server", "python", "-m", "uvicorn", "botteam.main:app", "--app-dir", "server",
+      "--host", serverHost, "--port", serverPort, "--no-proxy-headers", "--reload", "--loop", "botteam.loop:loop_factory"]],
   web: ["pnpm", ["--filter", "web", "exec", "next", "dev", "-p", webPort, "-H", webHost]],
   one: ["uv", ["run", "--project", "server", "botteam", "serve", "--no-open", "--host", serverHost, "--port", serverPort]],
   "web-start": ["pnpm", ["--filter", "web", "exec", "next", "start", "-p", webPort, "-H", webHost]],

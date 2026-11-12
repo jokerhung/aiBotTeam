@@ -7,6 +7,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 
 from botteam.backup import BackupError, make_backup, restore
+from botteam.auth import direct_access_host
 from botteam.main import create_app
 
 from .test_api import ctx, make_bot  # noqa: F401  (fixture)
@@ -57,6 +58,44 @@ async def test_wrong_codes_are_limited_and_an_old_code_expires(tmp_path, monkeyp
             app.state.pairing.tries.clear()
             monkeypatch.setattr(auth.time, "time", lambda: 10**10)  # far in the future: the code is old
             assert (await c.post("/api/auth/pair", json={"code": code})).status_code == 401
+
+
+@pytest.mark.parametrize("host", [
+    "localhost:5299", "LOCALHOST.:5299", "127.0.0.1:5299", "10.201.21.211:5299",
+    "192.168.1.2", "172.16.0.1", "172.31.255.254", "100.113.158.66:5299",
+    "[::1]:5299", "[fd7a:115c:a1e0::1]:5299", "[::ffff:192.168.1.2]:5299",
+])
+def test_local_and_network_ip_hosts_open_directly(host):
+    assert direct_access_host(host)
+
+
+@pytest.mark.parametrize("host", [
+    "bot.example.com:5299", "machine.tailnet.ts.net", "machine.local", "localhost.evil.example",
+    "8.8.8.8", "100.63.255.255", "100.128.0.1", "172.32.0.1", "", "localhost@evil.example",
+    "localhost,evil.example", "[invalid]", "localhost/path",
+])
+def test_domains_public_ips_and_invalid_hosts_need_pairing(host):
+    assert not direct_access_host(host)
+
+
+async def test_remote_pairing_policy_is_the_same_for_status_and_api(tmp_path):
+    app = create_app(home=tmp_path, remote=True)
+    async with LifespanManager(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost") as c:
+            for host in ("localhost:5299", "10.201.21.211:5299", "100.113.158.66:5299"):
+                for headers in ({"host": host}, {"host": "127.0.0.1:8899", "x-forwarded-host": host}):
+                    assert (await c.get("/api/auth/status", headers=headers)).json() == {"required": False, "authenticated": True}
+                    assert (await c.get("/api/bots", headers=headers)).status_code == 200
+            domain = {"host": "127.0.0.1:8899", "x-forwarded-host": "bot.example.com:5299"}
+            assert (await c.get("/api/auth/status", headers=domain)).json() == {"required": True, "authenticated": False}
+            assert (await c.get("/api/bots", headers=domain)).status_code == 401
+            code = app.state.pairing.new_code()
+            assert (await c.post("/api/auth/pair", headers=domain, json={"code": code})).status_code == 200
+            assert (await c.get("/api/bots", headers=domain)).status_code == 200
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=("203.0.113.10", 50000)), base_url="http://bot.example.com") as other:
+            spoofed = {"x-forwarded-host": "localhost:5299", "x-forwarded-for": "127.0.0.1"}
+            assert (await other.get("/api/auth/status", headers=spoofed)).json()["required"] is True
+            assert (await other.get("/api/bots", headers=spoofed)).status_code == 401
 
 
 async def test_a_backup_restores_the_whole_data_folder(tmp_path):

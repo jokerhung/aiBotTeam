@@ -22,11 +22,10 @@ export function ThreadRefCard({ m }: { m: Message }) {
   };
   return (
     <div className="space-y-2">
-      {batchNotice && <div className="whitespace-pre-line text-center text-[13px] text-ink-tertiary">{m.text}</div>}
       <button type="button" data-testid="thread-ref" onClick={open}
-        className="mx-auto flex max-w-[420px] items-center gap-2 rounded-full bg-ink/[0.05] py-1 pl-1.5 pr-3 text-[13px] text-ink-secondary ring-1 ring-ink/10 hover:bg-ink/[0.09]">
+        className="mx-auto flex max-w-full items-center gap-2 rounded-full bg-ink/[0.05] py-1 pl-1.5 pr-3 text-[13px] text-ink-secondary ring-1 ring-ink/10 hover:bg-ink/[0.09]">
         {target ? <Mascot color={target.color} size={20} /> : <Users size={14} />}
-        <span data-no-i18n="" className="min-w-0 truncate">{batchNotice ? t("View chat log") : `${t("Handed work to")} ${ref.bot}`}</span>
+        <span data-no-i18n="" className="min-w-0 text-left">{batchNotice ? m.text : `${t("Handed work to")} ${ref.bot}`}</span>
         <ArrowUpRight size={13} className="shrink-0 text-ink-tertiary" />
       </button>
     </div>

@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 
+import anyio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +29,7 @@ from .channels import ChannelError, ChannelService
 from .composio import Composio, ComposioError, slug_of
 from . import teams as teamlib
 from . import observe
-from .auth import COOKIE, OPEN_PATHS, Pairing
+from .auth import COOKIE, OPEN_PATHS, Pairing, request_needs_pairing
 from .backup import BackupError, make_backup
 from .memory import Memory, redact
 from .skills import SkillError, Skills
@@ -143,7 +144,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def lifespan(app: FastAPI):
         await store.open()
         if pairing.required:
-            print(f"\nBotTeam is open to other computers. Pair a browser with this code (valid 10 minutes, once): {pairing.new_code()}\n", flush=True)
+            print(f"\nBotTeam domain access needs browser pairing (localhost and LAN/Tailscale IPs open directly). Code (valid 10 minutes, once): {pairing.new_code()}\n", flush=True)
         await store.expire_open_requests()
         await broker.start()
         await host.refresh()
@@ -185,9 +186,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     @app.middleware("http")
     async def require_pairing(request, call_next):
-        """Only when the server is open beyond this computer: no session, no API. The UI files themselves are public; they ask for the code."""
+        """Remote domains need a session; localhost and LAN/Tailscale IPs open directly."""
         path = request.url.path
-        if pairing.required and path.startswith("/api/") and path not in OPEN_PATHS and not pairing.valid(request.cookies.get(COOKIE)):
+        if request_needs_pairing(request, pairing.required) and path.startswith("/api/") and path not in OPEN_PATHS and not pairing.valid(request.cookies.get(COOKIE)):
             from fastapi.responses import JSONResponse
 
             return JSONResponse({"detail": "pairing required"}, status_code=401)
@@ -199,7 +200,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     @app.get("/api/auth/status")
     async def auth_status(request: Request):
-        return {"required": pairing.required, "authenticated": (not pairing.required) or pairing.valid(request.cookies.get(COOKIE))}
+        required = request_needs_pairing(request, pairing.required)
+        return {"required": required, "authenticated": (not required) or pairing.valid(request.cookies.get(COOKIE))}
 
     @app.post("/api/auth/pair")
     async def auth_pair(body: dict):
@@ -1520,7 +1522,11 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                     yield {"data": json.dumps(frame)}
             finally:
                 nxt.cancel()
-                await stream.aclose()
+                # SSE disconnects cancel the surrounding AnyIO scope. Drain the
+                # pending __anext__ under shielding before closing its generator.
+                with anyio.CancelScope(shield=True):
+                    await asyncio.gather(nxt, return_exceptions=True)
+                    await stream.aclose()
 
         return EventSourceResponse(gen(), ping=None)
 

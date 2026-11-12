@@ -321,6 +321,7 @@ export interface Message {
   author?: string | null;
   mentions?: string[];
   threadRef?: { botId: string; bot: string; threadId?: string | null; assignmentId?: string } | null;
+  channelBatchId?: string | null;
   routine?: { id: string; name: string; schedule: string; enabled: boolean; webhook?: boolean } | null;
 }
 

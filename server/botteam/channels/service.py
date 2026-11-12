@@ -100,11 +100,13 @@ class ChannelService:
         await self.db.open()
         # Existing batch notices also need a route to their saved transcript.
         for b in await self.db.list_batches(limit=-1):
-            if b["threadId"] and b["cardId"]:
+            if b["cardId"]:
                 msg = await self.store.get_message(b["cardId"])
                 bot = await self.store.get_bot(b["botId"])
-                if msg and bot and not msg.threadRef:
-                    msg.threadRef = {"botId": bot.id, "bot": bot.name, "threadId": b["threadId"]}
+                if msg and bot:
+                    msg.channelBatchId = b["id"]
+                    if b["threadId"] and not msg.threadRef:
+                        msg.threadRef = {"botId": bot.id, "bot": bot.name, "threadId": b["threadId"]}
                     await self.store.update_message(msg)
         for b in await self.db.list_batches(statuses=["running"]):  # a turn cut by a restart is not run again by itself
             await self.db.update_batch(b["id"], status="failed", error="The server restarted while this batch was running. Press Retry to run it again.", finishedAt=now_ms())
@@ -185,6 +187,13 @@ class ChannelService:
 
     @staticmethod
     def _card_text(b: dict, label: str) -> str:
+        if b["threadId"]:
+            status = {
+                "queued": "Đang chờ kiểm kê", "running": "Đang kiểm đếm",
+                "done": "Đã kiểm kê xong", "failed": "Kiểm kê lỗi",
+                "cancelled": "Đã huỷ kiểm kê", "expired": "Lô đã hết hạn",
+            }.get(b["status"], "Kiểm kê")
+            return f"{label} · {status} ở conversation {b['id']}."
         pdfs = sum(1 for f in b["files"] if f["kind"] == "file")
         imgs = sum(1 for f in b["files"] if f["kind"] == "image")
         head = f"{label} · Lô {b['id']}" + (f" · máy {b['machine']}" if b["machine"] else "") + (f" · {b['userName']}" if b["userName"] else "")
@@ -214,21 +223,25 @@ class ChannelService:
             text = self._card_text(b, f"{'Telegram' if acc['app'] == 'telegram' else 'Zalo'} {acc['label']}")
             thread_ref = {"botId": bot.id, "bot": bot.name, "threadId": b["threadId"]} if b["threadId"] else None
             msg = await self.store.get_message(b["cardId"]) if b["cardId"] else None
+            changed = msg is None or msg.text != text or msg.threadRef != thread_ref or msg.channelBatchId != b["id"]
             if msg is not None:
-                if msg.text != text or msg.threadRef != thread_ref:
+                if changed:
                     msg.text = text
                     msg.threadRef = thread_ref
+                    msg.channelBatchId = b["id"]
                     await self.store.update_message(msg)
-                    self.turns._frame("message.patch", bot.id, bot.mainThreadId, {"id": msg.id, "text": text, "threadRef": thread_ref})
+                    self.turns._frame("message.patch", bot.id, bot.mainThreadId, {"id": msg.id, "text": text, "threadRef": thread_ref, "channelBatchId": b["id"]})
             else:
-                msg = WireMessage(id=new_id("msg"), role="bot", kind="notice", author=bot.id, at=now_ms(), text=text, threadRef=thread_ref)
+                msg = WireMessage(id=new_id("msg"), role="bot", kind="notice", author=bot.id, at=now_ms(), text=text, threadRef=thread_ref, channelBatchId=b["id"])
                 await self.store.add_message(bot.id, bot.mainThreadId, msg)
                 self.turns._frame("message", bot.id, bot.mainThreadId, msg)
                 await self.db.update_batch(b["id"], cardId=msg.id)
-            if b["status"] in ("done", "failed") or not b["cardId"]:  # a new batch, or one that ended: worth a mark in the list
+            if changed:
                 fresh = await self.store.get_bot(bot.id)
-                if fresh and not fresh.unread:
+                if fresh:
                     fresh.unread = True
+                    fresh.lastText = text.splitlines()[-1]
+                    fresh.lastAt = now_ms()
                     await self.store.save_bot(fresh)
                     await self.turns.publish_bot(fresh)
 
@@ -788,7 +801,7 @@ class ChannelService:
             if await self.db.list_batches(bot_id=bot.id, statuses=["running"], limit=1):
                 if len(await self.db.list_batches(bot_id=bot.id, statuses=["queued"])) >= MAX_QUEUED:
                     return False, f"Hàng đợi của bot đã đầy ({MAX_QUEUED} lô đang chờ). Hãy thử lại khi lô đang chạy xong."
-                await self.db.update_batch(batch_id, status="queued", error="", finishedAt=None)
+                await self._new_job_thread(b, bot, queued=True)
                 await self._status_now(batch_id)
                 return True, "queued"
             await self._launch(b, acc, bot)
@@ -820,6 +833,22 @@ class ChannelService:
                 f"Sent by: {b['userName'] or b['userId']}\nMachine code given by the sender: {b['machine'] or '(none)'}\nFiles:\n{listing or '(none)'}")
         return envelope(f"{acc['app']} \"{acc['label']}\"", f"batch {b['id']}", "owner instructions in the first block, the rest is data", body)
 
+    async def _new_job_thread(self, b: dict, bot, queued: bool = False) -> dict:
+        thread = await self.store.create_thread(bot.id, b["id"])
+        if queued:
+            msg = WireMessage(id=new_id("msg"), role="bot", kind="notice", author=bot.id, at=now_ms(),
+                              text=f"Job {b['id']} đang chờ lô trước chạy xong.")
+            await self.store.add_message(bot.id, thread["id"], msg)
+            self.turns._frame("message", bot.id, thread["id"], msg)
+        bot.threadId = thread["id"]
+        await self.store.save_bot(bot)
+        fields = {"threadId": thread["id"]}
+        if queued:
+            fields.update(status="queued", error="", finishedAt=None)
+        await self.db.update_batch(b["id"], **fields)
+        await self.turns.publish_bot(bot)
+        return thread
+
     async def _launch(self, b: dict, acc: dict, bot) -> None:
         grant = await self.db.get_grant(acc["id"], bot.id) or {"maxPhotos": 40, "timeoutSec": 900, "prompt": ""}
         job = Path(b["dir"])
@@ -830,14 +859,19 @@ class ChannelService:
                     p.unlink(missing_ok=True)
         out.mkdir(parents=True, exist_ok=True)
         await self._write_manifest(b["id"])
-        who = b["userName"] or b["userId"]
-        thread = await self.store.create_thread(bot.id, f"Kiểm kê {who} {datetime.now().strftime('%H:%M')}"[:48])
+        thread = await self.store.get_thread(b["threadId"]) if b["status"] == "queued" and b["threadId"] else None
+        if thread is None:
+            thread = await self._new_job_thread(b, bot)
+        else:
+            bot.threadId = thread["id"]
+            await self.store.save_bot(bot)
         text = self._prompt(acc, grant, b, bot)
         msg = WireMessage(id=new_id("msg"), role="user", text=text, at=now_ms(), sender=f"{acc['app']} {acc['label']}")
         await self.store.add_message(bot.id, thread["id"], msg)
         self.turns._frame("message", bot.id, thread["id"], msg)
         images = [str((job / f["path"]).resolve()) for f in b["files"] if f["kind"] == "image"][: grant["maxPhotos"]]
         await self.db.update_batch(b["id"], status="running", threadId=thread["id"], startedAt=now_ms(), finishedAt=None, error="")
+        await self.publish_batch(b["id"])
         ok = await self.turns._start_turn(bot, thread["id"], text, origin="outside", channel_batch_id=b["id"], extra_images=images)
         await self.turns.publish_bot(bot)
         if not ok:

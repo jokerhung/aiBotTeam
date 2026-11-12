@@ -121,6 +121,7 @@ class WireMessage(BaseModel):
     error: Optional[ErrorInfo] = None
     request: Optional[RequestInfo] = None
     threadRef: Optional[dict[str, Any]] = None  # a hand-off: the teammate and the thread the work went to
+    channelBatchId: Optional[str] = None  # the receiving/running batch shown across this bot's conversations
     routine: Optional[dict[str, Any]] = None  # a routine a bot just made: the live card shows Edit, Pause, Undo
     mentions: list[str] = Field(default_factory=list)  # bot ids a message names with @
     sender: Optional[str] = None  # who this line came from when it is a teammate's or a routine's, not the person's

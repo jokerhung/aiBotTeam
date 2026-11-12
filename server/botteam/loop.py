@@ -1,4 +1,4 @@
-"""uvicorn --reload runs on a SelectorEventLoop on Windows, which cannot spawn subprocesses (the engine CLIs). Use Proactor."""
+"""Engine CLIs need Proactor on Windows. botteam.dev reloads with fresh sockets to avoid shared-socket IOCP failures."""
 import asyncio
 import sys
 
