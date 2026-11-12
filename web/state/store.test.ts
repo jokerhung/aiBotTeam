@@ -13,6 +13,18 @@ const frame = (s: AppState, f: ServerFrame) => reducer(s, { type: "frame", frame
 const hydrated = (...ids: string[]) => reducer(initialState, { type: "hydrate", bots: ids.map((i) => bot(i)), instances: [] });
 
 describe("reducer", () => {
+  it("keeps live text and tool results arriving while an embedded history loads", () => {
+    const old = msg("answer", { text: "old", streaming: true });
+    let s: AppState = { ...initialState, messages: { batch: [old] } };
+    const snapshot = s.messages.batch;
+    s = frame(s, { kind: "message.patch", botId: "a", threadId: "batch", message: { id: "answer", text: "live answer" } });
+    s = frame(s, { kind: "message", botId: "a", threadId: "batch", message: msg("tool", { kind: "activity", tool: { name: "shell", summary: "List files", input: "ls", output: "report.pdf", ok: true } }) });
+    s = reducer(s, { type: "history", threadId: "batch", messages: [msg("prompt", { role: "user" }), old], hasMore: false, generation: 1000, snapshot });
+    expect(s.messages.batch.map((m) => m.id)).toEqual(["prompt", "answer", "tool"]);
+    expect(s.messages.batch[1].text).toBe("live answer");
+    expect(s.messages.batch[2].tool?.output).toBe("report.pdf");
+  });
+
   it("hydrate selects the first bot", () => {
     const s = hydrated("a", "b");
     expect(s.selectedId).toBe("a");

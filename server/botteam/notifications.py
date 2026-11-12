@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from .store import new_id, now_ms
 
-KINDS = {"approval", "question", "turn_done", "routine_failed", "webhook_failed", "assignment_failed"}
+KINDS = {"approval", "question", "turn_done", "routine_failed", "webhook_failed", "assignment_failed", "channel_failed"}
 LONG_TURN_MS = 15_000  # a turn that ran this long is worth a note when it ends
 
 

@@ -2,11 +2,14 @@
 
 Commands in the message pick the scenario: "/tool" runs a fake tool call, "/slow" streams for a long time,
 "/error" fails the turn, "/md" replies with Markdown, "/approve <cmd>" asks the person to allow a shell command,
-"/ask <question>" asks a question with choices A/B/C. Anything else is echoed back.
+"/ask <question>" asks a question with choices A/B/C, a line "/out <path>" writes a small file there (inside the working folder).
+Anything else is echoed back.
 """
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import Path
 
 from .base import Capabilities, Emitter, SendTurnInput, new_turn_id
 
@@ -43,7 +46,13 @@ class EchoDriver(Emitter):
         try:
             self.emit("session.started", t, turn_id, sessionId=f"echo-{t}")
             self.emit("turn.started", t, turn_id)
-            if text.startswith("/error"):
+            wrote = re.search(r"^/out (\S+)", text, re.M)  # "/out <path>": leave a small result file in the working folder (a batch's out/)
+            if wrote and inp.cwd:
+                target = (Path(inp.cwd) / wrote.group(1)).resolve()
+                if Path(inp.cwd).resolve() in target.parents:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(f"result of {t}\n", encoding="utf8")
+            if text.startswith("/error") or "\n/error" in text:
                 self.emit("runtime.error", t, turn_id, message="Simulated failure", terminal=True)
                 self.emit("turn.completed", t, turn_id, ok=False)
                 return
@@ -58,6 +67,8 @@ class EchoDriver(Emitter):
                 return
             if not text.startswith("/") and "\n/ask" in text:  # the task of a hand-off arrives after the envelope
                 text = text[text.index("\n/ask") + 1:]
+            elif not text.startswith("/") and "\n/approve" in text:  # so does a batch's prompt from a messaging channel
+                text = text[text.index("\n/approve") + 1:]
             if text.startswith(("/approve", "/ask")) and self.broker is not None:
                 if text.startswith("/approve"):
                     cmd = text[len("/approve"):].strip() or "mkdir demo"

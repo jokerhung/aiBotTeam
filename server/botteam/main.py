@@ -24,6 +24,7 @@ from .groups import Groups
 from .host import RuntimeHost
 from .notifications import Notifications
 from .routines import RoutineService
+from .channels import ChannelError, ChannelService
 from .composio import Composio, ComposioError, slug_of
 from . import teams as teamlib
 from . import observe
@@ -82,6 +83,11 @@ class ConnectBody(BaseModel):
     alias: str | None = None
 
 
+class ChannelAccountBody(BaseModel):
+    label: str = ""
+    token: str = ""
+
+
 def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False, remote: bool | None = None, web_dir: Path | None = None) -> FastAPI:
     home = home or data_dir()
     store = Store(db_path or home / "messages.db")
@@ -124,6 +130,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
+    channels = ChannelService(store, turns, bus, config)
+    channels.notify = notify
+    turns.channels = channels
     routines.webhooks = webhooks
     broker.agent_call = agents.call
     registry.agents = agents
@@ -151,6 +160,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             hook_state["server"], hook_state["task"] = srv, asyncio.create_task(srv.serve())
         await routines.after_restart()  # nothing missed while the server was off is made up
         routines.start()
+        await channels.start()  # the messaging channels read their accounts' messages from here on
         yield
         if hook_state.get("server"):
             hook_state["server"].should_exit = True
@@ -158,6 +168,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                 await asyncio.wait_for(hook_state["task"], 5)
             except Exception:
                 pass
+        await channels.stop()
         await routines.stop()
         await browser.shutdown()
         await runtime.close()
@@ -403,6 +414,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                 other.reportsTo = None
                 await store.save_bot(other)
                 await turns.publish_bot(other)
+        await channels.bot_deleted(bot_id)
         await store.delete_bot(bot_id)
         bus.publish({"kind": "bot.deleted", "botId": bot_id})
         return {"ok": True}
@@ -428,6 +440,11 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         bot = await need(bot_id)
         tid = await need_thread(bot, thread)
         items, more = await store.page(tid, before)
+        # Streaming text is kept in memory until finalized; reopening a running
+        # batch must show the full answer received so far.
+        run = turns.runs.get(tid)
+        if run and run.live:
+            items = [run.live if m.id == run.live.id else m for m in items]
         return {"threadId": tid, "messages": [m.model_dump() for m in items], "hasMore": more}
 
     @app.post("/api/bots/{bot_id}/messages", status_code=202)
@@ -1093,6 +1110,105 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         except ComposioError as e:
             raise composio_failed(e)
 
+
+    # ---- messaging channels (the Input tab): a Telegram bot, a Zalo bot. The server keeps the token and reads the messages itself ----
+    def channel_failed(e: ChannelError):
+        # a refused bot token is the person's input being wrong (400), never this app's own 401
+        return HTTPException(400 if e.status == 401 else (e.status if 400 <= e.status < 500 else 502), str(e))
+
+    async def need_account(app_id: str, account_id: str) -> dict:
+        acc = await channels.db.get_account(account_id)
+        if not acc or acc["app"] != app_id:
+            raise HTTPException(404, "account not found")
+        return acc
+
+    @app.get("/api/channels")
+    async def channel_list():
+        return await channels.overview()
+
+    @app.post("/api/channels/{app_id}/accounts", status_code=201)
+    async def channel_connect(app_id: str, body: ChannelAccountBody):
+        try:
+            return await channels.connect(app_id, body.label, body.token)
+        except ChannelError as e:
+            raise channel_failed(e)
+
+    @app.patch("/api/channels/{app_id}/accounts/{account_id}")
+    async def channel_update(app_id: str, account_id: str, body: dict):
+        await need_account(app_id, account_id)
+        try:
+            return await channels.update_account(account_id, body)
+        except ChannelError as e:
+            raise channel_failed(e)
+
+    @app.delete("/api/channels/{app_id}/accounts/{account_id}")
+    async def channel_disconnect(app_id: str, account_id: str):
+        await need_account(app_id, account_id)
+        await channels.remove_account(account_id)
+        return {"removed": 1}
+
+    @app.post("/api/channels/{app_id}/accounts/{account_id}/clear-webhook")
+    async def channel_clear_webhook(app_id: str, account_id: str):
+        await need_account(app_id, account_id)
+        try:
+            return await channels.clear_webhook(account_id)
+        except ChannelError as e:
+            raise channel_failed(e)
+
+    @app.get("/api/channels/{app_id}/accounts/{account_id}/grants")
+    async def channel_grants(app_id: str, account_id: str):
+        await need_account(app_id, account_id)
+        return {"grants": [await channels.grant_public(g) for g in await channels.db.list_grants(account_id)]}
+
+    @app.put("/api/channels/{app_id}/accounts/{account_id}/grants/{bot_id}")
+    async def channel_put_grant(app_id: str, account_id: str, bot_id: str, body: dict):
+        await need_account(app_id, account_id)
+        try:
+            return await channels.put_grant(account_id, bot_id, body)
+        except ChannelError as e:
+            raise channel_failed(e)
+
+    @app.delete("/api/channels/{app_id}/accounts/{account_id}/grants/{bot_id}")
+    async def channel_delete_grant(app_id: str, account_id: str, bot_id: str):
+        await need_account(app_id, account_id)
+        if not await channels.delete_grant(account_id, bot_id):
+            raise HTTPException(404, "this bot does not use that account")
+        return {"ok": True}
+
+    @app.get("/api/channels/{app_id}/accounts/{account_id}/batches")
+    async def channel_batches(app_id: str, account_id: str, bot: str | None = None):
+        await need_account(app_id, account_id)
+        rows = await channels.db.list_batches(account_id=account_id, bot_id=bot, limit=100, newest_first=True)
+        return {"batches": [channels.batch_public(b) for b in rows]}
+
+    @app.get("/api/channels/{app_id}/accounts/{account_id}/events")
+    async def channel_events(app_id: str, account_id: str, bot: str | None = None):
+        await need_account(app_id, account_id)
+        return {"events": await channels.db.list_events(account_id, bot, 100)}
+
+    @app.get("/api/bots/{bot_id}/channels")
+    async def bot_channels(bot_id: str):
+        bot = await need(bot_id)
+        rows = await channels.db.list_batches(bot_id=bot_id, limit=50, newest_first=True)
+        return {"grants": await channels.grants_of_bot(bot_id), "warnings": channels.warnings(bot), "batches": [channels.batch_public(b) for b in rows]}
+
+    @app.post("/api/channels/batches/{batch_id}/retry")
+    async def channel_retry(batch_id: str):
+        if not await channels.db.get_batch(batch_id):
+            raise HTTPException(404, "batch not found")
+        ok, why = await channels.retry_batch(batch_id)
+        if not ok:
+            raise HTTPException(409, why)
+        return {"ok": True, "state": why}
+
+    @app.post("/api/channels/batches/{batch_id}/cancel")
+    async def channel_cancel(batch_id: str):
+        if not await channels.db.get_batch(batch_id):
+            raise HTTPException(404, "batch not found")
+        if not await channels.cancel_batch(batch_id, "Stopped from the app."):
+            raise HTTPException(409, "this batch has already ended")
+        return {"ok": True}
+
     # ---- webhooks (management; the receiver is a separate app on its own port) ---------------------------------------------------
     async def need_webhook(wid: str):
         w = await store.get_webhook(wid)
@@ -1429,6 +1545,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.memory, app.state.skills = memory, skills
     app.state.browser = browser
     app.state.composio = composio
+    app.state.channels = channels
     _ = now_ms
     return app
 

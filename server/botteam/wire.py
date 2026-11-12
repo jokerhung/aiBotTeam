@@ -340,3 +340,73 @@ class GroupMessage(BaseModel):
     text: str = Field(min_length=1, max_length=100_000)
     sendId: Optional[str] = None
     threadId: Optional[str] = None
+
+
+# ---- messaging channels (the Input tab): what the API and the live frames carry. No token is ever part of any of these. -------------------
+class WireChannelAccount(BaseModel):
+    id: str
+    app: Literal["telegram", "zalo"]
+    label: str
+    username: str = ""
+    enabled: bool = True
+    state: Literal["active", "error", "stopped"] = "active"
+    error: Optional[str] = None
+    lastAt: Optional[int] = None
+    usedBy: list[str] = Field(default_factory=list)
+
+
+class WireChannelAdminChat(BaseModel):
+    accountId: str
+    chat: str
+
+
+class WireChannelGrant(BaseModel):
+    accountId: str
+    botId: str
+    botName: str = ""
+    chats: list[str] = Field(default_factory=list)  # the chats this bot answers on this account
+    adminChats: list[WireChannelAdminChat] = Field(default_factory=list)  # who gets the result files (any account)
+    maxPhotos: int = 40
+    timeoutSec: int = 900
+    remindAt: str = ""
+    retentionDays: int = 60
+    prompt: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WireChannelFile(BaseModel):
+    name: str
+    kind: Literal["image", "file"]
+    size: int = 0
+
+
+class WireChannelBatch(BaseModel):
+    id: str
+    accountId: str
+    botId: str
+    chatId: str
+    userName: str = ""
+    status: Literal["collecting", "queued", "running", "done", "failed", "cancelled", "expired"]
+    machine: str = ""
+    files: list[WireChannelFile] = Field(default_factory=list)
+    outFiles: list[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    threadId: Optional[str] = None
+    startedAt: Optional[int] = None
+    finishedAt: Optional[int] = None
+    createdAt: int
+
+
+class WireChannelEvent(BaseModel):
+    """One thing a person sent and what became of it: started a batch, joined one, was filtered, skipped or rejected."""
+
+    id: str
+    accountId: str
+    botId: str = ""
+    batchId: str = ""
+    at: int
+    chatId: str
+    kind: str
+    outcome: Literal["started", "joined", "filtered", "skipped", "rejected"]
+    reason: str = ""
+    preview: str = ""

@@ -34,6 +34,25 @@ async def history(c, bot_id, **params):
     return (await c.get(f"/api/bots/{bot_id}/messages", params=params)).json()["messages"]
 
 
+async def test_history_includes_text_already_streamed_in_a_running_thread(ctx):
+    from types import SimpleNamespace
+    from botteam.wire import WireMessage
+
+    c, app = ctx
+    bot = await make_bot(c)
+    thread = await app.state.store.create_thread(bot["id"], "Telegram batch")
+    live = WireMessage(id="live-test", role="bot", text="", streaming=True, at=1)
+    await app.state.store.add_message(bot["id"], thread["id"], live)
+    live.text = "The full answer streamed so far"
+    app.state.turns.runs[thread["id"]] = SimpleNamespace(live=live)
+    try:
+        messages = await history(c, bot["id"], thread=thread["id"])
+        assert messages[0]["text"] == live.text
+        assert messages[0]["streaming"] is True
+    finally:
+        app.state.turns.runs.pop(thread["id"])
+
+
 async def test_bot_crud(ctx):
     c, _ = ctx
     bot = await make_bot(c, "Brody")

@@ -1,10 +1,11 @@
 "use client";
-import { Check, ExternalLink, KeyRound, MessageCircle, Plug, Plus, RefreshCw, Search, Send, X } from "lucide-react";
+import { Check, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { InputChannels } from "./InputChannels";
 import { McpServersView } from "./McpServers";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
@@ -20,45 +21,11 @@ interface AppsState { configured: boolean; source: string | null; keyHint: strin
  * browser, several accounts per app are told apart by a label, and no provider token is ever kept here. */
 type Tab = "apps" | "mcp" | "input";
 
-/** Messaging channels that start a bot when a message arrives. The screen is here; receiving messages is Phase 6 (docs/phase-6-telegram-channel.md). */
-const CHANNELS = [
-  { id: "telegram", name: "Telegram bot", icon: Send, tone: "bg-[#229ed9] text-white", blurb: "Receives PDFs and photos from a chat, groups them into a batch, and starts the bot when someone presses Check.",
-    limits: [] as string[] },
-  { id: "zalo", name: "Zalo bot", icon: MessageCircle, tone: "bg-[#0068ff] text-white", blurb: "Receives text and photos from a private chat with your Zalo bot.",
-    limits: ["Cannot receive PDF files", "Cannot send files", "Group chats are not supported yet"] },
-];
-
-function InputView() {
-  const t = useT();
-  return (
-    <div role="tabpanel" aria-label={t("Input")} data-testid="input-panel" className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-      <div className="mx-2 mb-3 rounded-xl bg-raised px-3.5 py-2.5 text-[13px] leading-5 text-ink-secondary">
-        {t("Inputs receive messages and start a bot by themselves. The Telegram entry under Connected apps only gives a bot tools to send.")}
-      </div>
-      {CHANNELS.map((c) => (
-        <div key={c.id} data-testid="input-row" className="rounded-xl px-2 py-2.5 hover:bg-raised/50">
-          <div className="flex items-center gap-3">
-            <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", c.tone)} aria-hidden><c.icon size={20} /></span>
-            <div className="min-w-0 flex-1 leading-tight">
-              <div data-no-i18n="" className="truncate text-[14.5px] font-medium">{t(c.name)}</div>
-              <div className="text-[12.5px] leading-[1.35] text-ink-tertiary">{t(c.blurb)}</div>
-            </div>
-            <span className="shrink-0 rounded-full bg-ink/[0.07] px-2.5 py-1 text-[11.5px] text-ink-tertiary">{t("Coming soon")}</span>
-            <button type="button" disabled className="h-9 shrink-0 rounded-full bg-accent px-4 text-[13.5px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Connect")}</button>
-          </div>
-          {c.limits.length > 0 && (
-            <ul className="mt-1.5 list-disc pl-[78px] pr-2 text-[12px] leading-[1.5] text-ink-tertiary">{c.limits.map((l) => <li key={l}>{t(l)}</li>)}</ul>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function ConnectedApps() {
   const { state, dispatch } = useStore();
   const t = useT();
-  const [tab, setTab] = useState<Tab>("apps");
+  const tab: Tab = state.appsTab;  // kept in the store, so another screen can open the dialog on a given tab
+  const setTab = (next: Tab) => dispatch({ type: "apps", open: true, tab: next });
   const [data, setData] = useState<AppsState | null>(null);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -113,7 +80,7 @@ export function ConnectedApps() {
     await api(`/api/apps/${slug}/accounts/${id}`, { method: "DELETE" }).catch((e: Error) => setNote({ id: slug, ok: false, text: e.message }));
     await load();
   };
-  const close = () => { setTab("apps"); dispatch({ type: "apps", open: false }); };
+  const close = () => dispatch({ type: "apps", open: false });
   return (
     <div role="dialog" aria-modal="true" aria-label="Connected apps" data-testid="connected-apps"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
@@ -130,7 +97,7 @@ export function ConnectedApps() {
           ))}
         </div>
         {tab === "mcp" && <McpServersView />}
-        {tab === "input" && <InputView />}
+        {tab === "input" && <InputChannels />}
         {tab === "apps" && <>
         {data && !data.configured && (
           <div role="status" data-testid="apps-warning" className="mx-5 mb-3 rounded-xl bg-warning/12 px-3.5 py-3 text-[13px] leading-5 text-warning">

@@ -8,11 +8,12 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { Mascot } from "./Mascot";
 
-/** A hand-off a bot made: who got the work and where it went. Opens that teammate's conversation. */
+/** Opens the saved conversation for a hand-off or an input-channel batch. */
 export function ThreadRefCard({ m }: { m: Message }) {
   const { state, dispatch } = useStore();
   const t = useT();
   const ref = m.threadRef!;
+  const batchNotice = m.kind === "notice";
   const target = state.bots.find((b) => b.id === ref.botId);
   const open = async () => {
     if (!target) return;
@@ -20,12 +21,15 @@ export function ThreadRefCard({ m }: { m: Message }) {
     dispatch({ type: "select", id: target.id });
   };
   return (
-    <button type="button" data-testid="thread-ref" onClick={open}
-      className="mx-auto flex max-w-[420px] items-center gap-2 rounded-full bg-ink/[0.05] py-1 pl-1.5 pr-3 text-[13px] text-ink-secondary ring-1 ring-ink/10 hover:bg-ink/[0.09]">
-      {target ? <Mascot color={target.color} size={20} /> : <Users size={14} />}
-      <span data-no-i18n="" className="min-w-0 truncate">{t("Handed work to")} {ref.bot}</span>
-      <ArrowUpRight size={13} className="shrink-0 text-ink-tertiary" />
-    </button>
+    <div className="space-y-2">
+      {batchNotice && <div className="whitespace-pre-line text-center text-[13px] text-ink-tertiary">{m.text}</div>}
+      <button type="button" data-testid="thread-ref" onClick={open}
+        className="mx-auto flex max-w-[420px] items-center gap-2 rounded-full bg-ink/[0.05] py-1 pl-1.5 pr-3 text-[13px] text-ink-secondary ring-1 ring-ink/10 hover:bg-ink/[0.09]">
+        {target ? <Mascot color={target.color} size={20} /> : <Users size={14} />}
+        <span data-no-i18n="" className="min-w-0 truncate">{batchNotice ? t("View chat log") : `${t("Handed work to")} ${ref.bot}`}</span>
+        <ArrowUpRight size={13} className="shrink-0 text-ink-tertiary" />
+      </button>
+    </div>
   );
 }
 

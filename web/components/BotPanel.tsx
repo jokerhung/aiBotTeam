@@ -9,6 +9,7 @@ import type { Bot, MausColor, McpServer, ModelSelection } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
+import { BotInputs } from "./InputChannels";
 import { Mascot } from "./Mascot";
 import { ActivityPanel, ExportButtons, InspectorPanel } from "./Observe";
 import { MemorySection } from "./MemorySection";
@@ -162,6 +163,7 @@ function SettingsForm({ bot }: { bot: Bot }) {
         </select>
       </Field>
       <AppsField bot={bot} />
+      <BotInputs botId={bot.id} />
       <SkillsSection bot={bot} />
       <MemorySection bot={bot} />
       <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">
@@ -235,11 +237,11 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
 
 
 
-export function BotPanel({ bot }: { bot: Bot }) {
+export function BotPanel({ bot, initialView = "overview" }: { bot: Bot; initialView?: "overview" | "settings" }) {
   const { dispatch } = useStore();
   const t = useT();
   const [tab, setTab] = useState<Tab>("details");
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>(initialView);
   const tabs: { id: Tab; label: string }[] = [
     { id: "details", label: "Details" },
     { id: "library", label: "Library" },

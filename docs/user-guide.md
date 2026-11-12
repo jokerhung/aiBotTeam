@@ -31,11 +31,16 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 
 - **Connected apps (qua Composio):** vào [Composio Dashboard → API Keys](https://dashboard.composio.dev/~/project/settings/api-keys), tạo khoá dự án (bắt đầu bằng `ak_`), dán vào hộp *Connected apps*. Chọn một app → đăng nhập ở trình duyệt của bạn. Mỗi app có thể nối nhiều tài khoản (đặt nhãn như `work`, `personal`); *Disconnect* chỉ ngắt tài khoản ở hàng đó. BotTeam không lưu token của Gmail/Slack/GitHub…; Composio giữ chúng. Có thể đặt khoá bằng biến môi trường `COMPOSIO_API_KEY`. Bật máy chủ MCP "Composio" cho bot ở phần Apps của bot; mọi công cụ vẫn hỏi trước theo mức duyệt. **Telegram** nằm đầu danh sách: mỗi bot Telegram (token từ BotFather) là một tài khoản riêng với nhãn riêng, ví dụ `shop`, `support`. App không có đăng nhập do Composio quản lý (như Xero) cần tạo *Auth Config* với OAuth app của bạn trong dashboard.
 - **MCP server riêng:** thêm trong *Connect apps → Custom MCP servers*.
+- **Input (Telegram bot, Zalo bot):** tab *Input* trong *Connect apps* cho phép một bot tự chạy khi có tin nhắn đến. Bấm *Connect* (hoặc *Add account*), đặt nhãn, dán token của bot (Telegram: lấy ở @BotFather và tắt privacy mode; Zalo: tạo ở tài khoản "Zalo Bot Manager"); BotTeam giữ token trên máy này và không hiện lại. Rồi bấm *Change* → *Let a bot use this account…* và điền mã chat bot phục vụ (gõ `/id` trong chat để xem mã), chat nhận kết quả, giới hạn lô và lời nhắc cho bot. Bot cần có *Working folder*, và engine phải đọc được ảnh. Cách chạy: nhân viên gửi PDF và ảnh vào chat, bot chỉ lưu vào `jobs/<mã lô>/` trong thư mục làm việc; bấm 🔍 Kiểm kê (hoặc gõ `/kiemke`) thì bot mới chạy đúng một lượt trên thư mục đó, và file bot ghi vào `out/` được gửi lại cho chat nhận kết quả. Zalo không nhận và không gửi được tệp: chỉ có chữ và ảnh. Mục Telegram trong *Connected apps* là việc khác: chỉ cho bot công cụ để gửi tin.
 - **Computer:** nút màn hình trên đầu chat. Bot mở trang trong trình duyệt riêng của nó; bạn có thể *Take control* khi bot cần đăng nhập/CAPTCHA, rồi *Give it back*. Mặc định bot không mở được địa chỉ nội bộ (localhost, mạng riêng); bật trong bánh răng của panel nếu cần.
 - **Trí nhớ và kỹ năng:** ghi chú giữ giữa các việc; skill là file `SKILL.md` bạn viết.
 - **Chia sẻ team:** menu **+** → Import team, hoặc chia sẻ một section thành một file Markdown (không kèm lịch sử chat hay khoá).
 
+Lịch sử các lô Telegram/Zalo hiển thị trực tiếp dưới thông báo lô trong cửa sổ chat chính của bot: lời nhắc, nội dung trả lời đang chạy và chi tiết đầu vào/kết quả công cụ đều mở sẵn, không cần bấm mở cuộc trò chuyện. Mỗi lô vẫn có cuộc trò chuyện riêng để giữ đúng ngữ cảnh của engine; cửa sổ chính tự tải toàn bộ lịch sử và cập nhật theo thời gian thực.
+
 ## 5. Tự host
+
+Để mở web qua LAN/Tailscale khi chạy `pnpm dev`, đặt `WEB_HOST=0.0.0.0` trong `.env`, giữ `SERVER_HOST=127.0.0.1`, rồi khởi động lại cả web và server. Truy cập `http://<IP LAN hoặc IP Tailscale>:5299`; API đi qua proxy của web nên chỉ cần cổng web. Chế độ này tự bật ghép nối bằng mã trong console server. Next tự cho phép các IP hiện có của máy dùng tài nguyên dev/HMR; nếu dùng tên DNS khác, thêm hostname vào `WEB_ALLOWED_HOSTS` (phân cách bằng dấu phẩy).
 
 ```bash
 docker compose up -d                       # một image, volume cho dữ liệu; lần đầu build ~5 phút

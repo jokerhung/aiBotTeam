@@ -29,6 +29,8 @@ export interface AppState {
   configLoaded: boolean;
   sections: Section[];
   panelBotId: string | null;
+  panelView: "overview" | "settings";
+  panelVersion: number;
   /** The bot whose Computer panel (its browser's live screen) is open. */
   computerBotId: string | null;
   paletteOpen: boolean;
@@ -51,12 +53,16 @@ export interface AppState {
   notifPinned: boolean;
   inboxOpen: boolean;
   appsOpen: boolean;
+  /** The tab the Connect apps dialog opens on. */
+  appsTab: "apps" | "mcp" | "input";
   whatsNewOpen: boolean;
   usageOpen: boolean;
   shareSection: string | null;
   importOpen: boolean;
   /** Bumped when a custom MCP server changes (the panels refetch). */
   mcpTick: number;
+  /** Bumped when an input channel's account, grant or batch changes (the Input tab and the bot's panel refetch). */
+  channelTick: number;
   routines: Routine[];
   runs: RoutineRun[];
   webhooks: Webhook[];
@@ -70,7 +76,7 @@ export type Action =
   | { type: "instances"; instances: InstanceInfo[] }
   | { type: "connected"; connected: boolean }
   | { type: "select"; id: string }
-  | { type: "history"; threadId: string; messages: Message[]; hasMore: boolean; generation: number }
+  | { type: "history"; threadId: string; messages: Message[]; hasMore: boolean; generation: number; snapshot?: Message[] }
   | { type: "older"; threadId: string; messages: Message[]; hasMore: boolean }
   | { type: "optimistic"; threadId: string; message: Message }
   | { type: "optimisticFailed"; threadId: string; sendId: string }
@@ -79,7 +85,7 @@ export type Action =
   | { type: "settings"; open: boolean; page?: SettingsPage }
   | { type: "config"; config: AppConfig }
   | { type: "sections"; sections: Section[] }
-  | { type: "panel"; botId: string | null }
+  | { type: "panel"; botId: string | null; profile?: boolean }
   | { type: "computer"; botId: string | null }
   | { type: "palette"; open: boolean }
   | { type: "shortcuts"; open: boolean }
@@ -94,7 +100,7 @@ export type Action =
   | { type: "teamMap"; open: boolean }
   | { type: "notifPanel"; open?: boolean; pinned?: boolean }
   | { type: "inboxPanel"; open: boolean }
-  | { type: "apps"; open: boolean }
+  | { type: "apps"; open: boolean; tab?: "apps" | "mcp" | "input" }
   | { type: "whatsNew"; open: boolean }
   | { type: "usage"; open: boolean }
   | { type: "shareTeam"; id: string | null }
@@ -104,9 +110,10 @@ export type Action =
   | { type: "frame"; frame: ServerFrame };
 
 export const initialState: AppState = {
+  panelView: "overview", panelVersion: 0,
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
-  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, mcpTick: 0,
+  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, mcpTick: 0, channelTick: 0,
   routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
   settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
@@ -166,7 +173,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "whatsNew":
       return { ...state, whatsNewOpen: action.open };
     case "apps":
-      return { ...state, appsOpen: action.open };
+      return { ...state, appsOpen: action.open, appsTab: action.open ? action.tab ?? "apps" : "apps" };
     case "inboxPanel":
       return { ...state, inboxOpen: action.open };
     case "teamData":
@@ -185,7 +192,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case "sections":
       return { ...state, sections: action.sections };
     case "panel":
-      return { ...state, panelBotId: action.botId, computerBotId: action.botId ? null : state.computerBotId };
+      return { ...state, panelBotId: action.botId, panelView: action.profile ? "settings" : "overview",
+        panelVersion: state.panelVersion + 1, computerBotId: action.botId ? null : state.computerBotId };
     case "computer":
       return { ...state, computerBotId: action.botId, panelBotId: action.botId ? null : state.panelBotId };
     case "palette":
@@ -200,10 +208,15 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, selecting: action.on, picked: [] };
     case "pick":
       return { ...state, picked: state.picked.includes(action.id) ? state.picked.filter((x) => x !== action.id) : [...state.picked, action.id] };
-    case "history":
-      return { ...state, messages: { ...state.messages, [action.threadId]: action.messages },
+    case "history": {
+      // Keep events received while an embedded transcript was being fetched.
+      const before = new Map(action.snapshot?.map((m) => [m.id, m]));
+      const changed = action.snapshot ? (state.messages[action.threadId] ?? []).filter((m) => before.get(m.id) !== m) : [];
+      const messages = changed.reduce(upsertMessage, action.messages);
+      return { ...state, messages: { ...state.messages, [action.threadId]: messages },
         hasMore: { ...state.hasMore, [action.threadId]: action.hasMore },
         loaded: { ...state.loaded, [action.threadId]: action.generation } };
+    }
     case "older": {
       const have = new Set((state.messages[action.threadId] ?? []).map((m) => m.id));
       return { ...state, messages: { ...state.messages,
@@ -276,6 +289,12 @@ export function reducer(state: AppState, action: Action): AppState {
           return { ...state, attempts: { ...state.attempts, [f.attempt.webhookId]: [f.attempt, ...(state.attempts[f.attempt.webhookId] ?? [])].slice(0, 100) } };
         case "mcp.changed":
           return { ...state, mcpTick: state.mcpTick + 1 };
+        case "channel.account":
+        case "channel.account.deleted":
+        case "channel.grant":
+        case "channel.grant.deleted":
+        case "channel.batch":
+          return { ...state, channelTick: state.channelTick + 1 };
         case "notify":
           return { ...state, notifications: [f.notification, ...state.notifications.filter((n) => n.id !== f.notification.id)].slice(0, 300) };
         case "notifications.read":

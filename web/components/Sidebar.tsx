@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Hash, Network, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Plug, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -120,6 +120,13 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
             </div>
           </div>
         </div>
+        {!icons && !state.selecting && (
+          <button type="button" title={tr("Edit Profile")} aria-label={`${tr("Edit Profile")}: ${bot.name}`} data-testid="edit-bot-profile"
+            onClick={() => { dispatch({ type: "select", id: bot.id }); dispatch({ type: "panel", botId: bot.id, profile: true }); }}
+            className="absolute right-9 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-panel/80 text-ink-secondary opacity-0 backdrop-blur hover:bg-ink/10 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 touch:opacity-100">
+            <Pencil size={14} />
+          </button>
+        )}
         {!icons && !state.selecting && (
           <BotActionsButton bot={bot} className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-panel/80 opacity-0 backdrop-blur group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 max-md:opacity-100 touch:opacity-100" />
         )}
@@ -490,15 +497,12 @@ export function Sidebar() {
                 <button
                   type="button"
                   data-testid="connect-apps"
+                  title={t("Connect apps")}
+                  aria-label={t("Connect apps")}
                   onClick={() => dispatch({ type: "apps", open: true })}
-                  className="group/apps flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-composer pl-4 pr-3 text-[14px] font-medium leading-5 text-ink ring-1 ring-inset ring-ink/[0.07] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary ring-1 ring-inset ring-ink/[0.04] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-raised),var(--color-ink)_7%)] hover:text-ink"
                 >
-                  <span className="min-w-0 truncate">{t("Connect apps")}</span>
-                  <span aria-hidden className="flex shrink-0 items-center gap-[7px] text-ink-tertiary opacity-70 transition-opacity group-hover/apps:opacity-100">
-                    <span className="w-[16px] text-center text-[16px] font-semibold leading-none">G</span>
-                    <Hash size={16} strokeWidth={1.75} />
-                    <span className="flex size-[17px] items-center justify-center rounded-[3px] border border-current text-[11px] font-bold leading-none">N</span>
-                  </span>
+                  <Plug size={16} />
                 </button>
               )}
             </div>

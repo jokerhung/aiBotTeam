@@ -346,6 +346,7 @@ export type ServerFrame =
   | { kind: "notify"; notification: Notification }
   | { kind: "notifications.read"; ids: string[]; cleared?: boolean }
   | { kind: "mcp.changed"; serverId: string; deleted?: boolean }
+  | { kind: "channel.account" | "channel.account.deleted" | "channel.grant" | "channel.grant.deleted" | "channel.batch"; [k: string]: unknown }
   | { kind: "screen"; botId: string; image: string; url: string; title: string; at: number; width: number; height: number }
   | { kind: "computer-control"; botId: string; running: boolean; held: boolean; helpReason: string | null }
   | { kind: "assignment"; [k: string]: unknown };

@@ -60,7 +60,7 @@ export function Shell() {
         ) : bot ? (
           <>
             <ChatView key={bot.id} bot={bot} />
-            {state.panelBotId === bot.id && <BotPanel key={`panel-${bot.id}`} bot={bot} />}
+            {state.panelBotId === bot.id && <BotPanel key={`panel-${bot.id}-${state.panelVersion}`} bot={bot} initialView={state.panelView} />}
             {state.computerBotId === bot.id && <ComputerPanel key={`computer-${bot.id}`} bot={bot} />}
           </>
         ) : (

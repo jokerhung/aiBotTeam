@@ -63,7 +63,7 @@ async def test_handing_work_to_an_ancestor_or_stranger_is_refused_not_thrown(ctx
 
 async def _bot_text(c, bot, needle):
     for m in await msgs(c, bot):
-        if m["role"] == "bot" and needle in m["text"]:
+        if m["role"] == "bot" and not m.get("streaming") and needle in m["text"]:  # a reply still streaming is only part of the answer
             return m["text"]
     return None
 

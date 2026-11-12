@@ -45,6 +45,7 @@ class ThreadRun:
     acted: bool = False
     group_id: Optional[str] = None
     routine_run_id: Optional[str] = None
+    channel_batch_id: Optional[str] = None  # a batch that arrived over a messaging channel (channels/service.py)
 
 
 def persona(bot: WireBot) -> str:
@@ -68,6 +69,7 @@ class Turns:
         self.host = None  # the runtime's host: keeps the names it needs in step with the bots
         self.groups = None  # rooms: told when a room turn ends so the next responder can start
         self.routines = None  # routine runs: told when their turn ends
+        self.channels = None  # messaging channels: told when a batch's turn ends
         self.mcp = None  # custom MCP servers (their entries for a turn)
         self.config = None  # where a usage limit's reset time is kept for the Usage page
         self.memory = None  # per-bot notes and the team's
@@ -146,6 +148,8 @@ class Turns:
             grp = await self.store.group_of_thread(thread_id)
             await self.notify.add("question" if req["type"] == "question" else "approval", f"{bot.name} needs you", req.get("summary", ""),
                                   target_kind="group" if grp else "bot", target_id=grp.id if grp else bot.id, thread_id=thread_id)
+        if run and run.channel_batch_id and self.channels:  # nobody in the chat can answer this card: tell whoever gets the results
+            await self.channels.request_opened(thread_id)
 
     async def _request_resolved(self, thread_id: str, req: dict) -> None:
         mid = self.req_msgs.pop(req["id"], None)
@@ -262,7 +266,8 @@ class Turns:
     async def _start_turn(self, bot: WireBot, thread_id: str, text: str, run: Optional[ThreadRun] = None,
                           files: Optional[list[Attachment]] = None, level: Optional[str] = None, origin: str = "person",
                           assignment_id: Optional[str] = None, extra_system: str = "", session_reset: bool = False,
-                          cwd: Optional[str] = None, group_id: Optional[str] = None, routine_run_id: Optional[str] = None) -> bool:
+                          cwd: Optional[str] = None, group_id: Optional[str] = None, routine_run_id: Optional[str] = None,
+                          channel_batch_id: Optional[str] = None, extra_images: Optional[list[str]] = None) -> bool:
         inst = self.registry.get(bot.modelSelection.instanceId)
         if not inst or not inst.driver or inst.state != "available" or not inst.enabled:
             reason = inst.reason if inst and inst.reason else "that engine is not available"
@@ -282,6 +287,9 @@ class Turns:
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
             custom_mcp=await self.mcp.entries_for(bot.mcpServers, thread_id, bot.mcpAccess) if self.mcp and bot.mcpServers else {},
         )
+        if extra_images:  # files a channel saved inside the bot's working folder: read where they are
+            inp.attachments += extra_images
+            inp.image_attachments += extra_images
         if self.memory and bot.memory:  # the recall block goes before the turn's message; the stored message stays as the person wrote it
             recall = self.memory.recall_block(bot.id, bot.section)
             if recall:
@@ -292,7 +300,8 @@ class Turns:
                 inp.skills_dir = self.skills.turn_dir(thread_id, have)
             else:
                 inp.system = (inp.system or "") + self.skills.as_text(have)
-        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id, routine_run_id=routine_run_id)
+        self.runs[thread_id] = run or ThreadRun(bot_id=bot.id, inp=inp, level=level, origin=origin, assignment_id=assignment_id, group_id=group_id, routine_run_id=routine_run_id,
+                                                    channel_batch_id=channel_batch_id)
         await self.publish_bot(bot)
         try:
             self.runs[thread_id].turn_id = await inst.driver.send_turn(inp)
@@ -335,6 +344,8 @@ class Turns:
         if run.routine_run_id and self.routines:
             await self.routines.run_finished(thread_id, run.routine_run_id, not run.failed and not run.interrupted and d.get("ok", True) is not False,
                                              "" if not run.failed else "the turn failed")
+        if run.channel_batch_id and self.channels:
+            await self.channels.turn_done(thread_id, run, d)
         if not self.runtime:
             return
         ok = not run.failed and not run.interrupted and d.get("ok", True) is not False
