@@ -181,3 +181,25 @@ async def test_the_routes_and_the_approval_of_a_click(ctx, tmp_path, site):
         assert (await c.post(f"/api/bots/{bot['id']}/computer/input", json={"type": "key", "key": "Tab"})).status_code == 409
     finally:
         await app.state.browser.shutdown()
+
+
+async def test_what_the_bot_browses_is_one_line_in_the_conversation_that_updates(ctx, site):
+    from botteam.drivers.base import SendTurnInput
+    from botteam.turns import ThreadRun
+
+    c, app = ctx
+    app.state.browser.allow_local = True
+    if not (await app.state.browser.availability())["available"]:
+        pytest.skip("no browser on this machine")
+    bot = await make_bot(c, "Folder")
+    app.state.turns.runs[bot["threadId"]] = ThreadRun(bot_id=bot["id"], inp=SendTurnInput(thread_id=bot["threadId"], bot_id=bot["id"], text=""), turn_id="t1")
+    try:
+        await app.state.agents.call(bot["threadId"], "browser_open", {"url": site})
+        await app.state.agents.call(bot["threadId"], "browser_scroll", {"dy": 100})
+        await app.state.agents.call(bot["threadId"], "browser_snapshot", {})
+        msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": bot["threadId"]})).json()["messages"]
+        notes = [m for m in msgs if m["kind"] == "notice" and m["text"].startswith("Browsing:")]
+        assert len(notes) == 1 and "Shop" in notes[0]["text"], "three page reads fold into one line"
+    finally:
+        app.state.turns.runs.pop(bot["threadId"], None)
+        await app.state.browser.shutdown()

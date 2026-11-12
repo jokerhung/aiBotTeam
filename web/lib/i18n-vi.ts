@@ -196,6 +196,7 @@ export const viPatterns: [RegExp, string][] = [
   [/^Make leader (.+)$/, "Đặt $1 làm trưởng phòng"],
   [/^Delete the room “(.+)”\? The bots stay\.$/, "Xóa phòng “$1”? Các bot vẫn còn."],
   [/^(.+)'s screen$/, "Màn hình của $1"],
+  [/^Browsing: (.+)$/, "Đang duyệt: $1"],
   [/^next (.+)$/, "kế tiếp $1"],
   [/^(\d+)s$/, "$1 giây"],
   [/^(\d+)m (\d+)s$/, "$1 phút $2 giây"],

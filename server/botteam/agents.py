@@ -152,6 +152,7 @@ class AgentTools:
                 if ans.get("behavior") != "allow":
                     return {"ok": False, "reason": "declined", "detail": "the person did not approve this action; do not try it again unchanged"}
             out = await fn(svc, bot.id)
+            await self._note_page(thread_id, bot, out)
             return {"ok": True, **out, "note": self.PAGE_NOTE}
         except PersonInControl as e:
             return {"ok": False, "reason": "person_in_control", "detail": str(e)}
@@ -159,6 +160,29 @@ class AgentTools:
             return {"ok": False, "reason": "browser", "detail": str(e)}
         except Exception as e:
             return {"ok": False, "reason": "browser", "detail": f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}"}
+
+    async def _note_page(self, thread_id: str, bot, out: dict) -> None:
+        """One line in the conversation says what the bot is looking at; the next page updates that line instead of adding another."""
+        url = out.get("url") if isinstance(out, dict) else None
+        run = self.turns.runs.get(thread_id)
+        if not url or not run:
+            return
+        from .store import new_id, now_ms
+        from .wire import WireMessage
+
+        text = f"Browsing: {out.get('title') or url} — {url}"
+        notes = self.__dict__.setdefault("_page_notes", {})
+        m = notes.get((thread_id, run.turn_id or 0))
+        owner = self.turns._owner_for(thread_id, bot.id)
+        if m:
+            m.text = text
+            await self.store.update_message(m)
+            self.turns._frame("message.patch", bot.id, thread_id, {"id": m.id, "text": text})
+            return
+        m = WireMessage(id=new_id("msg"), role="bot", kind="notice", author=bot.id, at=now_ms(), text=text)
+        await self.store.add_message(owner, thread_id, m)
+        self.turns._frame("message", bot.id, thread_id, m)
+        notes[(thread_id, run.turn_id or 0)] = m
 
     async def t_browser_open(self, thread_id: str, args: dict) -> dict:
         url = str(args.get("url") or "")

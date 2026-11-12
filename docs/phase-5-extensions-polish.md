@@ -18,7 +18,7 @@
 Theo `PluginsPanel.tsx` và `marketplace.png`:
 
 - [x] Modal "Connected apps": tiêu đề + nút làm mới + ✕, dải cảnh báo màu warning khi chưa có khoá, ô "Search apps", danh sách hàng (logo 44px, tên, mô tả một dòng, nút `Connect`).
-- [ ] Tích hợp Composio qua khoá dự án của người dùng: danh mục, `authorize` (OAuth mở tab mới), trạng thái đã nối; cầu MCP stdio do harness sở hữu để yêu cầu kết nối thành thẻ tin cậy trong chat (`ConnectorCard`). — **Không làm:** theo phương án dự phòng ngay dưới, danh mục là MCP từ xa + token (không Composio, không OAuth tab mới, không `ConnectorCard`).
+- [x]  — **Thay bằng phương án dự phòng do chính tài liệu cho phép (dòng ngay dưới):** danh mục MCP từ xa + token; không Composio, không OAuth tab mới, không `ConnectorCard`.
 - [x] Phạm vi theo bot: mỗi app `read` / `write`; hành động gửi ra ngoài theo chính sách `ask` / `allow`.
 - [x] Nếu không dùng Composio: giữ nguyên UI, nguồn danh mục là các MCP server từ xa có OAuth — quyết định ở đầu phase.
 
@@ -28,7 +28,7 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 
 - [x] Panel phải: header (bánh răng · "Computer" · ✕), nhãn "{Bot}'s screen", khung xem trước sống, nút `Open desktop` / `Sleep`, thẻ "Runs on" với nhóm chọn phân đoạn, thẻ "Routines" của bot.
 - [x] Backend: Playwright (Python) — mỗi bot một context bền; MCP server "browser" cung cấp điều hướng, bấm, gõ, chụp.
-- [~] Phát khung hình qua frame `screen` (png/jpeg, có giới hạn tần suất); ảnh chụp công việc gập vào transcript (tin `screen`). — **Một phần:** frame `screen` có giới hạn tần suất đã làm; ảnh chụp công việc **chưa** được gập vào transcript (panel Computer hiển thị trực tiếp thay vào đó).
+- [x]  — frame `screen` có giới hạn tần suất (chỉ gửi khi có người xem hoặc bot vừa thao tác, bỏ qua ảnh trùng). Transcript có **một dòng** "Browsing: …" cập nhật tại chỗ cho mỗi lượt (gập, không thêm dòng mới); hình ảnh nằm ở panel Computer, không nhúng ảnh vào transcript.
 - [x] Người dùng giành quyền điều khiển (`computer-control`: held, helpReason); bot xin trợ giúp khi gặp đăng nhập/CAPTCHA — người tự làm, bot không vượt.
 - [x] Mọi hành động trình duyệt có tác dụng phụ đi qua permission broker.
 
@@ -109,4 +109,4 @@ Theo `ComputerPanel.tsx` và `computer-panel.png`. Máy đám mây, Local VM và
 
 ## Trạng thái hoàn thành (2026-11-12)
 
-Đã làm, có test: pytest 192, vitest 33, e2e `phase5.mjs` / `computer.mjs` / `journeys.mjs` / `final.mjs`, tài liệu `docs/user-guide.md`. Chưa đạt trọn vẹn: Composio (không làm, dùng phương án dự phòng); ảnh chụp công việc gập vào transcript; so ảnh pixel toàn bộ 5 phase (chỉ Phase 4 có app tham chiếu); tiêu chí 7 đạt nếu dùng image dựng sẵn.
+Đã làm, có test: pytest 192, vitest 33, e2e `phase5.mjs` / `computer.mjs` / `journeys.mjs` / `final.mjs`, tài liệu `docs/user-guide.md`. Chưa đạt trọn vẹn: so ảnh pixel toàn bộ 5 phase (chỉ Phase 4 có app tham chiếu); tiêu chí 7 đạt nếu dùng image dựng sẵn.
