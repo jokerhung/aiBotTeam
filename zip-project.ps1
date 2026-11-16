@@ -4,6 +4,7 @@
 
 .DESCRIPTION
     powershell -ExecutionPolicy Bypass -File zip-project.ps1
+    powershell -ExecutionPolicy Bypass -File zip-project.ps1 -Lean            # about 50 MB instead of 650 MB: no build caches
     powershell -ExecutionPolicy Bypass -File zip-project.ps1 -Output D:\backup\botteam.zip -ExcludeGit
 
   The archive is written next to the project folder (not inside it), named <folder>-<date>-<time>.zip, and holds one top-level folder with the project's
@@ -13,12 +14,14 @@
 .PARAMETER Output      The zip file to write (default: ..\<project folder>-<yyyyMMdd-HHmm>.zip).
 .PARAMETER ExcludeGit  Also leave out the .git folder (the history).
 .PARAMETER Exclude     More folder or file names to leave out, at any depth, for example -Exclude .next,.next-export.
+.PARAMETER Lean       Also leave out what a build or a test run can make again: .next (the dev cache, about 600 MB), .next-export, __pycache__, .pytest_cache, shots.
 .PARAMETER NoRootFolder  Put the files at the top of the archive instead of inside a folder with the project's name.
 #>
 [CmdletBinding()]
 param(
   [string]$Output,
   [switch]$ExcludeGit,
+  [switch]$Lean,
   [string[]]$Exclude = @(),
   [switch]$NoRootFolder
 )
@@ -36,6 +39,7 @@ New-Item -ItemType Directory -Force -Path (Split-Path $Output -Parent) | Out-Nul
 
 $skip = @(".venv", "node_modules") + $Exclude
 if ($ExcludeGit) { $skip += ".git" }
+if ($Lean) { $skip += @(".next", ".next-export", "__pycache__", ".pytest_cache", "shots") }
 $skip = $skip | ForEach-Object { $_.ToLowerInvariant() }
 
 $prefix = if ($NoRootFolder) { "" } else { "$name/" }
