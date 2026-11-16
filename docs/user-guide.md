@@ -29,6 +29,8 @@ pnpm build:static            # build giao diện tĩnh một lần
 uv run --project server botteam serve
 ```
 
+Trên Windows có sẵn `start.bat`: giải phóng cổng rồi khởi động. `start.bat` chạy cả API lẫn web (`pnpm dev`), `start.bat server` chỉ chạy server API, `start.bat web` chỉ chạy web, `start.bat one` chạy một chương trình duy nhất (cần `pnpm build:static` trước).
+
 Mở http://127.0.0.1:8899. Dữ liệu nằm ở `~/.botteam` (đổi bằng `BOTTEAM_DATA_DIR`).
 Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có sẵn; nếu không có, chạy `playwright install chromium`.
 
