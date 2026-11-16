@@ -7,6 +7,8 @@
 # Options (after `bash -s --` when piped):
 #   --dir PATH        where to clone the repository when the script is not inside one (default: ~/aiBotTeam)
 #   --repo URL        the repository to clone
+#   --claude          also install the Claude Code CLI (npm @anthropic-ai/claude-code); you sign in yourself: run `claude` once
+#   --codex           also install the Codex CLI (npm @openai/codex); you sign in yourself: run `codex login`
 #   --browser         also download Playwright's Chromium (about 150 MB) for the bots' built-in browser
 #   --skip-build      do not build the static web app (`pnpm dev` does not need it; `botteam serve` does)
 #   --dry-run         print what would be done and change nothing
@@ -19,6 +21,8 @@ set -euo pipefail
 DIR="$HOME/aiBotTeam"
 REPO="https://github.com/jokerhung/aiBotTeam"
 BROWSER=0
+WANT_CLAUDE=0
+WANT_CODEX=0
 SKIP_BUILD=0
 DRY=0
 MIN_NODE=20
@@ -29,6 +33,8 @@ while [ $# -gt 0 ]; do
     --dir) DIR="${2:?--dir needs a path}"; shift 2 ;;
     --repo) REPO="${2:?--repo needs a URL}"; shift 2 ;;
     --browser) BROWSER=1; shift ;;
+    --claude) WANT_CLAUDE=1; shift ;;
+    --codex) WANT_CODEX=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --dry-run) DRY=1; shift ;;
     -h|--help) sed -n '2,15p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -229,10 +235,26 @@ elif ! has google-chrome && ! has google-chrome-stable && ! has chromium && ! ha
   warn "No Chrome, Chromium or Edge found: run this script again with --browser so the bots' built-in browser has one."
 fi
 
-# ---- engines (not installed here: they need a login) -------------------------------------------------------------------------------------
+# ---- engines (the CLIs can be installed here with --claude / --codex; signing in needs you and a browser) --------------------------------------
 say "AI engines"
-for e in "claude:Claude Code" "codex:Codex"; do
-  if has "${e%%:*}"; then ok "${e#*:} CLI found"; else printf '%s    %s CLI not found (optional): install it and sign in, or add an OpenAI-compatible endpoint in BotTeam settings.%s\n' "$C_DIM" "${e#*:}" "$C_OFF"; fi
+for e in "claude:Claude Code:@anthropic-ai/claude-code:$WANT_CLAUDE:claude (it opens a browser to sign in)" "codex:Codex:@openai/codex:$WANT_CODEX:codex login"; do
+  IFS=: read -r cmd label pkg want how <<< "$e"
+  if ! has "$cmd" && [ "$want" = 1 ]; then
+    say "Installing the $label CLI with npm"
+    if [ "$DRY" = 1 ]; then
+      printf '%s    [dry run] npm install -g %s%s\n' "$C_DIM" "$pkg" "$C_OFF"
+    else
+      npm install -g "$pkg" 2>/dev/null || $SUDO npm install -g "$pkg" || die "could not install $label"
+      hash -r
+    fi
+  fi
+  if has "$cmd"; then
+    ok "$label CLI found; sign in once with:  $how"
+  elif [ "$DRY" = 1 ] && [ "$want" = 1 ]; then
+    printf '%s    %s CLI would be installed; then sign in with:  %s%s\n' "$C_DIM" "$label" "$how" "$C_OFF"
+  else
+    warn "$label CLI not found: run this script again with --$cmd to install it, or add an OpenAI-compatible endpoint in BotTeam settings."
+  fi
 done
 
 printf '\n%sBotTeam is installed in %s%s\n' "$C_GREEN" "$ROOT" "$C_OFF"

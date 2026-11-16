@@ -22,6 +22,8 @@
 .PARAMETER Dir        Where to clone the repository when the script is not inside one (default: $HOME\aiBotTeam).
 .PARAMETER RepoUrl    The repository to clone.
 .PARAMETER Browser    Also download Playwright's Chromium (about 150 MB).
+.PARAMETER Claude     Also install the Claude Code CLI (npm package @anthropic-ai/claude-code). You still sign in yourself: run `claude` once.
+.PARAMETER Codex      Also install the Codex CLI (npm package @openai/codex). You still sign in yourself: run `codex login`.
 .PARAMETER SkipBuild  Do not build the static web app (`pnpm dev` does not need it; `botteam serve` does).
 .PARAMETER DryRun     Print what would be done and change nothing.
 #>
@@ -30,6 +32,8 @@ param(
   [string]$Dir = (Join-Path $HOME "aiBotTeam"),
   [string]$RepoUrl = "https://github.com/jokerhung/aiBotTeam",
   [switch]$Browser,
+  [switch]$Claude,
+  [switch]$Codex,
   [switch]$SkipBuild,
   [switch]$DryRun
 )
@@ -216,10 +220,26 @@ if ($Browser) {
   if (-not $hasBrowser) { Warn "Neither Edge nor Chrome was found: run this script again with -Browser so the bots' built-in browser has one." }
 }
 
-# ---- engines (not installed here: they need a login) ----------------------------------------------------------------------------------
+# ---- engines (the CLIs can be installed here with -Claude / -Codex; signing in needs you and a browser) ------------------------------------
 Say "AI engines"
-foreach ($e in @(@("claude", "Claude Code"), @("codex", "Codex"))) {
-  if (Has $e[0]) { Ok "$($e[1]) CLI found" } else { Write-Host "    $($e[1]) CLI not found (optional): install it and sign in, or add an OpenAI-compatible endpoint in BotTeam's settings." -ForegroundColor DarkGray }
+$engines = @(@("claude", "Claude Code", "@anthropic-ai/claude-code", $Claude, "claude   (it opens a browser to sign in)"), @("codex", "Codex", "@openai/codex", $Codex, "codex login"))
+foreach ($e in $engines) {
+  if (-not (Has $e[0]) -and $e[3]) {
+    Say "Installing the $($e[1]) CLI with npm"
+    Run "npm install -g $($e[2])" { npm install -g $e[2] }
+    Update-Path
+    if (-not $DryRun -and -not (Has $e[0])) {
+      $npmBin = ((& npm prefix -g 2>$null) | Select-Object -First 1).ToString().Trim()
+      if ($npmBin -and (Test-Path $npmBin)) { $env:Path = "$npmBin;$env:Path" }
+    }
+  }
+  if (Has $e[0]) {
+    Ok "$($e[1]) CLI found; sign in once with:  $($e[4])"
+  } elseif ($DryRun -and $e[3]) {
+    Write-Host "    $($e[1]) CLI would be installed; then sign in with:  $($e[4])" -ForegroundColor DarkGray
+  } else {
+    Write-Host "    $($e[1]) CLI not found: run this script again with -$($e[1].Split(' ')[0]) to install it, or add an OpenAI-compatible endpoint in BotTeam's settings." -ForegroundColor Yellow
+  }
 }
 
 Write-Host ""

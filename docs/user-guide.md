@@ -16,6 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.
 iwr -useb https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
+Muốn cài luôn engine AI: thêm `--claude` / `-Claude` (Claude Code CLI) và/hoặc `--codex` / `-Codex` (Codex CLI). Việc đăng nhập phải do bạn làm một lần, vì cần trình duyệt: chạy `claude` (nó mở trình duyệt để đăng nhập) hoặc `codex login`, rồi bấm **Check again** ở màn hình chào của BotTeam. Không dùng CLI thì thêm một endpoint tương thích OpenAI trong Cài đặt → Engines.
+
 Tuỳ chọn: `--browser` / `-Browser` (tải thêm Chromium cho trình duyệt tích hợp của bot, khi máy không có Edge hoặc Chrome), `--skip-build` / `-SkipBuild`, `--dry-run` / `-DryRun` (chỉ in việc sẽ làm), `--dir` / `-Dir` (nơi clone). Script chạy lại được nhiều lần: cái gì có rồi thì bỏ qua. Trên Windows cần `winget` (có sẵn từ Windows 10 bản mới); trên Linux cần `sudo` nếu không chạy bằng root. Sau khi cài xong mà lệnh `uv`/`pnpm` chưa nhận, mở một cửa sổ terminal mới.
 
 **Chuyển sang máy khác:** chạy `powershell -ExecutionPolicy Bypass -File zip-project.ps1` để đóng gói project (bỏ `.venv`, `node_modules` và các thư mục build như `.next`, `web/.next-export`, `server/botteam/webui`; thêm `-KeepBuild` nếu muốn giữ). Giải nén ở máy kia rồi chạy `install.ps1` / `install.sh` để cài lại và build.
