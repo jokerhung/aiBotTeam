@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Zips the whole project except the .venv and node_modules folders (wherever they are in the tree).
+  Zips the project to copy it to another computer: without .venv, node_modules and the build folders, which the other computer makes again.
 
 .DESCRIPTION
     powershell -ExecutionPolicy Bypass -File zip-project.ps1
-    powershell -ExecutionPolicy Bypass -File zip-project.ps1 -Lean            # about 50 MB instead of 650 MB: no build caches
+    powershell -ExecutionPolicy Bypass -File zip-project.ps1 -KeepBuild       # with the build folders (about 650 MB)
     powershell -ExecutionPolicy Bypass -File zip-project.ps1 -Output D:\backup\botteam.zip -ExcludeGit
 
   The archive is written next to the project folder (not inside it), named <folder>-<date>-<time>.zip, and holds one top-level folder with the project's
@@ -14,14 +14,15 @@
 .PARAMETER Output      The zip file to write (default: ..\<project folder>-<yyyyMMdd-HHmm>.zip).
 .PARAMETER ExcludeGit  Also leave out the .git folder (the history).
 .PARAMETER Exclude     More folder or file names to leave out, at any depth, for example -Exclude .next,.next-export.
-.PARAMETER Lean       Also leave out what a build or a test run can make again: .next (the dev cache, about 600 MB), .next-export, __pycache__, .pytest_cache, shots.
+.PARAMETER KeepBuild  Keep the build folders in the archive (by default they are left out: .next (the dev cache, about 600 MB), .next-export, webui (the web build the
+                      server serves), dist, .turbo, __pycache__ and *.pyc, .pytest_cache, .ruff_cache, *.tsbuildinfo, and the e2e shots and actual folders).
 .PARAMETER NoRootFolder  Put the files at the top of the archive instead of inside a folder with the project's name.
 #>
 [CmdletBinding()]
 param(
   [string]$Output,
   [switch]$ExcludeGit,
-  [switch]$Lean,
+  [switch]$KeepBuild,
   [string[]]$Exclude = @(),
   [switch]$NoRootFolder
 )
@@ -39,7 +40,11 @@ New-Item -ItemType Directory -Force -Path (Split-Path $Output -Parent) | Out-Nul
 
 $skip = @(".venv", "node_modules") + $Exclude
 if ($ExcludeGit) { $skip += ".git" }
-if ($Lean) { $skip += @(".next", ".next-export", "__pycache__", ".pytest_cache", "shots") }
+$skipFiles = @()
+if (-not $KeepBuild) {
+  $skip += @(".next", ".next-export", "webui", "dist", ".turbo", "__pycache__", ".pytest_cache", ".ruff_cache", "shots", "actual")
+  $skipFiles = @("*.pyc", "*.tsbuildinfo")
+}
 $skip = $skip | ForEach-Object { $_.ToLowerInvariant() }
 
 $prefix = if ($NoRootFolder) { "" } else { "$name/" }
@@ -61,6 +66,7 @@ try {
     if ($rel -ne "" -and $entries.Count -eq 0) { [void]$zip.CreateEntry("$prefix$rel/") }  # an empty folder is kept
     foreach ($item in $entries) {
       if ($skip -contains $item.Name.ToLowerInvariant()) { continue }
+      if (-not $item.PSIsContainer -and ($skipFiles | Where-Object { $item.Name -like $_ })) { continue }
       if ($item.PSIsContainer) {
         if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }  # a link could lead out of the project or loop
         $pending.Push($item.FullName)
