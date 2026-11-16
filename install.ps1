@@ -173,6 +173,17 @@ if ((Pnpm-Version) -ne $pnpmVersion) {
     Say "Installing pnpm with npm (Corepack is not part of this Node.js)"
     Run "npm install -g pnpm@$pnpmVersion" { npm install -g "pnpm@$pnpmVersion" }
     Update-Path
+    if ((Pnpm-Version) -eq "") {
+      # npm's global folder is not on PATH on this computer: add it for this window and for the user, so that pnpm (and start.bat) find it
+      $npmBin = ((& npm prefix -g 2>$null) | Select-Object -First 1).ToString().Trim()
+      if ($npmBin -and (Test-Path (Join-Path $npmBin "pnpm.cmd"))) {
+        $env:Path = "$npmBin;$env:Path"
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if (($userPath -split ";") -notcontains $npmBin) { [Environment]::SetEnvironmentVariable("Path", "$npmBin;$userPath", "User") }
+        $script:Installed = $true
+        Ok "added $npmBin to PATH"
+      }
+    }
   } elseif ($DryRun -and -not (Has "corepack")) {
     Write-Host "    [dry run] npm install -g pnpm@$pnpmVersion" -ForegroundColor DarkGray
   }
