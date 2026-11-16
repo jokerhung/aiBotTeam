@@ -156,15 +156,28 @@ if (Test-Path (Join-Path $root "package.json")) {
   $pkg = Get-Content (Join-Path $root "package.json") -Raw | ConvertFrom-Json
   if ($pkg.packageManager -match "^pnpm@(.+)$") { $pnpmVersion = $Matches[1] }
 }
-Run "corepack enable and prepare pnpm@$pnpmVersion" {
-  corepack enable 2>$null
-  corepack prepare "pnpm@$pnpmVersion" --activate
+function Pnpm-Version { if (Has "pnpm") { try { return ((& pnpm --version 2>$null) | Select-Object -First 1).ToString().Trim() } catch { return "" } } return "" }
+if ((Pnpm-Version) -ne $pnpmVersion) {
+  # Corepack comes with Node.js up to version 24 (Node 25 and newer no longer ship it): use it when it is there, otherwise npm installs pnpm.
+  if (Has "corepack") {
+    if ($DryRun) {
+      Write-Host "    [dry run] corepack enable and prepare pnpm@$pnpmVersion" -ForegroundColor DarkGray
+    } else {
+      try { & corepack enable 2>$null } catch { }
+      try { & corepack prepare "pnpm@$pnpmVersion" --activate 2>$null } catch { }
+      Update-Path
+    }
+  }
+  if (-not $DryRun -and (Pnpm-Version) -eq "") {
+    if (-not (Has "npm")) { Fail "Neither Corepack nor npm was found next to Node.js. Open a new terminal and run this script again, or install pnpm by hand (https://pnpm.io/installation)." }
+    Say "Installing pnpm with npm (Corepack is not part of this Node.js)"
+    Run "npm install -g pnpm@$pnpmVersion" { npm install -g "pnpm@$pnpmVersion" }
+    Update-Path
+  } elseif ($DryRun -and -not (Has "corepack")) {
+    Write-Host "    [dry run] npm install -g pnpm@$pnpmVersion" -ForegroundColor DarkGray
+  }
 }
-if (-not $DryRun -and -not (Has "pnpm")) {
-  Warn "Corepack could not provide pnpm; installing it with npm."
-  Run "npm install -g pnpm@$pnpmVersion" { npm install -g "pnpm@$pnpmVersion" }
-  Update-Path
-}
+if (-not $DryRun -and (Pnpm-Version) -eq "") { Fail "pnpm is still not on PATH. Open a new terminal and run this script again." }
 if (Has "pnpm") { Ok "pnpm $(& pnpm --version)" }
 
 # ---- the project --------------------------------------------------------------------------------------------------------------------
