@@ -21,12 +21,9 @@ if errorlevel 1 (
   echo Could not free every port. Close what uses them and run start.bat again.
   exit /b 1
 )
-rem pnpm installed with npm lives in %APPDATA%
-pm, which a terminal opened before the install does not have on its PATH yet
+rem pnpm installed with npm lives in the npm folder of APPDATA, which a terminal opened before the install does not have on its PATH yet
 where pnpm >nul 2>&1
-if errorlevel 1 if exist "%APPDATA%
-pm\pnpm.cmd" set "PATH=%APPDATA%
-pm;%PATH%"
+if errorlevel 1 if exist "%APPDATA%\npm\pnpm.cmd" set "PATH=%APPDATA%\npm;%PATH%"
 where pnpm >nul 2>&1
 if errorlevel 1 (
   echo pnpm was not found. Run install.ps1 first, or open a new terminal window if it was just installed.
