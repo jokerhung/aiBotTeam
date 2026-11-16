@@ -2,7 +2,23 @@
 
 ## 1. Cài đặt
 
-Cần: Python 3.12+ và [uv](https://docs.astral.sh/uv/), Node 20+ và pnpm (chỉ khi tự build giao diện).
+**Cách nhanh (máy mới):** script tự cài Git, Node.js 22, Python 3.12 và uv nếu thiếu, rồi cài các gói của dự án.
+
+- Windows (PowerShell): `powershell -ExecutionPolicy Bypass -File install.ps1`
+- macOS / Linux: `bash install.sh`
+
+Máy chưa có gì, không cần clone trước: tải script về rồi chạy, nó tự clone vào `~/aiBotTeam`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.sh -o install.sh && bash install.sh     # macOS / Linux
+```
+```powershell
+iwr -useb https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Tuỳ chọn: `--browser` / `-Browser` (tải thêm Chromium cho trình duyệt tích hợp của bot, khi máy không có Edge hoặc Chrome), `--skip-build` / `-SkipBuild`, `--dry-run` / `-DryRun` (chỉ in việc sẽ làm), `--dir` / `-Dir` (nơi clone). Script chạy lại được nhiều lần: cái gì có rồi thì bỏ qua. Trên Windows cần `winget` (có sẵn từ Windows 10 bản mới); trên Linux cần `sudo` nếu không chạy bằng root. Sau khi cài xong mà lệnh `uv`/`pnpm` chưa nhận, mở một cửa sổ terminal mới.
+
+**Cách thủ công:** cần Python 3.10+ và [uv](https://docs.astral.sh/uv/), Node 20+ và pnpm (chỉ khi tự build giao diện).
 
 ```bash
 git clone <repo> && cd aiBotTeam
@@ -29,6 +45,8 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 
 ## 4. Mở rộng
 
+Danh sách Connected apps và trạng thái tài khoản được lấy từ Composio ở lần khởi tạo đầu tiên rồi lưu trong bảng `connected_apps_cache` của `messages.db`. Các lần mở lại, tải lại trang hoặc khởi động lại server đều đọc database, không tự gọi Composio và không hết hạn theo thời gian. Muốn lấy dữ liệu mới, bấm nút Refresh trong cửa sổ Connect apps. Riêng khi người dùng bắt đầu kết nối dịch vụ, server theo dõi tài khoản mới trong tối đa 5 phút; khi kết nối thành công sẽ tự refresh, lưu database và cập nhật giao diện, kể cả khi cửa sổ Connect apps đã đóng. Tài khoản cũ đang ACTIVE không được tính là lần kết nối mới thành công. Disconnect cập nhật tài khoản đã xoá ngay trong database. Dữ liệu được tách theo project key; thay key sẽ khởi tạo dữ liệu cho project mới.
+
 - **Connected apps (qua Composio):** vào [Composio Dashboard → API Keys](https://dashboard.composio.dev/~/project/settings/api-keys), tạo khoá dự án (bắt đầu bằng `ak_`), dán vào hộp *Connected apps*. Chọn một app → đăng nhập ở trình duyệt của bạn. Mỗi app có thể nối nhiều tài khoản (đặt nhãn như `work`, `personal`); *Disconnect* chỉ ngắt tài khoản ở hàng đó. BotTeam không lưu token của Gmail/Slack/GitHub…; Composio giữ chúng. Có thể đặt khoá bằng biến môi trường `COMPOSIO_API_KEY`. Bật máy chủ MCP "Composio" cho bot ở phần Apps của bot; mọi công cụ vẫn hỏi trước theo mức duyệt. **Telegram** nằm đầu danh sách: mỗi bot Telegram (token từ BotFather) là một tài khoản riêng với nhãn riêng, ví dụ `shop`, `support`. App không có đăng nhập do Composio quản lý (như Xero) cần tạo *Auth Config* với OAuth app của bạn trong dashboard.
 - **MCP server riêng:** thêm trong *Connect apps → Custom MCP servers*.
 - **Input (Telegram bot, Zalo bot):** tab *Input* trong *Connect apps* cho phép một bot tự chạy khi có tin nhắn đến. Bấm *Connect* (hoặc *Add account*), đặt nhãn, dán token của bot (Telegram: lấy ở @BotFather và tắt privacy mode; Zalo: tạo ở tài khoản "Zalo Bot Manager"); BotTeam giữ token trên máy này và không hiện lại. Rồi bấm *Change* → *Let a bot use this account…* và điền mã chat bot phục vụ (gõ `/id` trong chat để xem mã), chat nhận kết quả, giới hạn lô và lời nhắc cho bot. Bot cần có *Working folder*, và engine phải đọc được ảnh. Cách chạy: nhân viên gửi PDF và ảnh vào chat, bot chỉ lưu vào `jobs/<mã lô>/` trong thư mục làm việc; bấm 🔍 Kiểm kê (hoặc gõ `/kiemke`) thì bot mới chạy đúng một lượt trên thư mục đó, và file bot ghi vào `out/` được gửi lại cho chat nhận kết quả. Zalo không nhận và không gửi được tệp: chỉ có chữ và ảnh. Mục Telegram trong *Connected apps* là việc khác: chỉ cho bot công cụ để gửi tin.
@@ -39,6 +57,8 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 Nhận ảnh qua Telegram/Zalo chỉ tạo/cập nhật thông báo số lượng file trong main conversation. Khi người gửi bấm Kiểm kê hoặc gõ `/kiemke`, bot tạo conversation mới có tên là `job_id` (mã lô, trùng thư mục `jobs/<job_id>/`) và tự chuyển sang conversation đó. Main chỉ giữ thông báo ngắn, ví dụ “Đang kiểm đếm ở conversation b_1234”, kèm liên kết mở job; lời nhắc, nội dung trả lời và chi tiết công cụ nằm trong conversation của job. Nếu bot đang bận, conversation của job được tạo ngay với trạng thái chờ và được dùng tiếp khi đến lượt chạy.
 
 ## 5. Tự host
+
+Khi job kiểm kê hoàn thành thành công, bot tự chuyển về main conversation để xem thông báo kết quả. Nếu có job tiếp theo trong hàng đợi, bot chuyển sang conversation của job đó khi bắt đầu chạy. Nếu bạn đã chọn một conversation khác trong lúc job chạy, lựa chọn đó được giữ nguyên.
 
 Để mở web qua LAN/Tailscale khi chạy `pnpm dev`, đặt `WEB_HOST=0.0.0.0` trong `.env`, giữ `SERVER_HOST=127.0.0.1`, rồi khởi động lại cả web và server. Truy cập `http://<IP LAN hoặc IP Tailscale>:5299`; API đi qua proxy của web nên chỉ cần cổng web. Localhost và IP LAN/Tailscale vào thẳng, không cần ghép nối. Truy cập bằng tên miền (kể cả tên MagicDNS của Tailscale) vẫn cần mã ghép nối trong console server. Next tự cho phép các IP hiện có của máy dùng tài nguyên dev/HMR; nếu dùng tên DNS khác, thêm hostname vào `WEB_ALLOWED_HOSTS` (phân cách bằng dấu phẩy).
 
