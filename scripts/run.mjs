@@ -1,4 +1,4 @@
-// Launch one service with ports from the root .env: node scripts/run.mjs <server|web|web-start>
+// Launch one service with ports from the root .env: node scripts/run.mjs <server|web|zalo|one|web-start>
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 const serverPort = process.env.SERVER_PORT || "8899";
 const webPort = process.env.WEB_PORT || "5299";
 const hookPort = process.env.WEBHOOK_PORT || "8900";
+const zaloPort = process.env.ZALO_PORT || "8902";
 const serverHost = process.env.SERVER_HOST || process.env.BOTTEAM_HOST || "127.0.0.1";
 const webHost = process.env.WEB_HOST || "127.0.0.1";
 const loopback = (host) => ["127.0.0.1", "localhost", "::1"].includes(host);
@@ -18,6 +19,7 @@ const env = {
   SERVER_PORT: serverPort,
   WEB_PORT: webPort,
   WEBHOOK_PORT: hookPort,
+  ZALO_PORT: zaloPort,
   SERVER_HOST: serverHost,
   WEB_HOST: webHost,
   // The API is also remotely reachable through Next's same-origin proxy.
@@ -32,6 +34,8 @@ const targets = {
     : ["uv", ["run", "--project", "server", "python", "-m", "uvicorn", "botteam.main:app", "--app-dir", "server",
       "--host", serverHost, "--port", serverPort, "--no-proxy-headers", "--reload", "--loop", "botteam.loop:loop_factory"]],
   web: ["pnpm", ["--filter", "web", "exec", "next", "dev", "-p", webPort, "-H", webHost]],
+  // The Node.js Zalo service (zca-js); the web app reaches it through the /zalo-api proxy in web/next.config.mjs
+  zalo: ["node", ["zalo-service/src/server.mjs"]],
   one: ["uv", ["run", "--project", "server", "botteam", "serve", "--no-open", "--host", serverHost, "--port", serverPort]],
   "web-start": ["pnpm", ["--filter", "web", "exec", "next", "start", "-p", webPort, "-H", webHost]],
 };

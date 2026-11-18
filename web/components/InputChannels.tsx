@@ -1,19 +1,23 @@
 "use client";
-import { Check, MessageCircle, Plus, Send } from "lucide-react";
+import { Check, MessageCircle, Plus, QrCode, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { ZaloQr } from "./ZaloQr";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 const LOOK: Record<string, { icon: typeof Send; tone: string }> = {
   telegram: { icon: Send, tone: "bg-[#229ed9] text-white" },
   zalo: { icon: MessageCircle, tone: "bg-[#0068ff] text-white" },
+  "zalo-personal": { icon: QrCode, tone: "bg-[#0068ff] text-white" },
 };
+const NAMES: Record<string, string> = { telegram: "Telegram bot", zalo: "Zalo bot", "zalo-personal": "Zalo personal account" };
 const HELP: Record<string, string> = {
   telegram: "Get a token from @BotFather, turn privacy mode off (/setprivacy → Disable), add the bot to the chat and send /id there to see the chat id.",
   zalo: "Create the bot in the “Zalo Bot Manager” account inside Zalo. People message the bot directly; /id shows the chat id.",
+  "zalo-personal": "Name this account, then scan the QR code with the Zalo app. People message your own Zalo account and the bot answers from it; /id shows the chat id.",
 };
 
 export interface ChannelAccount { id: string; app: string; label: string; username: string; enabled: boolean; state: "active" | "error" | "stopped"; error: string | null; usedBy: string[] }
@@ -177,11 +181,13 @@ export function InputChannels() {
   const [note, setNote] = useState<{ id: string; text: string } | null>(null);
   const load = useCallback(() => api<{ channels: Channel[] }>("/api/channels").then((r) => setChannels(r.channels)).catch(() => {}), []);
   useEffect(() => { void load(); }, [load, state.channelTick]);
-  const connect = async (c: Channel) => {
+  const [qr, setQr] = useState(false);
+  const connect = async (c: Channel, key?: string) => {
     setBusy(true);
     setNote(null);
     try {
-      await api(`/api/channels/${c.id}/accounts`, { method: "POST", body: JSON.stringify({ label: label.trim(), token: token.trim() }) });
+      await api(`/api/channels/${c.id}/accounts`, { method: "POST", body: JSON.stringify({ label: label.trim(), token: (key ?? token).trim() }) });
+      setQr(false);
       setOpen(null);
       setLabel("");
       setToken("");
@@ -210,7 +216,7 @@ export function InputChannels() {
                 <div className="text-[12.5px] leading-[1.35] text-ink-tertiary">{t(c.blurb)}</div>
               </div>
               {c.connected && <span className="flex shrink-0 items-center gap-1 text-[12.5px] text-success"><Check size={13} /> {t("Connected")}</span>}
-              <button type="button" disabled={full} onClick={() => { setOpen(open === c.id ? null : c.id); setNote(null); }} data-testid={`input-connect-${c.id}`}
+              <button type="button" disabled={full} onClick={() => { setOpen(open === c.id ? null : c.id); setNote(null); setQr(false); }} data-testid={`input-connect-${c.id}`}
                 aria-label={c.accounts.length ? `${t("Add account")}: ${t(c.name)}` : `${t("Connect")}: ${t(c.name)}`}
                 className={cn("flex h-9 shrink-0 items-center gap-1 rounded-full px-4 text-[13.5px] font-medium disabled:opacity-40", c.accounts.length ? "bg-raised text-ink hover:bg-raised-hover" : "bg-accent text-[var(--color-accent-ink)]")}>
                 {c.accounts.length ? <><Plus size={13} /> {t("Add account")}</> : t("Connect")}
@@ -222,12 +228,19 @@ export function InputChannels() {
               <div className="mt-2 pl-14 pr-1">
                 <div className="mb-1.5 text-[12px] leading-[1.45] text-ink-tertiary">{t(HELP[c.id] ?? "")}</div>
                 <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} aria-label={t("Account label")} placeholder={t("A label for this account, such as the shop's name")} maxLength={40} className={cn(INPUT, "h-10")} />
-                <input type="password" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && label.trim() && token.trim() && void connect(c)}
-                  aria-label={t("Bot token")} placeholder={t("Bot token")} autoComplete="off" data-no-i18n="" className={cn(INPUT, "mt-1.5 h-10")} />
+                {c.id === "zalo-personal" ? (
+                  qr ? <ZaloQr onDone={(key) => void connect(c, key)} onCancel={() => setQr(false)} /> : null
+                ) : (
+                  <input type="password" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && label.trim() && token.trim() && void connect(c)}
+                    aria-label={t("Bot token")} placeholder={t("Bot token")} autoComplete="off" data-no-i18n="" className={cn(INPUT, "mt-1.5 h-10")} />
+                )}
                 <div className="mt-1.5 flex items-center justify-end gap-2">
                   {note?.id === c.id && <span role="alert" data-no-i18n="" className="min-w-0 flex-1 text-[12.5px] text-danger">{note.text}</span>}
-                  <button type="button" disabled={busy || !label.trim() || !token.trim()} onClick={() => void connect(c)} data-testid="input-save"
-                    className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Connect")}</button>
+                  {c.id === "zalo-personal"
+                    ? !qr && <button type="button" disabled={busy || !label.trim()} onClick={() => setQr(true)} data-testid="input-qr"
+                        className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Show QR code")}</button>
+                    : <button type="button" disabled={busy || !label.trim() || !token.trim()} onClick={() => void connect(c)} data-testid="input-save"
+                        className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Connect")}</button>}
                 </div>
               </div>
             )}
@@ -265,7 +278,7 @@ export function BotInputs({ botId }: { botId: string }) {
         {grants.map((g) => (
           <div key={g.accountId} className="rounded-lg bg-inset px-3 py-2 text-[13px] ring-1 ring-inset ring-ink/[0.07]">
             <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-ink"><span>{t(g.app === "zalo" ? "Zalo bot" : "Telegram bot")}</span> · <span data-no-i18n="">{g.accountLabel}</span></span>
+              <span className="min-w-0 flex-1 truncate text-ink"><span>{t(NAMES[g.app] ?? "Telegram bot")}</span> · <span data-no-i18n="">{g.accountLabel}</span></span>
               <button type="button" onClick={() => dispatch({ type: "apps", open: true, tab: "input" })} className="shrink-0 text-[12.5px] text-accent-text hover:underline">{t("Change")}</button>
             </div>
             <div data-no-i18n="" className="mt-0.5 truncate font-mono text-[12px] text-ink-tertiary">{g.chats.join(", ")}</div>

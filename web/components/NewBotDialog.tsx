@@ -69,7 +69,7 @@ export function NewBotDialog() {
         body: JSON.stringify({ name: name.trim(), title: title.trim(), description: description.trim(), color, modelSelection: sel ?? undefined, approvalMode: mode, cwd: cwd.trim() || undefined }),
       });
       if (saveDefaults) await api("/api/bot-defaults", { method: "PUT", body: JSON.stringify({ modelSelection: sel, approvalMode: mode, cwd: cwd.trim() || null }) });
-      if (soul) await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ soul }) });
+      if (soul.trim()) await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ soul: soul.trim() }) });
       dispatch({ type: "select", id: bot.id });
       close();
     } catch (e) {
@@ -131,6 +131,9 @@ export function NewBotDialog() {
         <label className={cn(label, "mt-3")} htmlFor="nb-desc">Description</label>
         <textarea id="nb-desc" value={description} rows={2} placeholder="What is this bot for?" onChange={(e) => setDescription(e.target.value)}
           className="w-full resize-none rounded-lg bg-inset px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-tertiary" />
+        <label className={cn(label, "mt-3")} htmlFor="nb-soul">Instructions</label>
+        <textarea id="nb-soul" value={soul} rows={4} placeholder="What the bot should always know about its role (optional)" onChange={(e) => setSoul(e.target.value)}
+          className="w-full resize-y rounded-lg bg-inset px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-tertiary" />
         <span className={cn(label, "mt-3")}>Mascot color</span>
         <div className="flex flex-wrap gap-1.5">
           {COLORS.map((c) => (

@@ -1,16 +1,16 @@
 # Frees the ports BotTeam uses (from .env, or the defaults) by stopping whatever listens on them. A listener whose process is gone
 # (a killed dev server whose uvicorn worker still holds the socket) is freed by stopping the processes that were started by it.
-# -Only server|web|all picks which of the three ports (the server's and the webhook receiver's, or the web app's) when no -Ports is given.
+# -Only server|web|zalo|all picks which ports (the server's and the webhook receiver's, the web app's, or the Zalo service's) when no -Ports is given.
 param([int[]]$Ports, [string]$Only = "all")
 if (-not $Ports -or $Ports.Count -eq 0) {
-  $env = @{ SERVER_PORT = 8899; WEB_PORT = 5299; WEBHOOK_PORT = 8900 }
+  $env = @{ SERVER_PORT = 8899; WEB_PORT = 5299; WEBHOOK_PORT = 8900; ZALO_PORT = 8902 }
   $file = Join-Path $PSScriptRoot "..\.env"
   if (Test-Path $file) {
     foreach ($line in Get-Content $file) {
-      if ($line -match '^\s*(SERVER_PORT|WEB_PORT|WEBHOOK_PORT)\s*=\s*(\d+)') { $env[$Matches[1]] = [int]$Matches[2] }
+      if ($line -match '^\s*(SERVER_PORT|WEB_PORT|WEBHOOK_PORT|ZALO_PORT)\s*=\s*(\d+)') { $env[$Matches[1]] = [int]$Matches[2] }
     }
   }
-  $Ports = switch ($Only) { "server" { @($env.SERVER_PORT, $env.WEBHOOK_PORT) } "web" { @($env.WEB_PORT) } default { @($env.SERVER_PORT, $env.WEB_PORT, $env.WEBHOOK_PORT) } }
+  $Ports = switch ($Only) { "server" { @($env.SERVER_PORT, $env.WEBHOOK_PORT) } "web" { @($env.WEB_PORT) } "zalo" { @($env.ZALO_PORT) } default { @($env.SERVER_PORT, $env.WEB_PORT, $env.WEBHOOK_PORT, $env.ZALO_PORT) } }
 }
 foreach ($port in $Ports) {
   $owners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique

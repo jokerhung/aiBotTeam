@@ -44,7 +44,7 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 - 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
-- 💬 **Telegram and Zalo input** — a bot answers every message, or collects photos and files into a batch and runs when someone presses *Check*.
+- 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files into a batch and runs when someone presses *Check*.
 - 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
 - ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
 - 🧠 **Memory, skills and sharing** — notes that last between tasks, `SKILL.md` skills, and one-file export and import of a bot or a team.
@@ -86,7 +86,8 @@ flowchart LR
 | `web/lib/` | Types shared with the server (`wire.ts`), skins, Vietnamese dictionary (`i18n-vi.ts`) |
 | `server/botteam/` | FastAPI server: `main.py` (routes), `turns.py`, `registry.py`, `broker.py`, `store.py`, `routines.py`, `memory.py` |
 | `server/botteam/drivers/` | One driver per engine: `claude.py`, `codex.py`, `openai_compat.py` |
-| `server/botteam/channels/` | Telegram and Zalo input, batch and chat modes |
+| `server/botteam/channels/` | Telegram, Zalo bot and Zalo personal-account input, batch and chat modes |
+| `zalo-service/` | Node.js service on [zca-js](https://github.com/RFS-ADRENO/zca-js): QR sign-in, receives and sends Zalo messages for a personal account; reached through the `/zalo-api` proxy in `web/next.config.mjs` |
 | `server/botteam/mcp_*.py`, `composio.py` | MCP servers, proxy and Composio connection |
 | `server/tests/` | pytest suites (a fake driver replays events) |
 | `scripts/` | Helpers: `run.mjs`, `free-ports.ps1`, visual and reference checks |
@@ -103,7 +104,7 @@ flowchart LR
 - At least one engine: the Claude Code CLI, the Codex CLI, or an OpenAI-compatible endpoint
 - Microsoft Edge or Chrome for the built-in browser (otherwise run `playwright install chromium`)
 
-The install scripts check all of this and install what is missing. Ports: web `5299`, API `8899`, webhooks `8900`.
+The install scripts check all of this and install what is missing. Ports: web `5299`, API `8899`, webhooks `8900`, Zalo service `8902`.
 
 #### Windows — PowerShell
 
@@ -154,7 +155,7 @@ To use BotTeam from another computer on your LAN or Tailscale, set `WEB_HOST=0.0
 #### Build packages and run checks
 
 ```bash
-pnpm test              # server (pytest) and web (Vitest)
+pnpm test              # server (pytest), web (Vitest) and the Zalo service (node:test)
 pnpm typecheck         # TypeScript
 pnpm test:ui           # reference and visual comparison (needs the reference app running)
 pnpm build:static      # static web app served by the Python server

@@ -1,11 +1,12 @@
 "use client";
-import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
+import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, MessageCircle, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { locale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, Message } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { toast } from "./Toaster";
 import { AttachmentGallery } from "./AttachmentGallery";
 import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
@@ -184,6 +185,17 @@ function Row({ bot, list, i, busy, detailed = false }: { bot: Bot; list: Message
   );
 }
 
+/** The Administrator's chat: opened from the header, made on first use. */
+async function toggleAdmin(open: boolean, dispatch: ReturnType<typeof useStore>["dispatch"]) {
+  if (open) return dispatch({ type: "admin", open: false });
+  try {
+    const bot = await api<Bot>("/api/admin/open", { method: "POST" });
+    dispatch({ type: "admin", open: true, bot });
+  } catch (e) {
+    toast((e as Error).message);
+  }
+}
+
 function Header({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
   const panelOpen = state.panelBotId === bot.id;
@@ -200,6 +212,11 @@ function Header({ bot }: { bot: Bot }) {
           </div>
           <div className="col-start-3 flex shrink-0 items-center justify-self-end gap-2">
             <ModelMenu bot={bot} />
+            <button type="button" data-testid="open-admin" title="Chat with the Administrator" aria-label="Chat with the Administrator" aria-pressed={state.adminOpen}
+              onClick={() => void toggleAdmin(state.adminOpen, dispatch)}
+              className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, state.adminOpen && "text-ink")}>
+              <MessageCircle size={15} />
+            </button>
             <button type="button" title="Bot details" aria-label="Bot details" aria-pressed={panelOpen}
               onClick={() => dispatch({ type: "panel", botId: panelOpen ? null : bot.id })}
               className={cn("relative flex size-8 items-center justify-center rounded-full text-ink-secondary hover:text-ink", FLOAT_PILL, panelOpen && "text-ink")}>
@@ -217,7 +234,7 @@ function Header({ bot }: { bot: Bot }) {
   );
 }
 
-export function ChatView({ bot }: { bot: Bot }) {
+export function ChatView({ bot, embedded = false }: { bot: Bot; embedded?: boolean }) {
   const { state, dispatch } = useStore();
   const thread = bot.threadId;
   const stored = state.messages[thread];
@@ -269,12 +286,12 @@ export function ChatView({ bot }: { bot: Bot }) {
   const dividerAt = state.dividerAt[bot.id] ?? 0;
   const dividerIndex = dividerAt > 0 ? messages.findIndex((m) => m.role === "bot" && m.at > dividerAt) : -1;
   const liveText = messages.some((m) => m.streaming);
-  const detailed = messages.some((m) => m.role === "user" && /^(telegram|zalo) /.test(m.sender ?? ""));
+  const detailed = messages.some((m) => m.role === "user" && /^(telegram|zalo(-personal)?) /.test(m.sender ?? ""));
 
   return (
     <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
       <div className="relative min-h-0 flex-1">
-        <Header bot={bot} />
+        {!embedded && <Header bot={bot} />}
         {state.findOpen && <ChatFindBar scroller={scroller} messages={messages} />}
         <div
           ref={scroller}
@@ -285,7 +302,7 @@ export function ChatView({ bot }: { bot: Bot }) {
             setAtBottom(near);
             if (el.scrollTop < 240 && hasMore) void loadOlder();
           }}
-          className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 pt-14 [overflow-anchor:none]", openApproval ? "pb-72" : "pb-32")}
+          className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 [overflow-anchor:none]", embedded ? "pt-3" : "pt-14", openApproval ? "pb-72" : "pb-32")}
         >
           <div role="log" aria-label={`Conversation with ${bot.name}`} className="chat-column relative flex w-full flex-col gap-3">
             {hasMore && <div className="py-2 text-center text-[13px] text-ink-tertiary">Loading earlier messages…</div>}

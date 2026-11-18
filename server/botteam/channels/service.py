@@ -25,6 +25,7 @@ from .chat import CHAT_TAG, HELP as HELP_CHAT, ChatRunner
 from .db import ChannelDb
 from .telegram import TelegramAdapter
 from .zalo import ZaloAdapter
+from .zalo_personal import ZaloPersonalAdapter
 
 log = logging.getLogger("botteam.channels")
 
@@ -35,12 +36,15 @@ OPEN_TTL_MS = 24 * 3600 * 1000
 MAX_QUEUED = 3  # batches of one bot that may wait for the one that is running
 TERMINAL = ("done", "failed", "cancelled", "expired")
 OPEN = ("collecting", "queued", "running")
-ADAPTERS: dict[str, type[Adapter]] = {"telegram": TelegramAdapter, "zalo": ZaloAdapter}
+ADAPTERS: dict[str, type[Adapter]] = {"telegram": TelegramAdapter, "zalo": ZaloAdapter, "zalo-personal": ZaloPersonalAdapter}
 
 INFO: list[ChannelInfo] = [
     ChannelInfo("telegram", "Telegram bot", "Receives PDFs and photos from a chat, groups them into a batch, and starts the bot when someone presses Check."),
     ChannelInfo("zalo", "Zalo bot", "Receives text and photos from a private chat with your Zalo bot.",
                 ["Cannot receive PDF files", "Cannot send files", "Group chats are not supported yet"]),
+    ChannelInfo("zalo-personal", "Zalo personal account", "Answers people who message your own Zalo account. Scan a QR code with the Zalo app to sign in.",
+                ["Uses zca-js, an unofficial library: Zalo may lock an account that uses it", "Replies are sent from your own account", "Needs the Zalo service (Node.js) running",
+                 "Cannot receive PDF files", "Cannot send files", "Group chats are not supported yet"]),
 ]
 
 DEFAULT_PROMPT = ("Một lô file mới vừa được gửi tới. Xem ảnh trong {job}/images/ và tài liệu trong {job}/files/, làm việc được giao, "
@@ -143,6 +147,8 @@ class ChannelService:
         if not cls:
             raise ChannelError("Unknown channel", 404)
         adapter = cls(token, transport=self.transport)
+        if app == "zalo-personal":
+            adapter.secret_file = Path(self.config.path).parent / "zalo-service" / "secret"
         if app == "zalo":
             adapter.shape_log = Path(self.config.path).parent / "channel-raw" / "zalo-shapes.ndjson"  # the format of group messages and replies, content blurred
         return adapter
@@ -316,6 +322,9 @@ class ChannelService:
         await self._stop_poller(account_id)
         for b in await self.db.list_batches(account_id=account_id, statuses=list(OPEN)):
             await self.cancel_batch(b["id"], "The account was disconnected.")
+        adapter = self._adapter(acc)
+        if adapter:
+            await adapter.forget()
         await self.db.delete_account(account_id)
         self.config.set_secret(f"channel:{acc['app']}:{account_id}", None)
         self.adapters.pop(account_id, None)

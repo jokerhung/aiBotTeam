@@ -114,9 +114,14 @@ class Store:
                 await self.db.execute("UPDATE threads SET leaf_id=? WHERE id=?", (leaf, bot.threadId))
 
     # ---- bots ---------------------------------------------------------------
-    async def list_bots(self) -> list[WireBot]:
+    async def list_bots(self, admin: bool = False) -> list[WireBot]:
+        """The person's bots. The built-in Administrator is left out unless asked for."""
         cur = await self.db.execute("SELECT body FROM bots ORDER BY pos")
-        return [WireBot.model_validate_json(r[0]) for r in await cur.fetchall()]
+        bots = [WireBot.model_validate_json(r[0]) for r in await cur.fetchall()]
+        return bots if admin else [b for b in bots if not b.admin]
+
+    async def admin_bot(self) -> Optional[WireBot]:
+        return next((b for b in await self.list_bots(admin=True) if b.admin), None)
 
     async def add_usage(self, bot_id: str, thread_id: str, instance: str, model: str, input_: int, output: int, cost: float, at: Optional[int] = None) -> None:
         await self.db.execute("INSERT INTO usage(id, at, bot_id, thread_id, instance, model, input, output, cost) VALUES(?,?,?,?,?,?,?,?,?)",

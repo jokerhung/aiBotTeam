@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { proxyEvents } from "@/lib/event-proxy";
 
-/** Preserve the real browser host through the API rewrite; overwrite client-supplied forwarding headers. */
+/** Preserve the real browser host through the API and Zalo-service rewrites; overwrite client-supplied forwarding headers. */
 export async function proxy(request: NextRequest) {
   if (request.nextUrl.pathname === "/api/events") {
     return proxyEvents(request, process.env.BOTTEAM_API ?? "http://127.0.0.1:8899");
@@ -11,4 +11,4 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next({ request: { headers } });
 }
 
-export const config = { matcher: "/api/:path*" };
+export const config = { matcher: ["/api/:path*", "/zalo-api/:path*"] };

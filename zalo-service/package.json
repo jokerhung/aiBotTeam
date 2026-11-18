@@ -1,0 +1,17 @@
+{
+  "name": "zalo-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Zalo personal-account connector for BotTeam, built on zca-js",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zca-js": "^2.3.0"
+  }
+}

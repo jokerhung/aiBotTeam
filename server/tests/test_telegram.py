@@ -98,7 +98,7 @@ async def setup(c, tmp_path, **extra):
 # ---- accounts -----------------------------------------------------------------------------------------------------------------
 async def test_accounts_have_labels_and_never_replace_each_other(chan):
     c, app, tg, _ = chan
-    assert [ch["id"] for ch in (await c.get("/api/channels")).json()["channels"]] == ["telegram", "zalo"]
+    assert [ch["id"] for ch in (await c.get("/api/channels")).json()["channels"]] == ["telegram", "zalo", "zalo-personal"]
     assert (await c.post("/api/channels/telegram/accounts", json={"label": "", "token": TG_TOKEN})).status_code == 400  # the first account needs a label too
     bad = await c.post("/api/channels/telegram/accounts", json={"label": "shop", "token": "999999:wrongwrongwrong"})
     assert bad.status_code == 400 and "refused" in bad.text

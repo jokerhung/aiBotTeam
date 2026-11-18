@@ -12,7 +12,7 @@ from .runtime import LEVELS
 
 TOOL_NAMES = ["remember", "recall", "forget", "team_remember", "list_bots", "coordinate_bots", "assignment_status", "start_thread", "list_threads", "post_to_room", "list_rooms",
               "trigger_info", "trigger", "delete_trigger", "browser_open", "browser_snapshot", "browser_click", "browser_type", "browser_scroll", "browser_back",
-              "browser_ask_for_help", "browser_close", "sheet_rows"]
+              "browser_ask_for_help", "browser_close", "sheet_rows", "admin_list_bots", "admin_create_bot", "admin_update_bot"]
 
 
 class AgentTools:
@@ -21,6 +21,7 @@ class AgentTools:
         self.groups = groups  # set by the app once rooms exist
         self.routines = routines
         self.composio = None  # set by the app: reads of Google Sheets go through its Session
+        self.admin = None  # set by the app: what the Administrator's tools do (create, update, overview)
 
     # ---- helpers -----------------------------------------------------------------------------------------------------
     async def _resolve(self, ref: str) -> Optional[str]:
@@ -67,6 +68,10 @@ class AgentTools:
             if run and (getattr(run, "channel_batch_id", None) or "").startswith("chat:") and tool not in self.CHANNEL_CHAT_TOOLS:
                 # an answering bot talks to strangers: whatever they write, it cannot hand work to other bots, make routines, post, browse or write notes
                 return {"ok": False, "reason": "not_allowed", "detail": "this tool is not available while answering a customer"}
+            if self.admin is not None:  # the Administrator uses only its own tools; no other bot may use them
+                me = await self._me(thread_id)
+                if tool.startswith("admin_") != bool(me and me.admin):
+                    return {"ok": False, "reason": "not_allowed", "detail": "the admin tools belong to the Administrator, and the Administrator has no other tools" if me and me.admin else "only the Administrator can use this tool"}
             fn = getattr(self, f"t_{tool}", None)
             if not fn:
                 return {"ok": False, "reason": "unknown_tool", "detail": f"no tool {tool}; the tools are {', '.join(TOOL_NAMES)}"}
@@ -330,6 +335,15 @@ class AgentTools:
             return {"ok": True, "spreadsheet": exact[0]["name"], "tab": None, "rows": [], "searchedTabs": searched, "fetchedAt": int(min(fetched) * 1000), "cacheMinutes": minutes}
         except ComposioError as e:
             return {"ok": False, "reason": "sheets", "detail": str(e)}
+
+    async def t_admin_list_bots(self, thread_id: str, args: dict) -> dict:
+        return {"ok": True, **await self.admin.overview()}
+
+    async def t_admin_create_bot(self, thread_id: str, args: dict) -> dict:
+        return await self.admin.create(args)
+
+    async def t_admin_update_bot(self, thread_id: str, args: dict) -> dict:
+        return await self.admin.update(args)
 
     async def t_list_bots(self, thread_id: str, args: dict) -> dict:
         me = (self.turns.runs.get(thread_id).bot_id if self.turns.runs.get(thread_id) else None)

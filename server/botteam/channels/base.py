@@ -118,6 +118,10 @@ class Adapter:
     async def clear_webhook(self) -> None:
         raise Unsupported("this channel has no webhook to clear")
 
+    async def forget(self) -> None:
+        """The account is disconnected in BotTeam: let go of whatever the channel keeps for it (nothing, for most)."""
+        return None
+
 
 # ---- small helpers ---------------------------------------------------------------------------------------------------------------
 def safe_name(value: str, default: str = "file") -> str:

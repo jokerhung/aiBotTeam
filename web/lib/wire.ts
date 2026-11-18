@@ -119,6 +119,7 @@ export interface Bot {
   approvalMode: ApprovalMode;
   soul: string;
   chief: boolean;
+  admin?: boolean; // the built-in Administrator
   managedSections?: string[];
   reportsTo?: string | null;
   mcpServers?: string[];

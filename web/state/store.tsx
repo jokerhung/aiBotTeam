@@ -33,6 +33,9 @@ export interface AppState {
   panelVersion: number;
   /** The bot whose Computer panel (its browser's live screen) is open. */
   computerBotId: string | null;
+  /** The built-in Administrator (kept out of `bots`) and whether its chat panel is open. */
+  adminBot: Bot | null;
+  adminOpen: boolean;
   paletteOpen: boolean;
   shortcutsOpen: boolean;
   findOpen: boolean;
@@ -89,6 +92,7 @@ export type Action =
   | { type: "sections"; sections: Section[] }
   | { type: "panel"; botId: string | null; profile?: boolean }
   | { type: "computer"; botId: string | null }
+  | { type: "admin"; open: boolean; bot?: Bot }
   | { type: "palette"; open: boolean }
   | { type: "shortcuts"; open: boolean }
   | { type: "find"; open: boolean }
@@ -119,7 +123,7 @@ export const initialState: AppState = {
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
   groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, pairOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, importBotOpen: false, mcpTick: 0, channelTick: 0,
   routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
-  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null,
+  settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null, adminBot: null, adminOpen: false,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
 
@@ -202,6 +206,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case "panel":
       return { ...state, panelBotId: action.botId, panelView: action.profile ? "settings" : "overview",
         panelVersion: state.panelVersion + 1, computerBotId: action.botId ? null : state.computerBotId };
+    case "admin":
+      return { ...state, adminOpen: action.open, adminBot: action.bot ?? state.adminBot, panelBotId: action.open ? null : state.panelBotId, computerBotId: action.open ? null : state.computerBotId };
     case "computer":
       return { ...state, computerBotId: action.botId, panelBotId: action.botId ? null : state.panelBotId };
     case "palette":
@@ -240,6 +246,7 @@ export function reducer(state: AppState, action: Action): AppState {
       const f = action.frame;
       switch (f.kind) {
         case "bot": {
+          if (f.bot.admin) return { ...state, adminBot: f.bot };
           const exists = state.bots.some((b) => b.id === f.bot.id);
           const bots = exists ? state.bots.map((b) => (b.id === f.bot.id ? f.bot : b)) : [...state.bots, f.bot];
           const selectedId = state.selectedId || f.bot.id;
@@ -395,6 +402,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [threadId, botId, generation, state.connected]);
+
+  // The Administrator's conversation, fetched when its panel opens.
+  const adminId = state.adminOpen ? state.adminBot?.id : undefined;
+  const adminThread = state.adminOpen ? state.adminBot?.threadId : undefined;
+  const adminGeneration = (state.reload[adminThread ?? ""] ?? 0) + (state.connected ? 1 : 0) * 1000;
+  useEffect(() => {
+    if (!adminId || !adminThread || !state.connected) return;
+    let cancelled = false;
+    api<{ messages: Message[]; hasMore: boolean }>(`/api/bots/${adminId}/messages?thread=${adminThread}`)
+      .then((r) => !cancelled && dispatch({ type: "history", threadId: adminThread, messages: r.messages, hasMore: r.hasMore, generation: adminGeneration }))
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [adminId, adminThread, adminGeneration, state.connected]);
 
   const group = state.groups.find((g) => g.id === state.selectedGroupId);
   const gThread = group?.threadId ?? "";

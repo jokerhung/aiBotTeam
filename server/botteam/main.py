@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 import anyio
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,7 @@ from .notifications import Notifications
 from .routines import RoutineService
 from .channels import ChannelError, ChannelService
 from .composio import Composio, ComposioError, slug_of
+from . import admin as adminlib
 from . import botfile
 from . import teams as teamlib
 from . import observe
@@ -44,7 +46,7 @@ from pydantic import BaseModel
 from .browser import BrowserService, BrowserUnavailable
 from .wire import (
     BotDefaults, ConfigPatch, CreateBot, CreateGroup, GroupMessage, NoteBody, PatchGroup, RoutineBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
-    PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage,
+    PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage, MAUS_COLORS,
 )
 
 FILE_MAX_BYTES = 100 * 1024 * 1024
@@ -194,7 +196,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def require_pairing(request, call_next):
         """Remote domains need a session; localhost and LAN/Tailscale IPs open directly."""
         path = request.url.path
-        if request_needs_pairing(request, pairing.required) and path.startswith("/api/") and path not in OPEN_PATHS and not pairing.valid(request.cookies.get(COOKIE)):
+        if request_needs_pairing(request, pairing.required) and path.startswith(("/api/", "/zalo-api/")) and path not in OPEN_PATHS and not pairing.valid(request.cookies.get(COOKIE)):
             from fastapi.responses import JSONResponse
 
             return JSONResponse({"detail": "pairing required"}, status_code=401)
@@ -430,9 +432,102 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await turns.publish_bot(bot)
         return await turns.bot_dict(bot)
 
+    # ---- the Administrator: a bot the person chats with to make and change bots ------------------------------------------
+    async def admin_view(b) -> dict:
+        names = {i: sp.get("name", "") for i, sp in await mcp.list()}
+        return {"id": b.id, "name": b.name, "title": b.title, "description": b.description, "color": b.color, "approvalMode": b.approvalMode,
+                "instructions": b.soul, "connections": [names[i] for i in b.mcpServers if i in names]}
+
+    class AdminOps:
+        async def overview(self) -> dict:
+            return {"bots": [await admin_view(b) for b in await store.list_bots()],
+                    "availableConnections": [sp.get("name", "") for _, sp in await mcp.list() if sp.get("enabled", True)],
+                    "colors": MAUS_COLORS, "approvalModes": list(adminlib.MODES)}
+
+        def _check(self, f: dict) -> dict | None:
+            if "color" in f and f["color"] not in MAUS_COLORS:
+                return {"ok": False, "reason": "invalid", "detail": f"color is one of: {', '.join(MAUS_COLORS)}"}
+            if "approvalMode" in f and f["approvalMode"] not in adminlib.MODES:
+                return {"ok": False, "reason": "invalid", "detail": "approvalMode is ask, edits or auto. Full access is chosen by the person in the bot's own settings."}
+            if f.get("name") == "":
+                return {"ok": False, "reason": "invalid", "detail": "a bot needs a name"}
+            return None
+
+        async def _servers(self, names: list[str]) -> tuple[list[str], list[str]]:
+            by = {sp.get("name", "").lower(): i for i, sp in await mcp.list()}
+            ids = [by[n.lower()] for n in names if n.lower() in by]
+            return ids, [n for n in names if n.lower() not in by]
+
+        async def create(self, args: dict) -> dict:
+            f = adminlib.clean(args)
+            if not f.get("name"):
+                return {"ok": False, "reason": "invalid", "detail": "a bot needs a name"}
+            bad = self._check(f)
+            if bad:
+                return bad
+            ids, missing = await self._servers(f.get("connections") or [])
+            if missing:
+                return {"ok": False, "reason": "unknown_connection", "detail": f"not connected here: {', '.join(missing)}. The person connects it first in Connect apps."}
+            try:
+                made = await create_bot(CreateBot(name=f["name"], title=f.get("title", ""), description=f.get("description", ""), color=f.get("color"),
+                                                  approvalMode=f.get("approvalMode") or adminlib.APPROVAL))
+                extra = {k: f[k] for k in ("soul",) if k in f}
+                if ids:
+                    extra["mcpServers"] = ids
+                    extra["mcpAccess"] = {i: {"scope": "read", "outbound": "ask"} for i in ids}
+                if extra:
+                    made = await patch_bot(made["id"], PatchBot(**extra))
+            except HTTPException as e:
+                return {"ok": False, "reason": "invalid", "detail": str(e.detail)}
+            return {"ok": True, "bot": await admin_view(await need(made["id"]))}
+
+        async def update(self, args: dict) -> dict:
+            ref = str(args.get("bot") or "").strip().lstrip("@")
+            bots = await store.list_bots()
+            bot = next((b for b in bots if b.id == ref), None) or next((b for b in bots if b.name.lower() == ref.lower()), None)
+            if not bot:
+                return {"ok": False, "reason": "not_found", "detail": f"no bot called {ref!r}; admin_list_bots shows them"}
+            f = adminlib.clean(args)
+            bad = self._check(f)
+            if bad:
+                return bad
+            before = await admin_view(bot)
+            fields = {k: f[k] for k in ("name", "title", "description", "color", "soul", "approvalMode") if k in f}
+            if "connections" in f:
+                ids, missing = await self._servers(f["connections"])
+                if missing:
+                    return {"ok": False, "reason": "unknown_connection", "detail": f"not connected here: {', '.join(missing)}. The person connects it first in Connect apps."}
+                fields["mcpServers"] = ids
+                fields["mcpAccess"] = {i: bot.mcpAccess.get(i) or {"scope": "read", "outbound": "ask"} for i in ids}
+            if not fields:
+                return {"ok": False, "reason": "nothing_to_change", "detail": "pass at least one of name, title, description, instructions, color, approvalMode, connections"}
+            try:
+                await patch_bot(bot.id, PatchBot(**fields))
+            except HTTPException as e:
+                return {"ok": False, "reason": "invalid", "detail": str(e.detail)}
+            return {"ok": True, "before": before, "bot": await admin_view(await need(bot.id))}
+
+    agents.admin = AdminOps()
+
+    @app.post("/api/admin/open")
+    async def open_admin():
+        """The Administrator's bot, made on first use. Its instructions are kept current here."""
+        bot = await store.admin_bot()
+        sel = config.data.get("botDefaults", {}).get("modelSelection") or registry.default_selection()
+        if not bot:
+            bot = await store.create_bot(adminlib.NAME, adminlib.TITLE, adminlib.DESCRIPTION, adminlib.COLOR, sel)
+            bot.admin, bot.hidden = True, True
+            bot.approvalMode = adminlib.APPROVAL
+        bot.soul, bot.title, bot.description = adminlib.SOUL, adminlib.TITLE, adminlib.DESCRIPTION
+        await store.save_bot(bot)
+        await turns.publish_bot(bot)
+        return await turns.bot_dict(bot)
+
     @app.delete("/api/bots/{bot_id}")
     async def delete_bot(bot_id: str):
         bot = await need(bot_id)
+        if bot.admin:
+            raise HTTPException(400, "the Administrator cannot be deleted")
         host.forget(bot_id)
         await groups.remove_bot(bot_id)
         for t in await store.list_threads(bot_id):
@@ -1589,6 +1684,26 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.webhooks, app.state.hook_app = webhooks, make_hook_app(webhooks)
     app.state.runtime, app.state.host, app.state.agents, app.state.groups, app.state.notify = runtime, host, agents, groups, notify
     app.state.mcp = mcp
+
+    @app.api_route("/zalo-api/{path:path}", methods=["GET", "POST", "DELETE"])
+    async def zalo_service_proxy(path: str, request: Request):
+        """The built app has no Next.js proxy, so this one does what `rewrites` in web/next.config.mjs does in development: /zalo-api/* goes to the Node.js
+        Zalo service on this computer. Only the sign-in paths are forwarded; the service checks the browser with this server again."""
+        from fastapi.responses import Response
+
+        if not (path == "login" or path.startswith("login/")):
+            raise HTTPException(404, "not found")
+        base = os.environ.get("BOTTEAM_ZALO") or f"http://127.0.0.1:{os.environ.get('ZALO_PORT') or 8902}"
+        headers = {"x-forwarded-host": request.headers.get("host", "")}
+        for h in ("content-type", "cookie", "origin"):
+            if request.headers.get(h):
+                headers[h] = request.headers[h]
+        try:
+            async with httpx.AsyncClient(timeout=20) as c:
+                r = await c.request(request.method, f"{base}/{path}", content=await request.body(), headers=headers)
+        except httpx.HTTPError:
+            raise HTTPException(502, "The Zalo service is not running. Start it with `pnpm dev:zalo` (it needs Node.js).")
+        return Response(r.content, status_code=r.status_code, media_type=r.headers.get("content-type", "application/json"))
 
     static = web_dir or (Path(os.environ["BOTTEAM_WEB_DIR"]) if os.environ.get("BOTTEAM_WEB_DIR") else None)
     if static is None:

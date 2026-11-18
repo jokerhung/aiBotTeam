@@ -76,6 +76,7 @@ class WireBot(BaseModel):
     approvalMode: str = "full"
     soul: str = ""
     chief: bool = False
+    admin: bool = False  # the built-in Administrator (never in the bot list)
     managedSections: list[str] = Field(default_factory=list)  # a Chief of Staff's own sections; empty means the whole team
     reportsTo: Optional[str] = None  # the bot this one reports to (usually the Chief of Staff)
     mcpServers: list[str] = Field(default_factory=list)  # custom MCP servers this bot may use
@@ -346,7 +347,7 @@ class GroupMessage(BaseModel):
 # ---- messaging channels (the Input tab): what the API and the live frames carry. No token is ever part of any of these. -------------------
 class WireChannelAccount(BaseModel):
     id: str
-    app: Literal["telegram", "zalo"]
+    app: Literal["telegram", "zalo", "zalo-personal"]
     label: str
     username: str = ""
     enabled: bool = True
