@@ -8,6 +8,18 @@ It is built with a Next.js web app and a Python (FastAPI) server, and follows th
 
 ---
 
+<p align="center"><img src="docs/screenshots/chat.png" alt="A bot answering a lookup question in chat, with its tool calls and profile panel" width="100%"></p>
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/input-channels.png" alt="Input tab: Telegram and Zalo bots start a bot when a message arrives"></td>
+    <td width="33%"><img src="docs/screenshots/connected-apps.png" alt="Connected apps through Composio"></td>
+    <td width="33%"><img src="docs/screenshots/new-bot.png" alt="New bot dialog with role, model, color and approval level"></td>
+  </tr>
+</table>
+
+---
+
 ## ⚡ Quick Start
 
 **macOS / Linux**
