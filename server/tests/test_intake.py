@@ -210,3 +210,12 @@ async def test_the_intake_api_is_refused_for_a_bot_without_a_folder(ctx, tmp_pat
     state = (await c.get(f"/api/bots/{a['id']}/intake")).json()
     assert state["hasFolder"] is False
     assert datetime.now().year >= 2026
+
+
+def test_a_session_can_end_with_a_reply_and_no_bot_run():
+    st = ik.parse(ik.default_text("collect"))
+    assert st.cfg["agent"] is True and "{summary}" in st.cfg["reply"]
+    quiet = ik.default_text("collect").replace("run:\n", 'run:\n  agent: false\n  reply: "Đã nhận {photos} ảnh: {summary}"\n', 1)
+    got = ik.parse(quiet)
+    assert got.valid and got.cfg["agent"] is False and got.cfg["reply"] == "Đã nhận {photos} ảnh: {summary}" and not got.warnings
+    assert "run.agent" in ik.parse(ik.default_text("collect").replace("run:\n", "run:\n  agent: maybe\n", 1)).error

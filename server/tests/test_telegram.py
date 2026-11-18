@@ -172,7 +172,7 @@ async def test_two_bots_share_an_account_and_a_chat_belongs_to_one(chan):
     tg.photo(-2)
     ba, bb = await one_batch(c, a), await one_batch(c, b)
     assert ba["chatId"] == "-1" and bb["chatId"] == "-2"
-    assert list((ws_a / "jobs" / ba["id"]).glob("*.jpg")) and list((ws_b / "jobs" / bb["id"]).glob("*.jpg"))
+    await until(lambda: list((ws_a / "jobs" / ba["id"]).glob("*.jpg")) and list((ws_b / "jobs" / bb["id"]).glob("*.jpg")), what="a photo in each bot's session folder")
     used = (await c.get("/api/channels")).json()["channels"][0]["accounts"][0]["usedBy"]
     assert set(used) == {a["id"], b["id"]}
     assert (await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{b['id']}", json={"chats": ["not a chat"]})).status_code == 400
@@ -454,8 +454,8 @@ async def test_limits_on_size_and_number_of_photos(chan):
     tg.document(GROUP, "huge.pdf", size=30 * 1024 * 1024)
     await until(lambda: any("quá lớn" in t for t in tg.texts(GROUP)), what="the size answer")
     assert await batches(c, bot) == []
-    for _ in range(3):
-        tg.photo(GROUP)
+    for i in range(3):
+        tg.photo(GROUP, f"photo {i}".encode())  # three different photos: one with the same content as another is not saved twice
     await until(lambda: any("đủ 2 ảnh" in t for t in tg.texts(GROUP)), what="the photo limit answer")
     assert len(list(ws.glob("jobs/*/*.jpg"))) == 2
     tg.text(-777, "hello")  # a chat no bot serves

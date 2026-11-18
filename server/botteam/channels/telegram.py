@@ -95,6 +95,8 @@ class TelegramAdapter(Adapter):
     def _markup(buttons: Optional[list[list[Button]]], keyboard: Optional[list[list[str]]]) -> Optional[dict]:
         if buttons:
             return {"inline_keyboard": [[{"text": b.label, "callback_data": b.data} for b in row] for row in buttons]}
+        if keyboard is not None and len(keyboard) == 0:  # an empty keyboard takes the person's fixed keyboard away
+            return {"remove_keyboard": True}
         if keyboard:
             return {"keyboard": [[{"text": t} for t in row] for row in keyboard], "resize_keyboard": True, "is_persistent": True}
         return None

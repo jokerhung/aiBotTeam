@@ -102,14 +102,20 @@ Với input ở chế độ trả lời từng tin (Answer every message), file 
 | `format`, `version` | `botteam.intake`, `1` | bắt buộc | Nhận ra file và phiên bản định dạng |
 | `mode` | `collect` \| `answer` | `collect` | `collect`: gom phiên rồi chạy một lượt. `answer`: mỗi tin là một câu hỏi, trả lời trong cùng chat (chế độ "Answer every message" hiện nay) |
 | `trigger.quietSeconds` | số nguyên 0 hoặc 10–600 | `30` | Hết số giây này không có tin mới thì chạy. `0` là không tự chạy (collect: chỉ chạy khi bấm nút; answer: trả lời ngay từng tin) |
-| `trigger.button` | bool | `true` | Cho phép 🔍 Kiểm kê / `/kiemke` chạy ngay. `collect` với `quietSeconds: 0` mà `button: false` là lỗi (không bao giờ chạy) |
+| `trigger.button` | bool | `true` | Cho phép 🔍 Kiểm kê / `/kiemke` chạy ngay. `false`: không có nút Kiểm kê trong chat, `/kiemke` trả lời "không cần bấm", `/start` chỉ in hướng dẫn ngắn và gỡ bàn phím cố định cũ (có nút Kiểm kê) của người dùng. `collect` với `quietSeconds: 0` mà `button: false` là lỗi (không bao giờ chạy) |
+| `status` | bool | `true` | `false`: chat không nhận tin trạng thái "📋 Lô … Đang nhận file / Đã xong" của phiên (thẻ trong ứng dụng BotTeam vẫn cập nhật). Lỗi vẫn được báo |
 | `save.path` | mẫu đường dẫn tương đối, tối đa 200 ký tự, kết thúc bằng `/` | `"jobs/{session}/"` | Thư mục lưu ảnh của phiên (mục 4.5) |
 | `save.texts` | bool | `true` | Ghi tin nhắn chữ của phiên vào `{folder}messages.md` |
 | `save.phases` | ánh xạ `TênThưMục: [từ khóa…]` | không có | Cần khi mẫu có `{phase}`. Ví dụ `Truoc: [trước, truoc]`, `Sau: [sau]` |
 | `save.machines` | tên file trong thư mục làm việc | `machines.md` | Cần khi mẫu có `{machine}` |
+| `save.stage` | bool | `false` | `true`: ảnh được giữ tạm trong `jobs/_inbox/<phiên>/` tới khi phiên bắt đầu; lúc đó mới gửi `run.start` rồi chuyển từng ảnh vào thư mục theo chú thích của chính nó |
 | `save.unknown` | `ask` \| `inbox` | `ask` | Khi không tách được `{machine}` hoặc `{phase}` từ chú thích. `ask`: hỏi lại người gửi, ảnh nằm chờ trong `jobs/_inbox/{session}/`. `inbox`: để ở đó và vẫn chạy |
-| `ack` | chuỗi mẫu, tối đa 500 ký tự, rỗng là không gửi | như mẫu | Tin gửi lại cho người gửi khi nhận ảnh (gom lại, tối đa một tin mỗi 5 giây mỗi phiên) |
+| `ack` | chuỗi mẫu, tối đa 500 ký tự, rỗng là không gửi | như mẫu | Báo tiến trình khi đang nhận ("Đang nhận: 3 ảnh"): một tin, **sửa tại chỗ** khi kênh sửa được tin (Telegram), tin mới cách nhau vài giây khi không (Zalo). Số cuối cùng luôn được gửi |
 | `run.prompt` | chuỗi mẫu, tối đa 4000 ký tự | như mẫu | Lời nhắc cho bot khi phiên chạy. Thay cho ô "What the bot is told for each batch" |
+| `run.start` | chuỗi mẫu, tối đa 500 ký tự | rỗng | Tin gửi khi phiên bắt đầu (hết thời gian chờ hoặc bấm Kiểm kê), **trước** khi lưu ảnh vào thư mục khi có `save.stage`. Ví dụ "Đã nhận đủ {photos} ảnh. Bắt đầu lưu file…" |
+| `run.agent` | bool | `true` | `false`: hết phiên thì **không chạy bot** và không cần file kết quả; chỉ gửi `run.reply` cho người gửi (và chat nhận kết quả) rồi đóng phiên. Không tốn lượt AI |
+| `run.reply` | chuỗi mẫu, tối đa 1000 ký tự | `Đã nhận đủ {photos} ảnh và lưu vào folder:
+{summary}` | Câu trả lời khi `run.agent: false`. Dùng được mọi biến, thêm `{summary}` |
 | `run.bot` | — | — | **Chừa sẵn, chưa làm**: giao phiên cho bot khác |
 | `limits.maxPhotos` | 1–100 | `40` | Như hiện nay |
 | `limits.timeoutSec` | 5–7200 | `900` | Như hiện nay |
@@ -139,6 +145,8 @@ Ai được nói chuyện với bot là quyền truy cập. Bot ở mức Full c
 | `{phase}` | path, ack, prompt | Tên thư mục trong `save.phases` khớp với chú thích |
 | `{folder}` | ack, prompt | Thư mục đầu tiên của phiên, tương đối với thư mục làm việc, có `/` ở cuối. Kết quả `out/` nằm ở đây (`{folder}out/`) |
 | `{folders}` | ack, prompt | Mọi thư mục của phiên, mỗi dòng một thư mục (khi mẫu có `{machine}`/`{phase}` có thể nhiều hơn một) |
+| `{saved}`, `{skipped}`, `{skipped_note}` | ack, prompt, reply, start | Số ảnh đã lưu mới, số ảnh bỏ qua vì folder đã có file giống hệt, và câu "Bỏ qua N ảnh đã có sẵn trong folder (giống hệt)." (rỗng khi không bỏ qua ảnh nào) |
+| `{summary}` | ack, prompt, reply | Ảnh đã vào đâu, để đưa vào tin nhắn: một thư mục thì là đường dẫn (viết kiểu Windows, `BH FLEX M16-11-18\Truoc`); nhiều thư mục thì mỗi dòng `đường dẫn: N ảnh` |
 | `{photos}`, `{texts}` | ack, prompt | Số ảnh, số tin chữ của phiên |
 | `{quietSeconds}` | ack | Giá trị cấu hình |
 | `{sender}` | prompt | Tên người gửi. **Chỉ dùng trong `prompt`, không dùng trong path** |
@@ -407,6 +415,7 @@ Khi nâng cấp, với mỗi bot đang có quyền input:
 ## 15. Khác với bản nháp (khi làm)
 
 - **`{folder}` và `{folders}`:** `{folder}` là thư mục đầu tiên (nơi có `out/`), `{folders}` là danh sách mọi thư mục. Bản nháp để `{folder}` là cả danh sách, nhưng như vậy `{folder}out/` sai khi có nhiều thư mục.
+- **Không lưu file trùng:** trước khi ghi một file vào thư mục, server kiểm thư mục đó đã có file **giống hệt nội dung** (cùng dung lượng, cùng mã băm SHA-256) chưa; có rồi thì không lưu lần nữa, bản kê trỏ tới file đã có và đánh dấu `duplicate`. Chỉ giống từng byte mới tính là trùng: cùng một ảnh gửi lại qua Telegram nén lại thì có thể khác byte. Dọn theo `retentionDays` không xóa file của một phiên khác mà phiên này chỉ trỏ tới.
 - **Bản kê:** server ghi cả `intake.json` (tên mới) lẫn `batch.json` (tên cũ, cùng nội dung) để các script cũ trong thư mục làm việc vẫn đọc được.
 - **Thư mục làm việc mặc định:** khi ứng dụng được dựng với thư mục dữ liệu riêng (test, nhúng), thư mục cha là `<thư mục dữ liệu>/workdirs`, không phải thư mục chạy, để không tạo gì ở nơi chương trình tình cờ chạy. Bộ nhớ của bot vẫn ở `<dữ liệu>/workspaces/` và khác với thư mục làm việc.
 - **Chế độ `answer`:** hiện bỏ qua `save.*` (ảnh vẫn được lưu vào kho đính kèm của cuộc trò chuyện như trước); chỉ `mode`, `limits.timeoutSec` có tác dụng.

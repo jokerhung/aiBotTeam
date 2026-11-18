@@ -28,6 +28,10 @@ def write_intake(app, ws, text, machines=True):
     app.state.channels.intake.forget(ws)
 
 
+async def svc_files(app, batch_id):
+    return (await app.state.channels.db.get_batch(batch_id))["files"]
+
+
 def today():
     return datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%Y-%m-%d")
 
@@ -83,7 +87,7 @@ async def test_a_session_runs_by_itself_when_nothing_new_arrives_and_every_messa
     tg.photo(GROUP, caption="một")
     b = await one_batch(c, bot, "collecting")
     await asyncio.sleep(0.8)
-    tg.photo(GROUP)
+    tg.photo(GROUP, b"a second, different photo")
     await until(lambda: len(tg.texts(GROUP)) >= 1 and True, what="a first acknowledgement")
     await asyncio.sleep(0.8)  # more than the wait since the first photo, less since the second
     assert (await one_batch(c, bot))["status"] == "collecting", "the second photo started the wait again"
@@ -115,6 +119,7 @@ async def test_a_session_that_was_quiet_while_the_server_was_off_runs_when_it_st
     write_intake(app, ws, intake_text(quiet=10, phases=False), machines=False)
     tg.photo(GROUP)
     b = await one_batch(c, bot, "collecting")
+    await until(lambda: svc_files(app, b["id"]), what="the photo saved in the session")
     svc = app.state.channels
     svc._disarm_quiet(b["id"])  # as if the wait had been lost with the process
     await svc.db.update_batch(b["id"], lastAt=1)  # long ago
@@ -229,3 +234,161 @@ async def test_an_old_input_gets_an_intake_md_made_from_its_settings_at_start(ch
     assert ik.parse((ws2 / "intake.md").read_text(encoding="utf8")).cfg["mode"] == "answer"
     bare = (await c.post("/api/bots", json={"name": "Bare2", "modelSelection": {"instanceId": "echo", "model": "echo-1"}})).json()
     assert bare["cwd"]
+
+
+# ---- no bot run: the sender is told, nothing else ----------------------------------------------------------------------------------------------
+async def test_without_an_agent_the_photos_are_saved_and_the_sender_gets_a_short_reply_and_no_turn_runs(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch)
+    acc, bot, ws = await setup(c, tmp_path)
+    text = intake_text(quiet=30, path="{machine}/{date}/{phase}/").replace(
+        "run:\n", 'run:\n  agent: false\n  reply: "Đã nhận đủ {photos} ảnh và lưu vào folder:\\n{summary}"\n', 1)
+    write_intake(app, ws, text)
+    state = (await c.get(f"/api/bots/{bot['id']}/intake")).json()
+    assert state["valid"], state
+    for i in range(3):
+        tg.photo(GROUP, f"p{i}".encode(), caption="Máy BH Flex M1 trước" if i == 0 else None)
+    done = await one_batch(c, bot, "done")
+    folder = ws / "BH FLEX M1" / today() / "Truoc"
+    assert len(list(folder.glob("*.jpg"))) == 3
+    reply = [t for t in tg.texts(GROUP) if t.startswith("Đã nhận đủ")]
+    assert reply == ["Đã nhận đủ 3 ảnh và lưu vào folder:\nBH FLEX M1\\" + today() + "\\Truoc"], reply
+    assert done["outFiles"] == [] and not (folder / "out").exists(), "no result file is made or asked for"
+    assert done["threadId"] is None and len((await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]) == 1, "no conversation was started: the bot did not run"
+    assert not tg.documents(GROUP)
+    # a later session names each folder with its count
+    tg.photo(GROUP, b"before2", caption="BH FLEX M1 trước")
+    tg.photo(GROUP, b"after", caption="BH FLEX M1 sau")
+    await until(lambda: list((ws / "BH FLEX M1" / today() / "Sau").glob("*.jpg")), what="a photo of the other phase")
+    tg.text(GROUP, "/kiemke")
+    await until(lambda: any("Truoc: 1 ảnh" in t and "Sau: 1 ảnh" in t for t in tg.texts(GROUP)), what="a reply that names each folder with its count")
+
+
+async def test_with_no_button_and_no_status_the_chat_sees_no_status_card_and_no_check_button(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch)
+    acc, bot, ws = await setup(c, tmp_path)
+    text = intake_text(quiet=30, path="{machine}/{date}/{phase}/", phases=True).replace(
+        "run:\n", 'run:\n  agent: false\n  reply: "Đã nhận đủ {photos} ảnh và lưu vào folder:\\n{summary}"\n', 1).replace("button: true", "button: false").replace(
+        "ack:", "status: false\nack:", 1)
+    write_intake(app, ws, text)
+    assert (await c.get(f"/api/bots/{bot['id']}/intake")).json()["valid"]
+    tg.photo(GROUP, b"a", caption="Máy BH Flex M1 trước")
+    tg.photo(GROUP, b"b")
+    await one_batch(c, bot, "done")
+    texts = tg.texts(GROUP)
+    assert any(t.startswith("Đã nhận đủ 2 ảnh") for t in texts), texts
+    assert not any(t.startswith("📋") or "Đang nhận file" in t for t in texts), "no status card in the chat"
+    assert not any("Mẹo" in t for t in texts), "no tip about sending photos as files when no bot counts them"
+    assert not any(d.startswith("run:") for d in tg.buttons(GROUP)), "and no Check button"
+    final = [m for m in tg.sent if m["method"] == "sendMessage" and str(m["chat_id"]) == str(GROUP) and m["text"].startswith("Đã nhận đủ")]
+    assert final and final[-1]["reply_markup"] == {"remove_keyboard": True}, "the old fixed keyboard (with Check) is taken away"
+    tg.text(GROUP, "/kiemke")
+    await until(lambda: any("không cần bấm Kiểm kê" in t for t in tg.texts(GROUP)), what="the answer to a Check that is no longer used")
+    tg.text(GROUP, "/start")
+    await until(lambda: any(t.startswith("Cách dùng: gửi ảnh kèm chú thích") and "Kiểm kê" not in t for t in tg.texts(GROUP)), what="a short help without Check")
+
+
+async def test_progress_is_reported_while_photos_arrive_and_received_all_comes_before_anything_is_saved(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch, 0.1)  # 30 s become 3 s
+    acc, bot, ws = await setup(c, tmp_path)
+    text = intake_text(quiet=30, path="{machine}/{date}/{phase}/").replace(
+        "run:\n", 'run:\n  agent: false\n  start: "Đã nhận đủ {photos} ảnh. Bắt đầu lưu file…"\n  reply: "Đã lưu {photos} ảnh vào folder:\\n{summary}"\n', 1).replace(
+        'path: "{machine}/{date}/{phase}/"', 'path: "{machine}/{date}/{phase}/"\n  stage: true', 1).replace(
+        "ack:", "ack:", 1)
+    text = text.replace(ik.DEFAULT_ACK, "Đang nhận: {photos} ảnh")
+    write_intake(app, ws, text)
+    assert (await c.get(f"/api/bots/{bot['id']}/intake")).json()["valid"]
+    tg.photo(GROUP, b"1", caption="Máy BH Flex M1 trước")
+    await until(lambda: any(t == "Đang nhận: 1 ảnh" for t in tg.texts(GROUP)), what="progress after the first photo")
+    tg.photo(GROUP, b"2")
+    tg.photo(GROUP, b"3")
+    await until(lambda: any(t == "Đang nhận: 3 ảnh" for t in tg.texts(GROUP)), what="progress with three photos")
+    target = ws / "BH FLEX M1" / today() / "Truoc"
+    inbox = ws / "jobs" / "_inbox"
+    assert not target.exists() and len(list(inbox.rglob("*.jpg"))) == 3, "while photos are still coming nothing is saved in the folder yet"
+    start = await until(lambda: next((t for t in tg.texts(GROUP) if t.startswith("Đã nhận đủ 3 ảnh")), None), what="received all")
+    assert start == "Đã nhận đủ 3 ảnh. Bắt đầu lưu file…"
+    done = await one_batch(c, bot, "done")
+    assert len(list(target.glob("*.jpg"))) == 3 and not list(inbox.rglob("*.jpg")), "after the start message the photos moved into their folder"
+    sent = [t for t in tg.texts(GROUP) if t.startswith(("Đang nhận", "Đã nhận đủ", "Đã lưu"))]
+    assert sent.index("Đã nhận đủ 3 ảnh. Bắt đầu lưu file…") > sent.index("Đang nhận: 3 ảnh"), sent
+    assert sent[-1] == "Đã lưu 3 ảnh vào folder:\nBH FLEX M1\\" + today() + "\\Truoc", sent
+    assert done["files"] and all(f["name"].endswith(".jpg") for f in done["files"])
+    edits = [m for m in tg.sent if m["method"] == "editMessageText" and m["text"].startswith("Đang nhận")]
+    assert edits, "later counts change the same message instead of adding new ones"
+
+
+async def test_each_staged_photo_goes_where_its_own_caption_said(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch, 0.1)
+    acc, bot, ws = await setup(c, tmp_path)
+    text = intake_text(quiet=30, path="{machine}/{date}/{phase}/").replace(
+        "run:\n", 'run:\n  agent: false\n  reply: "{summary}"\n', 1).replace('path: "{machine}/{date}/{phase}/"', 'path: "{machine}/{date}/{phase}/"\n  stage: true', 1)
+    write_intake(app, ws, text)
+    tg.photo(GROUP, b"a", caption="BH FLEX M1 trước")
+    tg.photo(GROUP, b"b", caption="BH FLEX M1 sau")
+    tg.photo(GROUP, b"c")
+    await one_batch(c, bot, "done")
+    assert len(list((ws / "BH FLEX M1" / today() / "Truoc").glob("*.jpg"))) == 1
+    assert len(list((ws / "BH FLEX M1" / today() / "Sau").glob("*.jpg"))) == 2, "a photo without a caption follows the caption before it"
+
+
+async def test_a_file_the_folder_already_has_is_not_saved_again(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch, 0.1)
+    acc, bot, ws = await setup(c, tmp_path)
+    text = intake_text(quiet=30, path="{machine}/{date}/{phase}/").replace(
+        "run:\n", 'run:\n  agent: false\n  reply: "Đã lưu {saved} ảnh vào folder:\\n{summary}{skipped_note}"\n', 1).replace(
+        'path: "{machine}/{date}/{phase}/"', 'path: "{machine}/{date}/{phase}/"\n  stage: true', 1)
+    write_intake(app, ws, text)
+    folder = ws / "BH FLEX M1" / today() / "Truoc"
+    folder.mkdir(parents=True)
+    (folder / "earlier_photo.jpg").write_bytes(b"\xff\xd8same photo")  # a photo an earlier session saved
+    tg.photo(GROUP, b"\xff\xd8same photo", caption="BH FLEX M1 trước")  # the same one again
+    tg.photo(GROUP, b"\xff\xd8new photo")
+    tg.photo(GROUP, b"\xff\xd8new photo")  # and a new one sent twice in the same session
+    done = await one_batch(c, bot, "done")
+    saved = sorted(p.read_bytes() for p in folder.glob("*.jpg"))
+    assert saved == sorted([b"\xff\xd8same photo", b"\xff\xd8new photo"]), "each content is in the folder once"
+    reply = next(t for t in tg.texts(GROUP) if t.startswith("Đã lưu"))
+    assert reply.startswith("Đã lưu 1 ảnh vào folder:\nBH FLEX M1\\" + today() + "\\Truoc") and "Bỏ qua 2 ảnh đã có sẵn" in reply, reply
+    flags = [bool(f.get("duplicate")) for f in (await app.state.channels.db.get_batch(done["id"]))["files"]]
+    assert flags == [True, False, True]
+    assert not list((ws / "jobs" / "_inbox").rglob("*.jpg")), "nothing is left waiting"
+
+
+async def test_a_photo_sent_straight_into_its_folder_is_checked_too(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch, 0.1)
+    acc, bot, ws = await setup(c, tmp_path)
+    write_intake(app, ws, intake_text(quiet=0, path="{machine}/{date}/{phase}/"))
+    tg.photo(GROUP, b"\xff\xd8one", caption="BH FLEX M1 sau")
+    tg.photo(GROUP, b"\xff\xd8one")
+    tg.photo(GROUP, b"\xff\xd8two")
+    folder = ws / "BH FLEX M1" / today() / "Sau"
+    await until(lambda: len((app.state.channels.db and [1])) and len(list(folder.glob("*.jpg"))) == 2, what="two different photos")
+    await asyncio.sleep(0.3)
+    assert sorted(p.read_bytes() for p in folder.glob("*.jpg")) == [b"\xff\xd8one", b"\xff\xd8two"]
+
+
+async def test_a_machine_typed_once_covers_every_photo_of_the_session_that_had_none(chan, tmp_path, monkeypatch):
+    c, app, tg, _ = chan
+    await fast(monkeypatch, 0.1)
+    acc, bot, ws = await setup(c, tmp_path)
+    text = intake_text(quiet=30, path="{machine}/{date}/{phase}/").replace(
+        "run:\n", 'run:\n  agent: false\n  reply: "Đã lưu {saved} ảnh vào folder:\\n{summary}"\n', 1).replace(
+        'path: "{machine}/{date}/{phase}/"', 'path: "{machine}/{date}/{phase}/"\n  stage: true', 1)
+    write_intake(app, ws, text)
+    for i in range(3):
+        tg.photo(GROUP, f"no caption {i}".encode())  # the machine is not known yet
+    await until(lambda: any("Tôi chưa biết" in t for t in tg.texts(GROUP)), what="the question")
+    tg.text(GROUP, "máy bh flex m1 sau")  # said once, for the whole session
+    tg.photo(GROUP, b"sent after the text")  # and a photo that comes later follows it too
+    done = await one_batch(c, bot, "done")
+    folder = ws / "BH FLEX M1" / today() / "Sau"
+    assert len(list(folder.glob("*.jpg"))) == 4, "all four photos went to the machine named once"
+    assert not any("Còn ảnh chưa biết" in t for t in tg.texts(GROUP)), "no complaint about photos that are no longer unknown"
+    assert done["id"] and not list((ws / "jobs" / "_inbox").rglob("*.jpg"))
+    assert any(t.startswith("Đã lưu 4 ảnh vào folder:") for t in tg.texts(GROUP))

@@ -62,8 +62,8 @@ async def test_a_list_of_events_is_read_too_and_unsupported_messages_are_answere
     zalo = fakes[1]
     zalo.as_list = True
     acc, bot, ws = await zalo_setup(c, tmp_path)
-    zalo.photo(CHAT)
-    zalo.photo(CHAT)
+    zalo.photo(CHAT, b"first photo")
+    zalo.photo(CHAT, b"second photo")  # different content: a photo identical to one already in the folder is not saved again
     zalo.sticker(CHAT)
     await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 2, what="both photos")
     await until(lambda: any("chưa được hỗ trợ" in t for t in zalo.texts(CHAT)), what="the answer to a sticker")

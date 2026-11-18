@@ -7,6 +7,7 @@ back to the chat. Text and files that arrive are outside content: the turn carri
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import shutil
@@ -57,6 +58,8 @@ INFO: list[ChannelInfo] = [
 DEFAULT_CFG = ik.parse(ik.default_text("collect")).cfg
 DEFAULT_PROMPT = ("Một lô file mới vừa được gửi tới. Xem ảnh trong {job}/images/ và tài liệu trong {job}/files/, làm việc được giao, "
                   "ghi mọi file kết quả vào {job}/out/ rồi trả lời một dòng ngắn.")
+HELP_AUTO = ("Cách dùng: gửi ảnh kèm chú thích có tên máy và trước/sau, ví dụ: {example}. Bot tự lưu ảnh khi {quiet} giây không có tin mới.\n"
+             "Lệnh: /id xem mã chat · /help")
 HELP = ("Cách dùng:\n1. Gửi PDF phiếu của máy (nếu có) và các ảnh. Chưa có gì chạy cho tới khi bạn yêu cầu.\n2. Bấm 🔍 Kiểm kê (hoặc gõ /kiemke).\n"
         "Lệnh: /tomtat xem lô đang mở · /huy huỷ lô · /thulai chạy lại lô lỗi · /may <mã máy> đặt mã máy · /id xem mã chat · /help")
 SEND_PDF = "Bấm 📎 → Tệp rồi chọn PDF phiếu của máy."
@@ -109,8 +112,13 @@ class ChannelService:
         self.quiet: dict[str, asyncio.Task] = {}  # session id -> the wait that runs it when nothing new arrives
         self.workspaces: Optional[Path] = None  # where a bot without a working folder gets one (set by the app)
         self.autorun: dict[str, int] = {}  # bot id -> quiet seconds of its intake.md (for the status text)
+        self.button: dict[str, bool] = {}  # bot id -> whether its intake.md keeps the Check button
         self.asked: dict[str, float] = {}
         self.ack_at: dict[str, float] = {}
+        self.ack_msg: dict[str, str] = {}  # session id -> the progress message edited in place
+        self.ack_text: dict[str, str] = {}
+        self.ack_tasks: dict[str, asyncio.Task] = {}
+        self.ack_dirty: set[str] = set()
         self.alerted: dict[str, float] = {}
         self.maintenance: Optional[asyncio.Task] = None
         self.stopping = False
@@ -141,7 +149,7 @@ class ChannelService:
 
     async def stop(self) -> None:
         self.stopping = True
-        tasks = [*self.pollers.values(), *self.watchers.values(), *self.status_tasks.values(), *self.quiet.values(), *([self.maintenance] if self.maintenance else [])]
+        tasks = [*self.pollers.values(), *self.watchers.values(), *self.status_tasks.values(), *self.quiet.values(), *self.ack_tasks.values(), *([self.maintenance] if self.maintenance else [])]
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -227,10 +235,10 @@ class ChannelService:
         took = f" trong {round((b['finishedAt'] - b['startedAt']) / 1000)} giây" if b["finishedAt"] and b["startedAt"] else ""
         outs = ", ".join(sorted(p.name for p in (Path(b["dir"]) / "out").glob("*") if p.is_file())) if b["dir"] and not b["purged"] else ""
         state = {
-            "collecting": f"📥 Đang nhận file ({files}). " + (f"Tự chạy sau {q} giây không có tin mới, hoặc khi người gửi bấm Kiểm kê." if (q := self.autorun.get(b["botId"])) else "Chưa chạy: chờ người gửi bấm Kiểm kê."),
+            "collecting": f"📥 Đang nhận file ({files}). " + (f"Tự chạy sau {q} giây không có tin mới" + (", hoặc khi người gửi bấm Kiểm kê." if self.button.get(b["botId"], True) else ".") if (q := self.autorun.get(b["botId"])) else "Chưa chạy: chờ người gửi bấm Kiểm kê."),
             "queued": f"⏳ Đang chờ lô trước chạy xong ({files}).",
             "running": f"▶ Đang kiểm kê ({files}).",
-            "done": f"✅ Xong{took} ({files}). File kết quả: {outs or 'không có'}.",
+            "done": f"✅ Xong{took} ({files})." + (f" File kết quả: {outs}." if outs else ""),
             "failed": f"❌ Lỗi{took}: {b['error'] or 'không rõ'}",
             "cancelled": f"Đã huỷ ({files}).",
             "expired": f"Hết hạn, không chạy ({files}).",
@@ -384,6 +392,7 @@ class ChannelService:
         st = self.state(bot)
         if st and st.usable:
             self.autorun[bot.id] = st.cfg["quietSeconds"] if st.cfg["mode"] == "collect" else 0
+            self.button[bot.id] = st.cfg["button"]
             return st.cfg, st.machines
         return DEFAULT_CFG, []
 
@@ -676,8 +685,17 @@ class ChannelService:
 
     async def _command_run(self, acc, adapter, grant, bot, inc: Incoming, name: str, arg: str) -> None:
         chat = inc.chat_id
+        cfg, machines = self.settings(bot)
+        if name in ("kiemke", "pdf", "photo") and not cfg["button"]:  # intake.md: there is no Check button; the session runs by itself
+            await self._say(adapter, chat, f"Bot này tự xử lý khi {cfg['quietSeconds']} giây không có tin mới, không cần bấm Kiểm kê." if cfg["quietSeconds"] else CONFIGURING)
+            return
         if name in ("start", "help"):
-            await self._say(adapter, chat, HELP, keyboard=KEYBOARD if adapter.caps.buttons else None)
+            if cfg["button"]:
+                await self._say(adapter, chat, HELP, keyboard=KEYBOARD if adapter.caps.buttons else None)
+            else:  # the old fixed keyboard (with Check) is taken away
+                phase = next(iter(cfg["phases"]), "")
+                example = f"{machines[0].name if machines else 'Tên máy'} {cfg['phases'][phase][0] if phase else ''}".strip()
+                await self._say(adapter, chat, HELP_AUTO.format(example=example, quiet=cfg["quietSeconds"]), keyboard=[] if adapter.caps.buttons else None)
         elif name == "pdf":
             await self._say(adapter, chat, SEND_PDF)
         elif name == "photo":
@@ -775,6 +793,41 @@ class ChannelService:
             return inbox, True
 
     @staticmethod
+    def _sha(source: bytes | Path) -> str:
+        h = hashlib.sha256()
+        if isinstance(source, bytes):
+            h.update(source)
+        else:
+            with source.open("rb") as fh:
+                for block in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(block)
+        return h.hexdigest()
+
+    def _find_same(self, folder: Path, size: int, digest: str) -> Optional[Path]:
+        """A file already in `folder` with exactly this content (same size first, then the same hash), or None."""
+        try:
+            for p in folder.iterdir():
+                if p.is_file() and p.stat().st_size == size and self._sha(p) == digest:
+                    return p
+        except OSError:
+            pass
+        return None
+
+    def _move_unless_there(self, src: Path, folder: Path, name: str) -> tuple[str, bool]:
+        """Move `src` into `folder` as `name` (or a free variant of it), unless that folder already has a file with the same content: then `src` is dropped
+        and the name of the file already there is returned. (final name, was already there)"""
+        same = self._find_same(folder, src.stat().st_size, self._sha(src))
+        if same:
+            src.unlink(missing_ok=True)
+            return same.name, True
+        final, n = name, 2
+        while (folder / final).exists():
+            final = f"{n}_{name}"
+            n += 1
+        shutil.move(str(src), str(folder / final))
+        return final, False
+
+    @staticmethod
     def _abs(b: dict, f: dict, cwd: Optional[str]) -> Path:
         """Where a saved file is. Files saved by this version say where, relative to the working folder; older ones are relative to the session folder."""
         if f.get("rel") and cwd:
@@ -811,6 +864,9 @@ class ChannelService:
                 machine = info["machine"].name if info["machine"] else machine
                 phase = info["phase"] or phase
             folder, pending = self._target(b, bot, cfg, machine, phase)
+            staged = bool(cfg["stage"])
+            if staged:  # kept apart until the session starts; each file remembers where its caption sent it
+                folder = Path(bot.cwd).resolve() / "jobs" / "_inbox" / b["id"]
             if kind == "image":
                 name = f"{len(images) + 1:03d}_{safe_name(inc.filename, 'photo.jpg')}"
             else:
@@ -825,12 +881,19 @@ class ChannelService:
                 await self._say(adapter, inc.chat_id, f"Không tải được file: {adapter.clean(e)}")
                 return
             folder.mkdir(parents=True, exist_ok=True)
-            (folder / name).write_bytes(data)
+            duplicate = False
+            if not pending and not staged:  # saved straight into its folder: not when the folder already has this very file
+                same = self._find_same(folder, len(data), self._sha(data))
+                if same:
+                    name, duplicate = same.name, True
+            if not duplicate:
+                (folder / name).write_bytes(data)
             rel_folder = self._rel(folder, bot)
             files = [*b["files"], {"name": name, "path": rel_folder + name, "rel": rel_folder + name, "kind": kind, "size": len(data), "messageId": inc.message_id,
-                                   "caption": inc.text[:200], "folder": rel_folder, "pending": pending}]
+                                   "caption": inc.text[:200], "folder": rel_folder, "pending": pending, "staged": staged, "machine": machine, "phase": phase,
+                                   **({"duplicate": True} if duplicate else {})}]
             fields: dict[str, Any] = {"files": files, "userName": inc.user_name or b["userName"], "machine": machine, "phase": phase, "lastAt": now_ms()}
-            if not pending and rel_folder not in b["folders"]:
+            if not pending and not staged and rel_folder not in b["folders"]:
                 fields["folders"] = [*b["folders"], rel_folder]
                 if not b["folders"]:  # the first folder is where the session keeps its own files (out/, intake.json)
                     self._adopt_dir(b, folder, fields)
@@ -840,7 +903,7 @@ class ChannelService:
             await self._event(acc, inc, "joined" if b["files"] else "started", "", bot.id, b["id"])
             if pending and cfg["unknown"] == "ask":
                 await self._ask_machine(b["id"], adapter, inc.chat_id, cfg, machines, info)
-            if kind == "image" and inc.compressed and adapter.caps.files_in and b["id"] not in self.tipped:
+            if kind == "image" and inc.compressed and adapter.caps.files_in and b["id"] not in self.tipped and cfg["agent"]:
                 self.tipped.add(b["id"])
                 await self._say(adapter, inc.chat_id, "Mẹo: gửi ảnh dạng Tệp (📎 → Tệp) để ảnh không bị nén, đếm sẽ chính xác hơn.")
             self._schedule_status(b["id"])
@@ -864,6 +927,16 @@ class ChannelService:
         if not b or not bot or not any(f.get("pending") for f in b["files"]):
             return
         cfg, _ = self.settings(bot)
+        if cfg["stage"]:
+            # the photos keep waiting in jobs/_inbox/ for the session to start (see _flush); what changes here is that they are no longer unknown:
+            # a machine and a phase typed once belong to every photo of the session that had none
+            _, still = self._target(b, bot, cfg, b["machine"], b["phase"])
+            if still:
+                return
+            files = [{**f, "pending": False, "machine": f.get("machine") or b["machine"], "phase": f.get("phase") or b["phase"]} if f.get("pending") else f for f in b["files"]]
+            await self.db.update_batch(batch_id, files=files)
+            await self._write_manifest(batch_id)
+            return
         folder, pending = self._target(b, bot, cfg, b["machine"], b["phase"])
         if pending:
             return
@@ -873,18 +946,13 @@ class ChannelService:
         for f in b["files"]:
             if f.get("pending"):
                 src = self._abs(b, f, bot.cwd)
-                name = f["name"]
-                n = 2
-                while (folder / name).exists():
-                    name = f"{n}_{f['name']}"
-                    n += 1
                 try:
-                    shutil.move(str(src), str(folder / name))
+                    name, duplicate = self._move_unless_there(src, folder, f["name"])
                 except OSError:
                     log.warning("could not move %s into %s", src, folder)
                     files.append(f)
                     continue
-                f = {**f, "name": name, "path": rel_folder + name, "rel": rel_folder + name, "folder": rel_folder, "pending": False}
+                f = {**f, "name": name, "path": rel_folder + name, "rel": rel_folder + name, "folder": rel_folder, "pending": False, **({"duplicate": True} if duplicate else {})}
             files.append(f)
         if rel_folder not in folders:
             folders.append(rel_folder)
@@ -892,6 +960,63 @@ class ChannelService:
                 self._adopt_dir(b, folder, fields)
         await self.db.update_batch(batch_id, files=files, folders=folders, **fields)
         await self._write_manifest(batch_id)
+
+    async def _flush(self, batch_id: str) -> None:
+        """The session starts: staged files (and files that waited for their machine) go to their folders, each one where its own caption said."""
+        b = await self.db.get_batch(batch_id)
+        bot = await self.store.get_bot(b["botId"]) if b else None
+        if not b or not bot or not any(f.get("staged") or f.get("pending") for f in b["files"]):
+            return
+        cfg, _ = self.settings(bot)
+        files, folders, fields = [], list(b["folders"]), {}
+        for f in b["files"]:
+            if not (f.get("staged") or f.get("pending")):
+                files.append(f)
+                continue
+            machine, phase = f.get("machine") or b["machine"], f.get("phase") or b["phase"]
+            folder, unresolved = self._target(b, bot, cfg, machine, phase)
+            if unresolved:
+                files.append(f)
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            try:
+                name, duplicate = self._move_unless_there(self._abs(b, f, bot.cwd), folder, f["name"])
+            except OSError:
+                log.warning("could not move %s into %s", f["name"], folder)
+                files.append(f)
+                continue
+            rel_folder = self._rel(folder, bot)
+            files.append({**f, "name": name, "path": rel_folder + name, "rel": rel_folder + name, "folder": rel_folder, "pending": False, "staged": False,
+                          "machine": machine, "phase": phase, **({"duplicate": True} if duplicate else {})})
+            if rel_folder not in folders:
+                if not folders:  # the first folder is where the session keeps its own files (out/, intake.json)
+                    self._adopt_dir(b, folder, fields)
+                folders.append(rel_folder)
+        await self.db.update_batch(batch_id, files=files, folders=folders, **fields)
+        try:
+            (Path(bot.cwd).resolve() / "jobs" / "_inbox" / batch_id).rmdir()  # empty once everything has moved
+        except OSError:
+            pass
+        await self._write_manifest(batch_id)
+
+    async def _tell(self, b: dict, acc: dict, cfg: dict, text: str) -> None:
+        """A message to the chats that get results and to the sender. With no Check button any more, it also takes the old fixed keyboard away."""
+        targets = await self._targets(b, acc)
+        gone = None if cfg["button"] else []
+        for adapter, chat in targets:
+            await self._say(adapter, chat, text, keyboard=gone if adapter.caps.buttons else None)
+        sender = self._adapter(acc)
+        if sender and not any(a is sender and c == b["chatId"] for a, c in targets):
+            await self._say(sender, b["chatId"], text, keyboard=gone if sender.caps.buttons else None)
+
+    async def _begin(self, b: dict, acc: dict, bot, cfg: dict) -> dict:
+        """The session starts: no more progress messages, “received all” goes out, and only then are the photos saved into their folders."""
+        self._end_progress(b["id"])
+        start = ik.fill(cfg["start"], self._vars(b, bot, cfg)).strip()
+        if start:
+            await self._tell(b, acc, cfg, start)
+        await self._flush(b["id"])
+        return await self.db.get_batch(b["id"]) or b
 
     async def _ask_machine(self, batch_id: str, adapter: Adapter, chat_id: str, cfg: dict, machines: list, info: Optional[dict]) -> None:
         """A photo whose machine or phase could not be read: ask once in a while, with the closest names."""
@@ -954,11 +1079,63 @@ class ChannelService:
         if not b or b["status"] != "collecting":
             return
         cfg = st.cfg
-        if cfg["ack"].strip() and time.monotonic() - self.ack_at.get(batch_id, -1e9) >= ACK_GAP * self.time_scale:
-            self.ack_at[batch_id] = time.monotonic()
-            await self._say(adapter, chat_id, ik.fill(cfg["ack"], self._vars(b, bot, cfg)))
+        if cfg["ack"].strip():
+            self._note_progress(batch_id, adapter, chat_id)
         if cfg["quietSeconds"] and not b["parked"]:
             self._arm_quiet(batch_id, cfg["quietSeconds"])
+
+    # ---- progress: "received 1 photo", "received 3 photos", … one message, changed in place when the channel can --------------------------
+    def _note_progress(self, batch_id: str, adapter: Adapter, chat_id: str) -> None:
+        """Something arrived. The newest count is sent once the gap since the last progress message is over; counts that arrive in between are skipped."""
+        t = self.ack_tasks.get(batch_id)
+        if t and not t.done():
+            self.ack_dirty.add(batch_id)
+            return
+        self.ack_tasks[batch_id] = asyncio.create_task(self._progress_job(batch_id, adapter, chat_id))
+
+    async def _progress_job(self, batch_id: str, adapter: Adapter, chat_id: str) -> None:
+        try:
+            while True:
+                self.ack_dirty.discard(batch_id)
+                wait = self._gap(adapter) - (time.monotonic() - self.ack_at.get(batch_id, -1e9))
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                b = await self.db.get_batch(batch_id)
+                bot = await self.store.get_bot(b["botId"]) if b else None
+                if not b or not bot or b["status"] != "collecting":
+                    return
+                cfg, _ = self.settings(bot)
+                text = ik.fill(cfg["ack"], self._vars(b, bot, cfg)).strip()
+                if text and text != self.ack_text.get(batch_id):
+                    self.ack_at[batch_id] = time.monotonic()
+                    self.ack_text[batch_id] = text
+                    mid = self.ack_msg.get(batch_id)
+                    sent = None
+                    if mid and adapter.caps.edit:
+                        try:
+                            await adapter.edit_text(chat_id, mid, text)
+                        except ChannelError:
+                            sent = await self._say(adapter, chat_id, text)
+                            mid = None
+                    else:
+                        sent = await self._say(adapter, chat_id, text)
+                    if sent and sent.message_id:
+                        self.ack_msg[batch_id] = sent.message_id
+                if batch_id not in self.ack_dirty:
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("progress message failed")
+
+    def _end_progress(self, batch_id: str) -> None:
+        """The session starts: no progress message may come after the “received all” one."""
+        t = self.ack_tasks.pop(batch_id, None)
+        if t and t is not asyncio.current_task():
+            t.cancel()
+        self.ack_dirty.discard(batch_id)
+        for d in (self.ack_msg, self.ack_text, self.ack_at):
+            d.pop(batch_id, None)
 
     def _arm_quiet(self, batch_id: str, seconds: float) -> None:
         old = self.quiet.pop(batch_id, None)
@@ -998,16 +1175,29 @@ class ChannelService:
         for b in await self.db.list_batches(statuses=["collecting"]):
             if b["parked"] or not b["lastAt"] or b["id"] in self.quiet:
                 continue
+            await self._resolve_pending(b["id"])  # a machine typed while an older version was running still counts
             bot = await self.store.get_bot(b["botId"])
             st = self.state(bot) if bot else None
             if st and st.usable and st.cfg["mode"] == "collect" and st.cfg["quietSeconds"] and now - b["lastAt"] >= st.cfg["quietSeconds"] * 1000 * self.time_scale:
                 await self._run_quiet(b["id"])
 
+    @staticmethod
+    def _summary(b: dict, folders: list[str]) -> str:
+        """Where the photos went, for a message: one folder is its path; several are a line each with their number of photos. Paths are written as on Windows."""
+        shown = lambda f: f.rstrip("/").replace("/", "\\")  # noqa: E731
+        if len(folders) <= 1:
+            return shown(folders[0]) if folders else ""
+        counts = {f: sum(1 for x in b["files"] if x["kind"] == "image" and x.get("folder") == f) for f in folders}
+        return "\n".join(f"{shown(f)}: {counts[f]} ảnh" for f in folders)
+
     def _vars(self, b: dict, bot, cfg: dict) -> dict:
         folders = b["folders"] or [self._rel(b["dir"], bot)] if b["dir"] else []
+        photos = sum(1 for f in b["files"] if f["kind"] == "image")
+        skipped = sum(1 for f in b["files"] if f["kind"] == "image" and f.get("duplicate"))
         when = self._when(b)
         return {"session": b["id"], "date": when.strftime("%Y-%m-%d"), "time": when.strftime("%H%M%S"), "chat": b["chatId"], "machine": b["machine"], "phase": b["phase"],
-                "folder": folders[0] if folders else "", "folders": "\n".join(folders), "photos": sum(1 for f in b["files"] if f["kind"] == "image"), "texts": b["texts"],
+                "folder": folders[0] if folders else "", "folders": "\n".join(folders), "summary": self._summary(b, folders), "photos": photos, "saved": photos - skipped,
+                "skipped": skipped, "skipped_note": (f"\nBỏ qua {skipped} ảnh đã có sẵn trong folder (giống hệt)." if skipped else ""), "texts": b["texts"],
                 "quietSeconds": cfg["quietSeconds"], "sender": b["userName"] or b["userId"]}
 
     async def _write_manifest(self, batch_id: str) -> None:
@@ -1039,6 +1229,9 @@ class ChannelService:
             line = (f"Đang nhận file. Tự chạy sau {q} giây không có tin mới, hoặc bấm 🔍 Kiểm kê ngay." if q else "Đang nhận file. Gửi xong thì bấm 🔍 Kiểm kê.") if hint else \
                    (f"Đang nhận file. Tự chạy sau {q} giây không có tin mới, hoặc gõ /kiemke. /huy để huỷ." if q else "Đang nhận file. Gõ /kiemke để bắt đầu, /huy để huỷ.")
             buttons = [[Button("🔍 Kiểm kê", f"run:{b['id']}"), Button("Huỷ", f"cancel:{b['id']}")]]
+            if not self.button.get(b["botId"], True):  # intake.md: no Check button, the session runs by itself
+                line = f"Đang nhận file. Tự chạy sau {q} giây không có tin mới." if q else "Đang nhận file."
+                buttons = None
         elif b["status"] == "queued":
             line, buttons = "Đang chờ lô trước chạy xong.", [[Button("Huỷ", f"cancel:{b['id']}")]]
         elif b["status"] == "running":
@@ -1090,6 +1283,9 @@ class ChannelService:
         adapter = self._adapter(acc) if acc else None
         if not b or not adapter:
             return
+        owner = await self.store.get_bot(b["botId"])
+        if owner and not self.settings(owner)[0]["status"]:  # intake.md: the chat is not sent the status message of the session
+            return
         text, buttons = self._status_view(b, adapter)
         if adapter.caps.edit and b["statusMessageId"]:
             try:
@@ -1114,6 +1310,8 @@ class ChannelService:
             return
         routed = await self._route(acc, inc.chat_id)
         if not routed or routed[1].id != b["botId"]:
+            return
+        if action == "run" and not self.settings(routed[1])[0]["button"]:
             return
         if action in ("run", "retry"):
             ok, why = await self.start_batch(bid)
@@ -1144,10 +1342,14 @@ class ChannelService:
                 await self._alert_config(b, acc, bot, st)
                 return False, CONFIGURING
             if st.cfg["unknown"] == "ask" and any(f.get("pending") for f in b["files"]):
-                return False, "Còn ảnh chưa biết thuộc máy nào hoặc là trước/sau. Hãy gõ tên máy kèm trước/sau để tôi xếp ảnh, rồi bấm Kiểm kê."
+                return False, "Còn ảnh chưa biết thuộc máy nào hoặc là trước/sau. Hãy gõ tên máy kèm trước/sau để tôi xếp ảnh" + (", rồi bấm Kiểm kê." if st.cfg["button"] else ".")
+            if not st.cfg["agent"]:  # nothing for a bot to do: the photos are saved, the sender is told, the session is over
+                await self._finish_without_agent(b, acc, bot, st.cfg)
+                return True, "done"
             inst = self.turns.registry.get(bot.modelSelection.instanceId)
             if not (inst and inst.driver and inst.driver.capabilities.images):
                 return False, "Engine của bot không đọc được ảnh."
+            b = await self._begin(b, acc, bot, st.cfg)
             if await self.db.list_batches(bot_id=bot.id, statuses=["running"], limit=1):
                 if len(await self.db.list_batches(bot_id=bot.id, statuses=["queued"])) >= MAX_QUEUED:
                     return False, f"Hàng đợi của bot đã đầy ({MAX_QUEUED} lô đang chờ). Hãy thử lại khi lô đang chạy xong."
@@ -1156,6 +1358,18 @@ class ChannelService:
                 return True, "queued"
             await self._launch(b, acc, bot)
             return True, "started"
+
+    async def _finish_without_agent(self, b: dict, acc: dict, bot, cfg: dict) -> None:
+        """`run.agent: false`: no turn, no result file. The session is done and the sender (and the result chats) get `run.reply`."""
+        self._disarm_quiet(b["id"])
+        b = await self._begin(b, acc, bot, cfg)
+        now = now_ms()
+        await self.db.update_batch(b["id"], status="done", error="", startedAt=now, finishedAt=now)
+        b = await self.db.get_batch(b["id"]) or b
+        text = ik.fill(cfg["reply"], self._vars(b, bot, cfg)).strip()
+        if text:
+            await self._tell(b, acc, cfg, text)
+        await self._status_now(b["id"])
 
     async def _alert_config(self, b: dict, acc: dict, bot, st: Optional[ik.State]) -> None:
         """Tell the chats that get results, at most once an hour per bot, that intake.md has to be fixed."""
@@ -1438,6 +1652,8 @@ class ChannelService:
                 shutil.rmtree(job, ignore_errors=True)
             elif owner and owner.cwd:  # a folder chosen by the path template can hold other sessions: only this session's own files go
                 for f in b["files"]:
-                    if f.get("rel"):
+                    if f.get("rel") and not f.get("duplicate"):  # a duplicate points at a file an earlier session saved
                         (Path(owner.cwd).resolve() / f["rel"]).unlink(missing_ok=True)
+            if owner and owner.cwd:  # photos that waited for a session that never started
+                shutil.rmtree(Path(owner.cwd).resolve() / "jobs" / "_inbox" / b["id"], ignore_errors=True)
             await self.db.update_batch(b["id"], purged=True)

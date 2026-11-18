@@ -31,12 +31,13 @@ MAX_MACHINES = 256 * 1024
 MAX_MACHINE_LINES = 2000
 RECHECK_SECONDS = 1.0
 PATH_VARS = {"session", "date", "time", "chat", "machine", "phase"}
-ACK_VARS = {"session", "date", "time", "chat", "machine", "phase", "folder", "folders", "photos", "texts", "quietSeconds"}
+ACK_VARS = {"session", "date", "time", "chat", "machine", "phase", "folder", "folders", "summary", "photos", "saved", "skipped", "skipped_note", "texts", "quietSeconds"}
 PROMPT_VARS = ACK_VARS | {"sender"}
 DEFAULT_PATH = "jobs/{session}/"
 DEFAULT_ACK = "Đã nhận {photos} ảnh. Sẽ xử lý sau {quietSeconds} giây nếu không có thêm."
 DEFAULT_PROMPT = ("Phiên {session}: {photos} ảnh và {texts} tin nhắn mới đã lưu trong {folder}. Làm tiếp theo chỉ dẫn của bạn. "
                   "File kết quả cần gửi lại thì ghi vào {folder}out/.")
+DEFAULT_REPLY = "Đã nhận đủ {photos} ảnh và lưu vào folder:\n{summary}"
 DEFAULT_LIMITS = {"maxPhotos": 40, "timeoutSec": 900, "retentionDays": 60}
 
 
@@ -219,7 +220,7 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
         raise IntakeError(f"format must be {FORMAT}", at("format"))
     if data.get("version") != 1:
         raise IntakeError("version must be 1", at("version"))
-    known = {"format", "version", "mode", "trigger", "save", "ack", "run", "limits"}
+    known = {"format", "version", "mode", "trigger", "save", "ack", "status", "run", "limits"}
     for k in data:
         if k not in known:
             st.warnings.append(f"unknown setting “{k}” is ignored (line {at(str(k))})")
@@ -260,8 +261,8 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
     if mode not in ("collect", "answer"):
         raise IntakeError("mode must be collect or answer", at("mode"))
     trig = section("trigger", {"quietSeconds", "button"})
-    save = section("save", {"path", "texts", "phases", "machines", "unknown"})
-    run = section("run", {"prompt", "bot"})
+    save = section("save", {"path", "texts", "phases", "machines", "unknown", "stage"})
+    run = section("run", {"prompt", "bot", "agent", "reply", "start"})
     lim = section("limits", {"maxPhotos", "timeoutSec", "retentionDays", "remindAt"})
     if "bot" in run:
         st.warnings.append(f"run.bot is not used yet (line {at('bot')})")
@@ -300,16 +301,21 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
         except IntakeError as e:
             raise IntakeError(str(e), e.line or at("path"))
     ack = string(data.get("ack"), "ack", 500, DEFAULT_ACK if mode == "collect" else "")
+    status = boolean(data.get("status"), "status", True)  # false: the chat gets no "📋 Lô …" status message of the session
     prompt = string(run.get("prompt"), "run.prompt", 4000, DEFAULT_PROMPT)
+    agent = boolean(run.get("agent"), "run.agent", True)  # false: no bot run; the sender gets `run.reply` and the session ends
+    reply = string(run.get("reply"), "run.reply", 1000, DEFAULT_REPLY)
+    start = string(run.get("start"), "run.start", 500, "")  # sent when the session starts, before the photos are saved (with save.stage)
+    stage = boolean(save.get("stage"), "save.stage", False)  # true: photos wait in jobs/_inbox/ until the session starts, then go to their folders
     remind = string(lim.get("remindAt"), "limits.remindAt", 5, "")
     if remind and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", remind):
         raise IntakeError("limits.remindAt is a time such as 18:30", at("remindAt"))
-    for label, tpl, ok in (("ack", ack, ACK_VARS), ("run.prompt", prompt, PROMPT_VARS)):
+    for label, tpl, ok in (("ack", ack, ACK_VARS), ("run.prompt", prompt, PROMPT_VARS), ("run.reply", reply, PROMPT_VARS), ("run.start", start, PROMPT_VARS)):
         for v in sorted(_template_vars(tpl) - ok):
             st.warnings.append(f"{{{v}}} in {label} is not a known word and is left as written")
     return {
         "mode": mode, "quietSeconds": quiet, "button": button, "path": path, "texts": boolean(save.get("texts"), "save.texts", True), "phases": phases,
-        "machines": machines_file, "unknown": unknown, "ack": ack, "prompt": prompt, "body": body.strip(),
+        "machines": machines_file, "unknown": unknown, "ack": ack, "status": status, "prompt": prompt, "agent": agent, "reply": reply, "start": start, "stage": stage, "body": body.strip(),
         "maxPhotos": integer(lim.get("maxPhotos"), "limits.maxPhotos", 1, 100, DEFAULT_LIMITS["maxPhotos"]),
         "timeoutSec": integer(lim.get("timeoutSec"), "limits.timeoutSec", 5, 7200, DEFAULT_LIMITS["timeoutSec"]),
         "retentionDays": integer(lim.get("retentionDays"), "limits.retentionDays", 1, 365, DEFAULT_LIMITS["retentionDays"]), "remindAt": remind,
