@@ -309,6 +309,7 @@ export function reducer(state: AppState, action: Action): AppState {
         case "channel.grant":
         case "channel.grant.deleted":
         case "channel.batch":
+        case "channel.intake":
           return { ...state, channelTick: state.channelTick + 1 };
         case "notify":
           return { ...state, notifications: [f.notification, ...state.notifications.filter((n) => n.id !== f.notification.id)].slice(0, 300) };

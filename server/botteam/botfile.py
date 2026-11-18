@@ -188,6 +188,7 @@ async def apply_import(store, bus, mcp, skills, turns, pkg: dict, selection: dic
         bot = await store.create_bot(name, pkg["title"], pkg["description"], pkg["color"], selection)
         made["bots"].append(bot.id)
         bot.soul, bot.section, bot.approvalMode, bot.chief = pkg["instructions"], None, "ask", False
+        store.assign_workspace(bot)
         sk_ids = []
         for s in pkg["skills"]:
             made_skill = skills.save(None, s["name"], s["description"], s["instructions"], enabled=False)

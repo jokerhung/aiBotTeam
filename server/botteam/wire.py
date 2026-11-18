@@ -375,6 +375,7 @@ class WireChannelGrant(BaseModel):
     prompt: str = ""
     mode: str = "batch"  # batch: collect files and run on Check; chat: every text message is a question the bot answers
     warnings: list[str] = Field(default_factory=list)
+    intake: Optional[dict] = None  # the state of the bot's intake.md (see channels/intake.py); the file is the source of the settings above
 
 
 class WireChannelFile(BaseModel):

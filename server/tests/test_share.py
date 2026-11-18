@@ -73,7 +73,7 @@ async def test_importing_into_an_empty_data_folder_rebuilds_the_team_cautiously(
             assert made == {"section": "Crew", "bots": 2, "skills": 1, "rooms": 1, "routines": 1, "connections": 1}
             bots = {b["name"]: b for b in (await f.get("/api/bots")).json()["bots"]}
             assert all(b["approvalMode"] == "ask" for b in bots.values())  # a file never sets a level
-            assert bots["Lead"]["chief"] is False and bots["Lead"]["title"] == "Tech lead" and bots["Lead"]["color"] == "purple" and bots["Dev"]["cwd"] is None
+            assert bots["Lead"]["chief"] is False and bots["Lead"]["title"] == "Tech lead" and bots["Lead"]["color"] == "purple" and bots["Dev"]["cwd"].replace("\\", "/").split("/")[-2] == "workdirs"  # a file has no folder to give: the bot gets one of its own
             assert (await f.get("/api/sidebar-sections")).json()["sections"][0]["name"] == "Crew"
             skills = (await f.get("/api/skills")).json()["skills"]
             assert [s["enabled"] for s in skills] == [False] and bots["Dev"]["skills"] == [skills[0]["id"]]
@@ -104,7 +104,7 @@ async def test_a_file_that_is_not_a_team_is_refused_and_secrets_in_it_are_replac
     made = await c.post("/api/teams/import", json={"text": "---\n" + yaml.safe_dump(handmade) + "---\n"})
     assert made.status_code == 201
     bot = next(b for b in (await c.get("/api/bots")).json()["bots"] if b["name"] == "A")
-    assert KEY not in bot["soul"] and "hunter2hunter2" not in bot["soul"] and bot["approvalMode"] == "ask" and bot["cwd"] is None  # fields a file has no place for are ignored
+    assert KEY not in bot["soul"] and "hunter2hunter2" not in bot["soul"] and bot["approvalMode"] == "ask" and bot["cwd"] != "/etc" and "workdirs" in bot["cwd"].replace("\\", "/")  # fields a file has no place for are ignored; the folder is the one made for the bot
 
 
 async def test_a_failed_import_removes_everything_it_made(ctx):

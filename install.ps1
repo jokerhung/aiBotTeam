@@ -14,7 +14,7 @@
     1. Git, Node.js (LTS, 20 or newer), Python (3.10 or newer; 3.12 is installed) and uv, through winget
     2. pnpm (through Corepack, at the version package.json asks for)
     3. the repository (only when the script is not already inside one)
-    4. `pnpm install`, `uv sync`, a .env made from .env.example, and the web build the one-command server serves
+    4. `pnpm install` (the web app and the Node.js Zalo service, zalo-service/), `uv sync`, a .env made from .env.example, and the web build the one-command server serves
     5. with -Browser, the Chromium that the bots' built-in browser can use when Edge and Chrome are missing
 
   Nothing is started at the end; the last lines say how.
@@ -244,8 +244,8 @@ foreach ($e in $engines) {
 
 Write-Host ""
 Write-Host "BotTeam is installed in $root" -ForegroundColor Green
-Write-Host "  Start it for development (API + web):   .\start.bat        (frees the ports first, then runs pnpm dev)"
-Write-Host "  Start it as one program:                uv run --project server botteam serve"
+Write-Host "  Start it for development (API, web, Zalo service):   .\start.bat        (frees the ports first, then runs pnpm dev)"
+Write-Host "  Start it as one program (needs the web build):       pnpm start:one        (API + web build + Zalo service)"
 Write-Host "  Then open http://127.0.0.1:8899 (one program) or http://127.0.0.1:5299 (pnpm dev)."
 if ($script:Installed) { Write-Host "  Tools were just installed: open a new terminal window before running the commands above, so that they are on PATH." -ForegroundColor Yellow }
 if ($DryRun) { Write-Host "(dry run: nothing was changed)" -ForegroundColor Yellow }

@@ -32,8 +32,9 @@ ACCOUNT_COLS = {"label": "label", "username": "username", "enabled": "enabled", 
 GRANT_COLS = {"chats": "chats", "adminChats": "admin_chats", "maxPhotos": "max_photos", "timeoutSec": "timeout_sec", "remindAt": "remind_at",
               "retentionDays": "retention_days", "prompt": "prompt", "mode": "mode"}
 BATCH_COLS = {"status": "status", "parked": "parked", "machine": "machine", "dir": "dir", "threadId": "thread_id", "statusMessageId": "status_message_id",
-              "files": "files", "error": "error", "purged": "purged", "startedAt": "started_at", "finishedAt": "finished_at", "userName": "user_name", "cardId": "card_id"}
-JSON_COLS = {"chats", "adminChats", "files"}
+              "files": "files", "error": "error", "purged": "purged", "startedAt": "started_at", "finishedAt": "finished_at", "userName": "user_name", "cardId": "card_id",
+              "lastAt": "last_at", "phase": "phase", "folders": "folders", "texts": "texts"}
+JSON_COLS = {"chats", "adminChats", "files", "folders"}
 
 
 def _account(r) -> dict[str, Any]:
@@ -49,13 +50,14 @@ def _grant(r) -> dict[str, Any]:
 def _batch(r) -> dict[str, Any]:
     return {"id": r[0], "accountId": r[1], "botId": r[2], "chatId": r[3], "userId": r[4], "userName": r[5], "status": r[6], "parked": bool(r[7]), "machine": r[8],
             "dir": r[9], "threadId": r[10], "statusMessageId": r[11], "files": json.loads(r[12]), "error": r[13], "purged": bool(r[14]),
-            "startedAt": r[15], "finishedAt": r[16], "createdAt": r[17], "updatedAt": r[18], "cardId": r[19]}
+            "startedAt": r[15], "finishedAt": r[16], "createdAt": r[17], "updatedAt": r[18], "cardId": r[19], "lastAt": r[20] or 0, "phase": r[21],
+            "folders": json.loads(r[22] or "[]"), "texts": r[23]}
 
 
 ACC_SEL = "id, app, label, remote_id, username, enabled, cursor, last_at, last_error, created_at"
 GRANT_SEL = "account_id, bot_id, chats, admin_chats, max_photos, timeout_sec, remind_at, retention_days, prompt, created_at, mode"
 BATCH_SEL = ("id, account_id, bot_id, chat_id, user_id, user_name, status, parked, machine, dir, thread_id, status_message_id, files, error, purged, "
-             "started_at, finished_at, created_at, updated_at, card_id")
+             "started_at, finished_at, created_at, updated_at, card_id, last_at, phase, folders, texts")
 
 
 class ChannelDb:
@@ -75,6 +77,9 @@ class ChannelDb:
             await self.db.execute("ALTER TABLE channel_grants ADD COLUMN mode TEXT NOT NULL DEFAULT 'batch'")
         if "card_id" not in cols:  # a database made before batches had a line in the chat
             await self.db.execute("ALTER TABLE channel_batches ADD COLUMN card_id TEXT NOT NULL DEFAULT ''")
+        for col, ddl in (("last_at", "INTEGER NOT NULL DEFAULT 0"), ("phase", "TEXT NOT NULL DEFAULT ''"), ("folders", "TEXT NOT NULL DEFAULT '[]'"), ("texts", "INTEGER NOT NULL DEFAULT 0")):
+            if col not in cols:  # a database made before sessions had a quiet clock, folders and a phase (intake.md)
+                await self.db.execute(f"ALTER TABLE channel_batches ADD COLUMN {col} {ddl}")
         await self.db.commit()
 
     @staticmethod

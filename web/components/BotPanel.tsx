@@ -10,6 +10,7 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { BotInputs } from "./InputChannels";
+import { IntakeSection } from "./IntakeEditor";
 import { Mascot } from "./Mascot";
 import { ActivityPanel, ExportButtons, InspectorPanel } from "./Observe";
 import { MemorySection } from "./MemorySection";
@@ -181,6 +182,7 @@ function SettingsForm({ bot }: { bot: Bot }) {
       </Field>
       <AppsField bot={bot} />
       <BotInputs botId={bot.id} />
+      <IntakeSection bot={bot} />
       <SkillsSection bot={bot} />
       <MemorySection bot={bot} />
       <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">

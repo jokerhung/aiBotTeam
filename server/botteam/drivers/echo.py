@@ -46,7 +46,7 @@ class EchoDriver(Emitter):
         try:
             self.emit("session.started", t, turn_id, sessionId=f"echo-{t}")
             self.emit("turn.started", t, turn_id)
-            wrote = re.search(r"^/out (\S+)", text, re.M)  # "/out <path>": leave a small result file in the working folder (a batch's out/)
+            wrote = re.search(r"^/out (.+?)[ 	]*$", text, re.M)  # "/out <path>": leave a small result file in the working folder (a batch's out/)
             if wrote and inp.cwd:
                 target = (Path(inp.cwd) / wrote.group(1)).resolve()
                 if Path(inp.cwd).resolve() in target.parents:

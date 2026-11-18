@@ -145,7 +145,7 @@ export function NewBotDialog() {
         <span className={cn(label, "mt-3")}>Approval</span>
         <ApprovalModeSelector value={mode} onChange={setMode} />
         <label className={cn(label, "mt-3")} htmlFor="nb-cwd">Working folder</label>
-        <Input id="nb-cwd" value={cwd} placeholder="Optional absolute path" onChange={(e) => setCwd(e.target.value)} className={field} />
+        <Input id="nb-cwd" value={cwd} placeholder="Leave empty: BotTeam makes a folder for this bot (workspaces/<bot id>)" onChange={(e) => setCwd(e.target.value)} className={field} />
         <label className="mt-3 flex items-center gap-2 text-[13px] text-ink-secondary">
           <input type="checkbox" checked={saveDefaults} onChange={(e) => setSaveDefaults(e.target.checked)} /> Use these model, approval and folder settings for new bots
         </label>

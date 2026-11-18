@@ -5,6 +5,7 @@ import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { IntakeEditor } from "./IntakeEditor";
 import { ZaloQr } from "./ZaloQr";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
@@ -23,7 +24,8 @@ const HELP: Record<string, string> = {
 export interface ChannelAccount { id: string; app: string; label: string; username: string; enabled: boolean; state: "active" | "error" | "stopped"; error: string | null; usedBy: string[] }
 interface Channel { id: string; name: string; blurb: string; limits: string[]; maxAccounts: number; connected: boolean; accounts: ChannelAccount[] }
 interface AdminChat { accountId: string; chat: string }
-export interface ChannelGrant { accountId: string; botId: string; botName?: string; chats: string[]; adminChats: AdminChat[]; maxPhotos: number; timeoutSec: number; remindAt: string; retentionDays: number; mode?: "batch" | "chat"; prompt: string; warnings?: string[] }
+export interface ChannelGrant { accountId: string; botId: string; botName?: string; chats: string[]; adminChats: AdminChat[]; maxPhotos: number; timeoutSec: number; remindAt: string; retentionDays: number; mode?: "batch" | "chat"; prompt: string; warnings?: string[]; intake?: GrantIntake | null }
+interface GrantIntake { exists: boolean; valid: boolean; error: string | null; line: number | null; summary: string; usingLastGood: boolean }
 
 const list = (text: string) => text.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -36,10 +38,7 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
   const [mode, setMode] = useState<"batch" | "chat">(grant?.mode ?? "batch");
   const [chats, setChats] = useState((grant?.chats ?? []).join(", "));
   const [admins, setAdmins] = useState(adminText(grant));
-  const [maxPhotos, setMaxPhotos] = useState(String(grant?.maxPhotos ?? 40));
-  const [timeoutSec, setTimeoutSec] = useState(String(grant?.timeoutSec ?? 900));
-  const [remindAt, setRemindAt] = useState(grant?.remindAt ?? "");
-  const [prompt, setPrompt] = useState(grant?.prompt ?? "");
+  const [editing, setEditing] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -53,7 +52,7 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
         const other = cut > 0 ? accounts.find((x) => x.label.toLowerCase() === entry.slice(0, cut).toLowerCase()) : undefined;
         return other ? { accountId: other.id, chat: entry.slice(cut + 1) } : { accountId: account.id, chat: entry };
       });
-      const r = await api<ChannelGrant>(base, { method: "PUT", body: JSON.stringify(mode === "chat" ? { mode, chats: list(chats), timeoutSec: Number(timeoutSec) } : { mode, chats: list(chats), adminChats, maxPhotos: Number(maxPhotos), timeoutSec: Number(timeoutSec), remindAt: remindAt.trim(), prompt }) });
+      const r = await api<ChannelGrant>(base, { method: "PUT", body: JSON.stringify(mode === "chat" ? { mode, chats: list(chats) } : { mode, chats: list(chats), adminChats }) });
       setWarnings(r.warnings ?? []);
       setNote({ ok: true, text: t("Saved") });
       onChanged();
@@ -76,12 +75,14 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
         <span data-no-i18n="" className="min-w-0 flex-1 truncate font-medium">{botName}</span>
         {grant && <button type="button" disabled={busy} onClick={() => void revoke()} className="rounded-full px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-ink/10">{t("Remove")}</button>}
       </div>
-      <div role="radiogroup" aria-label={t("How the bot works here")} className="mt-2 flex gap-1.5 text-[12.5px]" data-testid="input-grant-mode">
-        {([["batch", "Collect files, run on Check"], ["chat", "Answer every message"]] as const).map(([id, label]) => (
-          <button key={id} type="button" role="radio" aria-checked={mode === id} onClick={() => setMode(id)}
-            className={cn("flex-1 rounded-lg px-2 py-1.5 ring-1 ring-ink/10", mode === id ? "bg-accent/12 ring-accent/60" : "hover:bg-ink/[0.04]")}>{t(label)}</button>
-        ))}
-      </div>
+      {!grant && (
+        <div role="radiogroup" aria-label={t("How the bot works here")} className="mt-2 flex gap-1.5 text-[12.5px]" data-testid="input-grant-mode">
+          {([["batch", "Collect files, run on Check"], ["chat", "Answer every message"]] as const).map(([id, label]) => (
+            <button key={id} type="button" role="radio" aria-checked={mode === id} onClick={() => setMode(id)}
+              className={cn("flex-1 rounded-lg px-2 py-1.5 ring-1 ring-ink/10", mode === id ? "bg-accent/12 ring-accent/60" : "hover:bg-ink/[0.04]")}>{t(label)}</button>
+          ))}
+        </div>
+      )}
       <label className={field}>{t(mode === "chat" ? "Chats this bot answers (chat ids, or * for anyone who writes to it)" : "Chats this bot answers (chat ids, separated by commas)")}
         <input value={chats} onChange={(e) => setChats(e.target.value)} aria-label={t("Chats this bot answers")} placeholder={mode === "chat" ? "*" : "-1001234567890"} data-no-i18n="" className={cn(INPUT, "mt-1 h-9 font-mono text-[13px]")} />
       </label>
@@ -91,30 +92,23 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
           <input value={admins} onChange={(e) => setAdmins(e.target.value)} aria-label={t("Chats that receive the results")} placeholder="123456789" data-no-i18n="" className={cn(INPUT, "mt-1 h-9 font-mono text-[13px]")} />
         </label>
       )}
-      <div className="flex gap-2">
-        {mode === "batch" && (
-          <label className={cn(field, "flex-1")}>{t("Photos per batch")}
-            <input value={maxPhotos} onChange={(e) => setMaxPhotos(e.target.value)} inputMode="numeric" aria-label={t("Photos per batch")} className={cn(INPUT, "mt-1 h-9")} />
-          </label>
-        )}
-        <label className={cn(field, "flex-1")}>{t("Time limit (seconds)")}
-          <input value={timeoutSec} onChange={(e) => setTimeoutSec(e.target.value)} inputMode="numeric" aria-label={t("Time limit (seconds)")} className={cn(INPUT, "mt-1 h-9")} />
-        </label>
-        {mode === "batch" && (
-          <label className={cn(field, "flex-1")}>{t("Reminder time")}
-            <input value={remindAt} onChange={(e) => setRemindAt(e.target.value)} placeholder={t("e.g. 18:30")} aria-label={t("Reminder time")} className={cn(INPUT, "mt-1 h-9")} />
-          </label>
-        )}
-      </div>
-      {mode === "batch" && (
-        <label className={field}>{t("What the bot is told for each batch ({job} is the batch folder)")}
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} aria-label={t("What the bot is told for each batch")} className={cn(INPUT, "mt-1 resize-y py-2 text-[13px]")} />
-        </label>
+      {grant ? (
+        <div className="mt-2 rounded-lg bg-raised/60 px-3 py-2 text-[12.5px] leading-[1.45]" data-testid="input-grant-intake">
+          <div className="text-ink-tertiary">{t("How this input works is written in the bot's intake.md.")}</div>
+          {grant.intake?.error
+            ? <div role="alert" data-no-i18n="" className="text-danger">✗ {grant.intake.line ? `${t("Line")} ${grant.intake.line}: ` : ""}{grant.intake.error}</div>
+            : grant.intake?.summary ? <div data-no-i18n="" className="text-ink-secondary">{t(grant.intake.summary.split(" · ")[0])}{grant.intake.summary.includes("saves to ") ? ` · ${t("saves to")} ${grant.intake.summary.split("saves to ")[1]}` : ""}</div> : null}
+          <button type="button" onClick={() => setEditing(true)} data-testid="input-grant-edit-intake" className="mt-0.5 text-accent-text hover:underline">{t("Edit intake.md")}</button>
+        </div>
+      ) : (
+        <div className="mt-2 text-[12.5px] leading-[1.4] text-ink-secondary">{t(mode === "chat"
+          ? "Every text message (or photo) sent to the bot is a question: it answers in the same chat, one question at a time. Give the bot its instructions in its profile."
+          : "When this bot is allowed, an intake.md is made in its working folder if there is none. It says when the bot runs after something arrives, and where photos are saved.")}</div>
       )}
-      {mode === "chat" && <div className="mt-2 text-[12.5px] leading-[1.4] text-ink-secondary">{t("Every text message (or photo) sent to the bot is a question: it answers in the same chat, one question at a time. Give the bot its instructions in its profile.")}</div>}
       {warnings.map((w) => <div key={w} role="status" className="mt-1.5 text-[12.5px] text-warning">{t(w)}</div>)}
       <div className="mt-2 flex items-center justify-end gap-2">
         {note && <span role={note.ok ? "status" : "alert"} data-no-i18n={note.ok ? undefined : ""} className={cn("min-w-0 flex-1 text-[12.5px]", note.ok ? "text-success" : "text-danger")}>{note.text}</span>}
+        {editing && <IntakeEditor botId={botId} botName={botName} onClose={() => { setEditing(false); onChanged(); }} onSaved={onChanged} />}
         <button type="button" disabled={busy || !list(chats).length} onClick={() => void save()} data-testid="input-grant-save" title={!list(chats).length ? t("Enter at least one chat id first") : undefined}
           className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{grant ? t("Save") : t("Allow this bot")}</button>
       </div>

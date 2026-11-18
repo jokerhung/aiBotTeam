@@ -33,11 +33,11 @@ async def test_photos_arrive_once_and_a_text_command_runs_the_batch(chan, fakes)
     acc, bot, ws = await zalo_setup(c, tmp_path)
     zalo.photo(CHAT, b"\xff\xd8first")
     b = await one_batch(c, bot)
-    await until(lambda: len(list(ws.glob("jobs/*/images/*"))) == 1, what="the photo saved")
+    await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 1, what="the photo saved")
     seen = zalo.polls
     await until(lambda: zalo.polls > seen + 5, what="the same event served again")  # no offset: Zalo's fake keeps handing the event back
-    assert len(list(ws.glob("jobs/*/images/*"))) == 1 and len(await batches(c, bot)) == 1
-    assert (ws / "jobs" / b["id"] / "images" / "001_photo_m2.jpg").read_bytes() == b"\xff\xd8first"
+    assert len(list(ws.glob("jobs/*/*.jpg"))) == 1 and len(await batches(c, bot)) == 1
+    assert (ws / "jobs" / b["id"] / "001_photo_m2.jpg").read_bytes() == b"\xff\xd8first"
     zalo.ack()
     zalo.text(CHAT, "/may BH-FLEX-M1")
     await until(lambda: any("BH-FLEX-M1" in t for t in zalo.texts(CHAT)), what="the machine code")
@@ -52,7 +52,7 @@ async def test_photos_arrive_once_and_a_text_command_runs_the_batch(chan, fakes)
     await wait_idle(c, bot["id"])
     assert done["machine"] == "BH-FLEX-M1" and done["outFiles"] == ["report.txt"]
     msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": done["threadId"]})).json()["messages"]
-    assert sum(1 for m in msgs if m["role"] == "user") == 1 and "Machine code given by the sender: BH-FLEX-M1" in msgs[0]["text"]
+    assert sum(1 for m in msgs if m["role"] == "user") == 1 and "Machine: BH-FLEX-M1" in msgs[0]["text"]
     assert any("thư mục lô" in t and "report.txt" in t for t in zalo.texts(CHAT))  # a file cannot be sent here: say where it is
     assert all(len(t) <= 2000 for t in zalo.texts(CHAT))
 
@@ -65,10 +65,10 @@ async def test_a_list_of_events_is_read_too_and_unsupported_messages_are_answere
     zalo.photo(CHAT)
     zalo.photo(CHAT)
     zalo.sticker(CHAT)
-    await until(lambda: len(list(ws.glob("jobs/*/images/*"))) == 2, what="both photos")
+    await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 2, what="both photos")
     await until(lambda: any("chưa được hỗ trợ" in t for t in zalo.texts(CHAT)), what="the answer to a sticker")
     await asyncio.sleep(0.2)
-    assert len(list(ws.glob("jobs/*/images/*"))) == 2 and sum(1 for t in zalo.texts(CHAT) if "chưa được hỗ trợ" in t) == 1
+    assert len(list(ws.glob("jobs/*/*.jpg"))) == 2 and sum(1 for t in zalo.texts(CHAT) if "chưa được hỗ trợ" in t) == 1
 
 
 async def test_a_long_answer_is_cut_into_messages_of_2000(chan, fakes):
@@ -89,7 +89,7 @@ async def test_a_zalo_batch_sends_its_file_to_a_telegram_admin_chat(chan, fakes)
     acc, bot, ws = await zalo_setup(c, tmp_path, adminChats=[{"accountId": tele["id"], "chat": "900"}])
     zalo.photo(CHAT)
     await one_batch(c, bot)
-    await until(lambda: len(list(ws.glob("jobs/*/images/*"))) == 1, what="the photo")
+    await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 1, what="the photo")
     zalo.ack()
     zalo.text(CHAT, "/kiemke")
     await one_batch(c, bot, "done")

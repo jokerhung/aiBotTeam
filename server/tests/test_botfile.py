@@ -122,7 +122,7 @@ async def test_files_that_are_not_bot_files_or_are_dangerous_are_refused_or_clea
     made = (await c.post("/api/bot-files/import", json={"text": hostile})).json()
     assert made["connections"] == 0 and any("left out" in n for n in made["notes"]), "an address that cannot be used leaves that connection out"
     got = next(b for b in (await c.get("/api/bots")).json()["bots"] if b["id"] == made["botId"])
-    assert got["approvalMode"] == "ask" and got["chief"] is False and not got["section"] and not got["cwd"]
+    assert got["approvalMode"] == "ask" and got["chief"] is False and not got["section"] and got["cwd"] != "C:/" and "workdirs" in got["cwd"].replace("\\", "/")
 
 
 async def test_a_failure_in_the_middle_removes_everything_the_import_made(ctx, monkeypatch):

@@ -10,4 +10,5 @@ tsconfig.tsbuildinfo
 web/e2e/actual/
 web/e2e/shots/
 web/.next-export/
+workspaces/
 server/botteam/webui/

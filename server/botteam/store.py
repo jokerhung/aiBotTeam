@@ -10,6 +10,7 @@ from typing import Any, Optional
 import aiosqlite
 
 from .wire import MAUS_COLORS, WireBot, WireGroup, WireMessage
+from .workspaces import workspace_for
 
 
 def data_dir() -> Path:
@@ -65,6 +66,7 @@ class Store:
     def __init__(self, path: Path | str) -> None:
         self.path = str(path)
         self.db: aiosqlite.Connection
+        self.workspaces: Optional[Path] = None  # parent of the working folders made for bots that are given none (set by the app)
 
     async def open(self) -> None:
         self.db = await aiosqlite.connect(self.path)
@@ -114,6 +116,15 @@ class Store:
                 await self.db.execute("UPDATE threads SET leaf_id=? WHERE id=?", (leaf, bot.threadId))
 
     # ---- bots ---------------------------------------------------------------
+    def assign_workspace(self, bot: WireBot) -> None:
+        """A bot with no working folder gets `workspaces/<its id>/` (specs/intake-md.md §5.1). Nothing is done when the owner gave one."""
+        if bot.cwd or self.workspaces is None:
+            return
+        try:
+            bot.cwd = str(workspace_for(self.workspaces, bot.id))
+        except OSError:
+            bot.cwd = None
+
     async def list_bots(self, admin: bool = False) -> list[WireBot]:
         """The person's bots. The built-in Administrator is left out unless asked for."""
         cur = await self.db.execute("SELECT body FROM bots ORDER BY pos")
@@ -415,6 +426,7 @@ class Store:
         bot = await self.create_bot(f"{src.name} copy"[:60], src.title, src.description, src.color, src.modelSelection.model_dump())
         for k in ("cwd", "approvalMode", "soul", "fallbackSelection", "notifications", "section"):
             setattr(bot, k, getattr(src, k))
+        self.assign_workspace(bot)  # a source without a folder gives its copy one of its own
         await self.save_bot(bot)
         return bot
 

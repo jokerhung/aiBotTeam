@@ -11,6 +11,7 @@ from pathlib import Path
 
 import anyio
 import httpx
+import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +30,8 @@ from .routines import RoutineService
 from .channels import ChannelError, ChannelService
 from .composio import Composio, ComposioError, slug_of
 from . import admin as adminlib
+from .channels import intake as intakelib
+from .workspaces import workspaces_root
 from . import botfile
 from . import teams as teamlib
 from . import observe
@@ -93,8 +96,10 @@ class ChannelAccountBody(BaseModel):
 
 
 def create_app(db_path: str | None = None, home: Path | None = None, with_echo: bool = True, serve_hooks: bool = False, remote: bool | None = None, web_dir: Path | None = None) -> FastAPI:
+    explicit_home = home is not None
     home = home or data_dir()
     store = Store(db_path or home / "messages.db")
+    store.workspaces = workspaces_root(home, explicit_home)
     bus = Bus()
     config = ConfigStore(home / "config.json")
     registry = Registry(config, with_echo=with_echo)
@@ -136,6 +141,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
     channels = ChannelService(store, turns, bus, config)
+    channels.workspaces = store.workspaces
     channels.notify = notify
     turns.channels = channels
     routines.webhooks = webhooks
@@ -364,6 +370,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             raise HTTPException(400, "unknown approval mode")
         bot = await store.create_bot(body.name.strip(), body.title, body.description, body.color, sel)
         bot.approvalMode, bot.cwd = mode, body.cwd or defaults.get("cwd")
+        store.assign_workspace(bot)  # no folder given: workspaces/<bot id>/
         await store.save_bot(bot)
         await turns.publish_bot(bot)
         if body.greet:
@@ -429,8 +436,95 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                     other.chief = False
                     await store.save_bot(other)
                     await turns.publish_bot(other)
+        if fields.get("cwd") and Path(bot.cwd).is_dir():  # a bot that has an input and moves to a folder without an intake.md gets the default one there
+            grants = await channels.db.list_grants(bot_id=bot.id)
+            if grants:
+                try:
+                    intakelib.create_default(bot.cwd, "answer" if any(g["mode"] == "chat" for g in grants) else "collect")
+                    channels.intake.forget(bot.cwd)
+                except OSError:
+                    pass
         await turns.publish_bot(bot)
         return await turns.bot_dict(bot)
+
+    # ---- intake.md: how a bot receives what people send it (specs/intake-md.md) ------------------------------------------------
+    intake_log = logging.getLogger("botteam.intake")
+
+    async def intake_bot(bot_id: str):
+        bot = await need(bot_id)
+        if bot.admin or not bot.cwd or not Path(bot.cwd).is_dir():
+            raise HTTPException(400, "This bot has no working folder")
+        return bot
+
+    @app.get("/api/bots/{bot_id}/intake")
+    async def get_intake(bot_id: str):
+        bot = await need(bot_id)
+        has_input = bool(await channels.db.list_grants(bot_id=bot.id))
+        if not bot.cwd or not Path(bot.cwd).is_dir():
+            return {"hasFolder": False, "hasInput": has_input, "path": intakelib.FILE, "exists": False, "valid": False, "error": None, "line": None, "warnings": [],
+                    "usingLastGood": False, "summary": "", "effective": None}
+        return {"hasFolder": True, "hasInput": has_input, **channels.intake.load(bot.cwd).public()}
+
+    @app.post("/api/bots/{bot_id}/intake/default")
+    async def make_intake(bot_id: str):
+        bot = await intake_bot(bot_id)
+        grants = await channels.db.list_grants(bot_id=bot.id)
+        made = intakelib.create_default(bot.cwd, "answer" if any(g["mode"] == "chat" for g in grants) else "collect")
+        if not made:
+            raise HTTPException(409, "intake.md already exists")
+        channels.intake.forget(bot.cwd)
+        bus.publish({"kind": "channel.intake", "botId": bot.id})
+        return {"hasFolder": True, "hasInput": bool(grants), **channels.intake.load(bot.cwd).public()}
+
+    def intake_name(name) -> str:
+        if name not in intakelib.NAMES:
+            raise HTTPException(400, "only intake.md and machines.md can be edited here")
+        return name
+
+    @app.get("/api/bots/{bot_id}/intake/file")
+    async def read_intake_file(bot_id: str, name: str = "intake.md"):
+        bot = await intake_bot(bot_id)
+        try:
+            return intakelib.read_file(bot.cwd, intake_name(name))
+        except intakelib.IntakeError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/bots/{bot_id}/intake/template")
+    async def intake_template(bot_id: str, name: str = "intake.md"):
+        """The text “Restore the template” puts in the editor: the default intake.md (the kind the bot's inputs use), or a sample machines.md."""
+        bot = await intake_bot(bot_id)
+        if intake_name(name) == intakelib.MACHINES:
+            return {"name": name, "content": intakelib.MACHINES_SAMPLE}
+        grants = await channels.db.list_grants(bot_id=bot.id)
+        return {"name": name, "content": intakelib.default_text("answer" if any(g["mode"] == "chat" for g in grants) else "collect")}
+
+    @app.post("/api/bots/{bot_id}/intake/check")
+    async def check_intake_file(bot_id: str, body: dict):
+        bot = await intake_bot(bot_id)
+        if not isinstance(body.get("content"), str):
+            raise HTTPException(400, "content is the text to check")
+        return intakelib.check_text(bot.cwd, intake_name(body.get("name")), body["content"])
+
+    @app.put("/api/bots/{bot_id}/intake/file")
+    async def write_intake_file(bot_id: str, body: dict):
+        from fastapi.responses import JSONResponse
+
+        bot = await intake_bot(bot_id)
+        name = intake_name(body.get("name"))
+        if not isinstance(body.get("content"), str):
+            raise HTTPException(400, "content is the text to save")
+        try:
+            out = intakelib.write_file(bot.cwd, name, body["content"], body.get("hash"), force=body.get("force") is True)
+        except intakelib.IntakeError as e:
+            return JSONResponse({"detail": str(e), "line": e.line}, status_code=400)
+        except intakelib.Conflict:
+            return JSONResponse({"detail": "The file was changed somewhere else since you opened it.", "conflict": True}, status_code=409)
+        except OSError as e:
+            raise HTTPException(500, f"The file could not be written: {e.strerror or e}")
+        intake_log.info("saved %s for bot %s (%d bytes%s)", name, bot.id, out["size"], ", forced" if body.get("force") is True else "")
+        channels.intake.forget(bot.cwd)
+        bus.publish({"kind": "channel.intake", "botId": bot.id})
+        return out
 
     # ---- the Administrator: a bot the person chats with to make and change bots ------------------------------------------
     async def admin_view(b) -> dict:
@@ -515,7 +609,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         bot = await store.admin_bot()
         sel = config.data.get("botDefaults", {}).get("modelSelection") or registry.default_selection()
         if not bot:
-            bot = await store.create_bot(adminlib.NAME, adminlib.TITLE, adminlib.DESCRIPTION, adminlib.COLOR, sel)
+            bot = await store.create_bot(adminlib.NAME, adminlib.TITLE, adminlib.DESCRIPTION, adminlib.COLOR, sel)  # the Administrator has no working folder
             bot.admin, bot.hidden = True, True
             bot.approvalMode = adminlib.APPROVAL
         bot.soul, bot.title, bot.description = adminlib.SOUL, adminlib.TITLE, adminlib.DESCRIPTION

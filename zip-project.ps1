@@ -38,7 +38,7 @@ $Output = [System.IO.Path]::GetFullPath($Output)
 if (Test-Path $Output) { Remove-Item $Output -Force }
 New-Item -ItemType Directory -Force -Path (Split-Path $Output -Parent) | Out-Null
 
-$skip = @(".venv", "node_modules") + $Exclude
+$skip = @(".venv", "node_modules", "workspaces") + $Exclude  # workspaces/ holds the working folders of bots: data, not code
 if ($ExcludeGit) { $skip += ".git" }
 $skipFiles = @()
 if (-not $KeepBuild) {

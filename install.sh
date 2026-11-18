@@ -15,7 +15,7 @@
 #   -h, --help        this text
 #
 # What it does, skipping whatever is already there: Git, Node.js (20 or newer, 22 is installed), Python (3.10 or newer) and uv; pnpm through Corepack;
-# the repository; `pnpm install`, `uv sync`, a .env made from .env.example and the web build. Nothing is started at the end; the last lines say how.
+# the repository; `pnpm install` (the web app and the Node.js Zalo service in zalo-service/), `uv sync`, a .env made from .env.example and the web build. Nothing is started at the end; the last lines say how.
 set -euo pipefail
 
 DIR="$HOME/aiBotTeam"
@@ -258,8 +258,8 @@ for e in "claude:Claude Code:@anthropic-ai/claude-code:$WANT_CLAUDE:claude (it o
 done
 
 printf '\n%sBotTeam is installed in %s%s\n' "$C_GREEN" "$ROOT" "$C_OFF"
-echo "  Start it for development (API + web):   cd \"$ROOT\" && pnpm dev"
-echo "  Start it as one program:                cd \"$ROOT\" && uv run --project server botteam serve"
+echo "  Start it for development (API, web, Zalo service):   cd \"$ROOT\" && pnpm dev"
+echo "  Start it as one program (needs the web build):       cd \"$ROOT\" && pnpm start:one   (API + web build + Zalo service)"
 echo "  Then open http://127.0.0.1:8899 (one program) or http://127.0.0.1:5299 (pnpm dev)."
 if [ "$INSTALLED_UV" = 1 ]; then echo "  uv was just installed: open a new terminal, or run   export PATH=\"\$HOME/.local/bin:\$PATH\"   first."; fi
 [ "$DRY" = 1 ] && printf '%s(dry run: nothing was changed)%s\n' "$C_YELLOW" "$C_OFF"

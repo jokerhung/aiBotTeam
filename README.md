@@ -44,7 +44,7 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 - 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
-- 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files into a batch and runs when someone presses *Check*.
+- 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files and runs by itself after 30 quiet seconds (or when someone presses *Check*). How a bot receives messages is written in an `intake.md` in its working folder, which you can edit in Bot settings.
 - 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
 - ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
 - 🧠 **Memory, skills and sharing** — notes that last between tasks, `SKILL.md` skills, and one-file export and import of a bot or a team.
@@ -91,7 +91,9 @@ flowchart LR
 | `server/botteam/mcp_*.py`, `composio.py` | MCP servers, proxy and Composio connection |
 | `server/tests/` | pytest suites (a fake driver replays events) |
 | `scripts/` | Helpers: `run.mjs`, `free-ports.ps1`, visual and reference checks |
-| `docs/` | Phase plans, [user guide](docs/user-guide.md), visual report |
+| `docs/` | Phase plans, [user guide](docs/user-guide.md), visual report, [examples](docs/examples/) of `intake.md` and `machines.md` |
+| `specs/` | Specs of changes, such as [intake.md](specs/intake-md.md) |
+| `workspaces/` | Working folders BotTeam makes for bots that were given none (created at run time, not in git) |
 | `install.ps1`, `install.sh`, `start.bat`, `zip-project.ps1` | Install, start and pack scripts |
 
 ### Development Setup
@@ -148,7 +150,7 @@ To use BotTeam from another computer on your LAN or Tailscale, set `WEB_HOST=0.0
 1. Open `http://127.0.0.1:5299` in development, or `http://127.0.0.1:8899` after `pnpm build:static` and `botteam serve`.
 2. The welcome screen checks for an engine. Install and sign in (`claude`, `codex login`) or add an OpenAI-compatible endpoint in Settings → Engines, then press **Check again**.
 3. Press **+** → **New bot**, name it and pick a color.
-4. Choose the bot's approval level, and connect apps with **Connect apps** (Composio key, custom MCP servers, Telegram and Zalo input).
+4. Choose the bot's approval level, and connect apps with **Connect apps** (Composio key, custom MCP servers, Telegram and Zalo input). A bot you make without a working folder gets `workspaces/<bot id>/`; when it is given an input, an `intake.md` is made there (Bot settings → *Intake workflow* edits it).
 
 > ⚠️ A bot on **Full** approval can run any command on your computer. Use **Ask** for any bot that talks to people outside your team.
 

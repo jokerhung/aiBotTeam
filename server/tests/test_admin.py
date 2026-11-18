@@ -46,7 +46,7 @@ async def test_it_cannot_give_full_access_a_folder_or_edit_itself(ctx):
     r = await call("admin_update_bot", {"bot": bot["id"], "title": "T", "cwd": "C:/", "chief": True, "mcpServers": ["x"]})
     assert r["ok"]
     now = next(b for b in (await c.get("/api/bots")).json()["bots"] if b["id"] == bot["id"])
-    assert not now["cwd"] and now["chief"] is False and now["mcpServers"] == [], "only the named fields can be set"
+    assert now["cwd"].replace("\\", "/").endswith("/" + bot["id"]) and now["chief"] is False and now["mcpServers"] == [], "only the named fields can be set (the folder is the one made for the bot, not C:/)"
     assert (await call("admin_update_bot", {"bot": "Administrator", "title": "Boss"}))["reason"] == "not_found"
     assert (await call("admin_create_bot", {"name": "Y", "color": "plaid"}))["reason"] == "invalid"
     assert (await call("coordinate_bots", {"bot_ids": [bot["id"]], "message": "x"}))["reason"] == "not_allowed", "it has no other tools"

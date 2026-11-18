@@ -158,7 +158,7 @@ async def test_deleting_a_conversation_removes_its_log_batches_folders_and_attac
     batch_bot, ws = await bot_with_folder(c, tmp_path, "Counter")
     await grant(c, acc2, batch_bot, chats=[-1001])
     tg.photo(-1001)
-    await until(lambda: len(list(ws.glob("jobs/*/images/*"))) == 1, what="the photo saved")
+    await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 1, what="the photo saved")
     b = await one_batch(c, batch_bot)
     tg.press(-1001, f"run:{b['id']}")
     done = await one_batch(c, batch_bot, "done")

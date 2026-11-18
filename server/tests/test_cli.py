@@ -20,6 +20,7 @@ TEAM = {"format": "botteam.team", "version": 1, "name": "Script team", "bots": [
 @pytest.fixture
 def data(tmp_path, monkeypatch):
     monkeypatch.setenv("BOTTEAM_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("BOTTEAM_WORKSPACES", str(tmp_path / "workspaces"))  # bots made here get their folders under the test's own folder
     monkeypatch.setenv("BOTTEAM_URL", "http://127.0.0.1:1")  # nothing listens there: the commands run the app inside themselves
     return tmp_path / "data"
 

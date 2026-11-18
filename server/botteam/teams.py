@@ -260,6 +260,7 @@ async def apply_import(store, bus, mcp, skills, memory, groups_service, routines
         for b in pkg["bots"]:
             bot = await store.create_bot(b["name"], b["title"], b["description"], b["color"], selection)
             bot.soul, bot.section, bot.approvalMode, bot.chief = b["instructions"], section["id"], "ask", False  # a package never makes a Chief or widens a level
+            store.assign_workspace(bot)
             bot.mcpServers = [conn_ids[c] for c in b["connections"] if c in conn_ids]
             sk_ids = []
             for s in b["skills"]:

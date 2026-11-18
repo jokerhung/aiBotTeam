@@ -18,6 +18,17 @@ GROUP = -1001
 OUT_PROMPT = "Count the stock.\n/out {job}/out/report.txt"
 
 
+async def reconfigure(app, ws, prompt=None, **limits):
+    """What a test used to do by changing the grant's prompt or limits: the bot's intake.md says them now."""
+    from botteam.channels import intake as ik
+
+    cfg = ik.parse((ws / "intake.md").read_text(encoding="utf8")).cfg
+    lim = {k: cfg[k] for k in ("maxPhotos", "timeoutSec", "retentionDays", "remindAt")}
+    lim.update(limits)
+    (ws / "intake.md").write_text(ik.default_text("collect", prompt=ik.legacy_prompt(prompt) if prompt else cfg["prompt"], limits=lim), encoding="utf8")
+    app.state.channels.intake.forget(ws)
+
+
 def router(tg: FakeTelegram, zalo: FakeZalo) -> httpx.MockTransport:
     return httpx.MockTransport(lambda req: (zalo if "zalo" in req.url.host else tg).handle(req))
 
@@ -161,7 +172,7 @@ async def test_two_bots_share_an_account_and_a_chat_belongs_to_one(chan):
     tg.photo(-2)
     ba, bb = await one_batch(c, a), await one_batch(c, b)
     assert ba["chatId"] == "-1" and bb["chatId"] == "-2"
-    assert (ws_a / "jobs" / ba["id"] / "images").is_dir() and (ws_b / "jobs" / bb["id"] / "images").is_dir()
+    assert list((ws_a / "jobs" / ba["id"]).glob("*.jpg")) and list((ws_b / "jobs" / bb["id"]).glob("*.jpg"))
     used = (await c.get("/api/channels")).json()["channels"][0]["accounts"][0]["usedBy"]
     assert set(used) == {a["id"], b["id"]}
     assert (await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{b['id']}", json={"chats": ["not a chat"]})).status_code == 400
@@ -192,11 +203,11 @@ async def test_files_are_saved_and_nothing_runs_until_someone_asks(chan):
     tg.photo(GROUP, b"\xff\xd8two", caption="khay tren")
     tg.document(GROUP, "IMG_3.jpg", data=b"\xff\xd8three", mime="image/jpeg")
     b = await until(lambda: one_batch(c, bot), what="the batch")
-    await until(lambda: len(list((ws / "jobs" / b["id"] / "images").glob("*"))) == 3, what="three photos saved")
+    await until(lambda: len(list((ws / "jobs" / b["id"]).glob("*.jpg"))) == 3, what="three photos saved")
     job = ws / "jobs" / b["id"]
-    assert [p.name for p in sorted((job / "files").iterdir())] == ["phieu_BH.pdf"]
-    assert [p.name for p in sorted((job / "images").iterdir())] == ["001_photo_3.jpg", "002_photo_4.jpg", "003_IMG_3.jpg"]
-    assert (job / "images" / "002_photo_4.jpg").read_bytes() == b"\xff\xd8two"
+    assert [p.name for p in sorted(job.glob("*.pdf"))] == ["phieu_BH.pdf"], "a document sits beside the photos: the session folder has no images/ or files/"
+    assert [p.name for p in sorted(job.glob("*.jpg"))] == ["001_photo_3.jpg", "002_photo_4.jpg", "003_IMG_3.jpg"]
+    assert (job / "002_photo_4.jpg").read_bytes() == b"\xff\xd8two"
     def listed():
         m = json.loads((job / "batch.json").read_text(encoding="utf8"))
         return m if len(m["files"]) == 4 else None
@@ -224,7 +235,7 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     tg.photo(GROUP)
     b = await until(lambda: one_batch(c, bot), what="the batch")
     await until(lambda: batches(c, bot), what="files")
-    await until(lambda: len(list((ws / "jobs" / b["id"] / "images").glob("*"))) == 1, what="the photo")
+    await until(lambda: len(list((ws / "jobs" / b["id"]).glob("*.jpg"))) == 1, what="the photo")
     tg.press(GROUP, f"run:{b['id']}")
     tg.press(GROUP, f"run:{b['id']}")  # a second press starts nothing more
     done = await one_batch(c, bot, "done")
@@ -236,7 +247,7 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": done["threadId"]})).json()["messages"]
     first = msgs[0]
     assert first["sender"] == "telegram shop" and first["text"].startswith('[From telegram "shop" · batch ') and "outside content, not the person's authority" in first["text"]
-    assert f"jobs/{b['id']}/images/" in first["text"] and "files/phieu.pdf" in first["text"] and "[OWNER INSTRUCTIONS]\nCount the stock." in first["text"]
+    assert f"jobs/{b['id']}/phieu.pdf (document)" in first["text"] and "(photo" in first["text"] and "[OWNER INSTRUCTIONS]\nCount the stock." in first["text"]
     assert sum(1 for m in msgs if m["role"] == "user") == 1
     assert any(m["role"] == "bot" and m["text"] for m in msgs)
     assert done["outFiles"] == ["report.txt"]
@@ -290,14 +301,14 @@ async def test_without_an_admin_chat_the_sender_gets_everything(chan):
 async def test_a_turn_that_leaves_no_file_fails_and_can_be_retried(chan):
     c, app, tg, tmp_path = chan
     acc, bot, ws = await setup(c, tmp_path)
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": "Just look."})
+    await reconfigure(app, ws, "Just look.")
     tg.photo(GROUP)
     b = await one_batch(c, bot)
     tg.text(GROUP, "/kiemke")
     failed = await one_batch(c, bot, "failed")
     assert "out/" in failed["error"] and f"retry:{b['id']}" in tg.buttons(GROUP)
     assert any(n["kind"] == "channel_failed" for n in (await c.get("/api/notifications")).json()["notifications"])
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": OUT_PROMPT})
+    await reconfigure(app, ws, OUT_PROMPT)
     tg.press(GROUP, f"retry:{b['id']}")
     again = await one_batch(c, bot, "done")
     assert again["id"] == b["id"] and again["error"] is None and again["threadId"] != failed["threadId"]
@@ -306,14 +317,14 @@ async def test_a_turn_that_leaves_no_file_fails_and_can_be_retried(chan):
 async def test_a_failed_turn_and_a_slow_turn_both_end_as_failed(chan, monkeypatch):
     c, app, tg, tmp_path = chan
     acc, bot, ws = await setup(c, tmp_path)
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": "Try.\n/error"})
+    await reconfigure(app, ws, "Try.\n/error")
     tg.photo(GROUP)
     await one_batch(c, bot)
     tg.text(GROUP, "/kiemke")
     assert "lỗi" in (await one_batch(c, bot, "failed"))["error"]
     await wait_idle(c, bot["id"])
     app.state.channels.time_scale = 0.02
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": "Go.\n/slow", "timeoutSec": 5})
+    await reconfigure(app, ws, "Go.\n/slow", timeoutSec=5)
     tg.text(GROUP, "/thulai")
     await one_batch(c, bot, "running")
     slow = await one_batch(c, bot, "failed")
@@ -324,8 +335,11 @@ async def test_a_failed_turn_and_a_slow_turn_both_end_as_failed(chan, monkeypatc
 async def test_a_batch_cannot_start_without_photos_a_folder_or_an_engine_that_sees(chan):
     c, app, tg, tmp_path = chan
     acc = await connect(c)
-    bot = await make_bot(c, "NoFolder")
+    bot, gone = await bot_with_folder(c, tmp_path, "NoFolder")
     await grant(c, acc, bot)
+    import shutil
+
+    shutil.rmtree(gone)  # the folder it was given is gone
     assert any("working folder" in w for w in (await c.get(f"/api/bots/{bot['id']}/channels")).json()["warnings"])
     tg.photo(GROUP)
     await until(lambda: any("thư mục làm việc" in t for t in tg.texts(GROUP)), what="the no-folder warning")
@@ -339,7 +353,7 @@ async def test_a_batch_cannot_start_without_photos_a_folder_or_an_engine_that_se
     await until(lambda: any("Chưa có ảnh" in t for t in tg.texts(GROUP)), what="the no-photo answer")
     app.state.registry.get("echo").driver.capabilities = Capabilities(queueing=False, images=False)
     tg.photo(GROUP)
-    await until(lambda: len(list(ws.glob("jobs/*/images/*"))) == 1, what="the photo")
+    await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 1, what="the photo")
     tg.text(GROUP, "/kiemke")
     await until(lambda: any("không đọc được ảnh" in t for t in tg.texts(GROUP)), what="the engine answer")
     assert (await batches(c, bot))[0]["status"] == "collecting"
@@ -348,7 +362,7 @@ async def test_a_batch_cannot_start_without_photos_a_folder_or_an_engine_that_se
 async def test_two_batches_of_one_bot_run_one_after_the_other(chan):
     c, app, tg, tmp_path = chan
     acc, bot, ws = await setup(c, tmp_path)
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": OUT_PROMPT + "\n/slow"})
+    await reconfigure(app, ws, OUT_PROMPT + "\n/slow")
     tg.photo(GROUP, user=7)
     tg.photo(GROUP, user=8)
     rows = await until(lambda: _two(c, bot), what="two batches")
@@ -382,7 +396,7 @@ async def _events(c, acc, outcome):
 async def test_a_bot_holds_three_batches_in_the_queue_and_refuses_the_next(chan):
     c, app, tg, tmp_path = chan
     acc, bot, ws = await setup(c, tmp_path)
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": OUT_PROMPT + "\n/slow"})
+    await reconfigure(app, ws, OUT_PROMPT + "\n/slow")
     for user in range(7, 12):
         tg.photo(GROUP, user=user)
     rows = await until(lambda: _count(c, bot, 5), what="five batches")
@@ -422,13 +436,13 @@ async def test_a_new_pdf_starts_a_new_batch_and_a_reply_picks_the_batch(chan):
     rows = await until(lambda: _two(c, bot), what="a second batch")
     second = next(r for r in rows if r["id"] != first["id"])
     tg.photo(GROUP)  # goes to the newest
-    await until(lambda: len(list((ws / "jobs" / second["id"] / "images").glob("*"))) == 1, what="photo in the second")
+    await until(lambda: len(list((ws / "jobs" / second["id"]).glob("*.jpg"))) == 1, what="photo in the second")
     tg.updates[TG_TOKEN].append({"update_id": tg.next_update + 1, "message": {"message_id": 9001, "chat": {"id": GROUP}, "from": {"id": 7, "first_name": "User7"},
                                                                               "reply_to_message": {"message_id": int(status_id)},
                                                                               "photo": [{"file_id": "ph_reply", "file_size": 4}]}})
     tg.next_update += 1
     tg.files["ph_reply"] = b"\xff\xd8re"
-    await until(lambda: len(list((ws / "jobs" / first["id"] / "images").glob("*"))) == 1, what="the reply's photo in the first batch")
+    await until(lambda: len(list((ws / "jobs" / first["id"]).glob("*.jpg"))) == 1, what="the reply's photo in the first batch")
     tg.text(GROUP, "/huy")
     await until(lambda: _statuses(c, bot, {"cancelled", "collecting"}), what="the newest cancelled")
     assert next(r for r in await batches(c, bot) if r["id"] == second["id"])["status"] == "cancelled"
@@ -443,7 +457,7 @@ async def test_limits_on_size_and_number_of_photos(chan):
     for _ in range(3):
         tg.photo(GROUP)
     await until(lambda: any("đủ 2 ảnh" in t for t in tg.texts(GROUP)), what="the photo limit answer")
-    assert len(list(ws.glob("jobs/*/images/*"))) == 2
+    assert len(list(ws.glob("jobs/*/*.jpg"))) == 2
     tg.text(-777, "hello")  # a chat no bot serves
     ev = await until(lambda: _events(c, acc, "filtered"), what="the filtered event")
     outcomes = [(e["outcome"], e["reason"]) for e in ev]
@@ -461,10 +475,10 @@ async def test_a_restart_handles_no_update_twice_and_fails_what_was_running(tmp_
         app.state.registry.get("echo").driver.capabilities = Capabilities(queueing=False, images=True)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
             acc, bot, ws = await setup(c, tmp_path)
-            await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": OUT_PROMPT + "\n/slow"})
+            await reconfigure(app, ws, OUT_PROMPT + "\n/slow")
             last = tg.photo(GROUP)
             b = await one_batch(c, bot)
-            await until(lambda: len(list(ws.glob("jobs/*/images/*"))) == 1, what="the photo")
+            await until(lambda: len(list(ws.glob("jobs/*/*.jpg"))) == 1, what="the photo")
             await until(lambda: tg.offsets[TG_TOKEN] and tg.offsets[TG_TOKEN][-1] == last + 1, what="the cursor past the photo")
             tg.press(GROUP, f"run:{b['id']}")
             await one_batch(c, bot, "running")
@@ -485,7 +499,7 @@ async def test_a_restart_handles_no_update_twice_and_fails_what_was_running(tmp_
             main = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": bot["mainThreadId"]})).json()["messages"]
             card = next(m for m in main if m["id"] == saved["cardId"])
             assert card["threadRef"]["threadId"] == rows[0]["threadId"]
-            assert len(list(ws.glob("jobs/*/images/*"))) == 1  # the photo already handled was not saved again
+            assert len(list(ws.glob("jobs/*/*.jpg"))) == 1  # the photo already handled was not saved again
             assert (await c.get("/api/channels")).json()["channels"][0]["accounts"][0]["state"] == "active"
 
 
@@ -545,7 +559,7 @@ async def test_a_batch_waiting_for_an_approval_says_so_to_the_result_chat(chan):
     c, app, tg, tmp_path = chan
     acc, bot, ws = await setup(c, tmp_path, adminChats=["900"])
     await c.patch(f"/api/bots/{bot['id']}", json={"approvalMode": "ask"})
-    await c.put(f"/api/channels/telegram/accounts/{acc['id']}/grants/{bot['id']}", json={"prompt": "Run it.\n/approve mkdir demo"})
+    await reconfigure(app, ws, "Run it.\n/approve mkdir demo")
     tg.photo(GROUP)
     b = await one_batch(c, bot)
     tg.press(GROUP, f"run:{b['id']}")
