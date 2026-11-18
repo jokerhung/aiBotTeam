@@ -2,7 +2,7 @@
 
 BotTeam is a local chat app where every contact in the sidebar is a real AI agent: the Claude Code or Codex CLI (or any OpenAI-compatible endpoint) running on your computer, with its own name, instructions, model, memory and connected apps. Bots work together in channels, hand tasks to each other, run on a schedule, and answer people who write to them on Telegram or Zalo. Everything is kept on your machine.
 
-It is built with a Next.js web app and a Python (FastAPI) server, and follows the interaction design of [OpenMausBot](https://github.com/milind-soni/OpenMausBot).
+It is built with a Next.js web app and a Python (FastAPI) server, and is inspired by [OpenMausBot](https://github.com/milind-soni/OpenMausBot).
 
 **English** | [Tiếng Việt](docs/user-guide.md)
 
@@ -166,8 +166,6 @@ Your data lives in `~/.botteam` (change it with `BOTTEAM_DATA_DIR`). Back it up 
 
 ## 📄 License
 
-BotTeam does not have its own license file yet. Parts of its design tokens, skins and chat styling are adapted from OpenMausBot, which is licensed under the Apache License, Version 2.0. The notice is in [NOTICE](NOTICE), and the Apache-2.0 text must accompany any redistribution.
+BotTeam does not have its own license file yet. Third-party notices are in [NOTICE](NOTICE).
 
 - Repository: <https://github.com/jokerhung/aiBotTeam>
-- Original project: <https://github.com/milind-soni/OpenMausBot>
-- License: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)
