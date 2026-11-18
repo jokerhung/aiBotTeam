@@ -1,5 +1,5 @@
 "use client";
-import { BellDot, Copy, CopyPlus, Crown, EyeOff, FolderPlus, MoreHorizontal, Pencil, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
+import { BellDot, Copy, CopyPlus, Crown, Download, EyeOff, FolderPlus, MoreHorizontal, Pencil, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ContextMenu,
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import type { Bot, Section } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { exportBotFile } from "./BotFile";
 import { toast } from "./Toaster";
 
 const patch = (id: string, body: object) => api(`/api/bots/${id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -64,6 +65,7 @@ export function useBotMenu(bot: Bot) {
     "sep",
     { key: "edit", label: t("Edit Profile"), icon: Pencil, run: () => { dispatch({ type: "select", id: bot.id }); dispatch({ type: "panel", botId: bot.id, profile: true }); } },
     { key: "dup", label: t("Duplicate"), icon: CopyPlus, run: () => void api<{ id: string }>(`/api/bots/${bot.id}/duplicate`, { method: "POST" }).then((b) => dispatch({ type: "select", id: b.id })) },
+    { key: "export", label: t("Export bot"), icon: Download, run: () => void exportBotFile(bot) },
     "sep",
     { key: "copy", label: t("Copy conversation ID"), icon: Copy, run: () => void navigator.clipboard?.writeText(bot.threadId) },
     "sep",

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 import os
 from typing import Any, Optional
 
@@ -27,6 +28,25 @@ EVENT_KINDS = {
     "message.voice.received": "other",
     "message.unsupported.received": "other",
 }
+
+
+SHAPE_KEEP = 120  # lines kept in the shape log
+
+
+def shape(o: object, depth: int = 0) -> object:
+    """An event with its content blurred: the keys and the kind of each value are kept so the format of a reply, a mention or a group message can be
+    read from it; texts are cut to a few characters and links to their host, ids are cut."""
+    if depth > 6:
+        return "…"
+    if isinstance(o, dict):
+        return {k: shape(v, depth + 1) for k, v in list(o.items())[:40]}
+    if isinstance(o, list):
+        return [shape(v, depth + 1) for v in o[:5]]
+    if isinstance(o, str):
+        if o.startswith("http"):
+            return "url:" + (o.split("/")[2] if o.count("/") >= 2 else "")
+        return o[:12] + ("…" if len(o) > 12 else "")
+    return o
 
 
 def parse_event(e: dict) -> Optional[Incoming]:
@@ -79,6 +99,25 @@ class ZaloAdapter(Adapter):
             raise ChannelError(self.clean(text or f"Zalo: HTTP {res.status_code}")[:300], res.status_code if res.status_code >= 400 else 502)
         return body.get("result") if isinstance(body, dict) else None
 
+    shape_log: Optional[Path] = None  # set by the chat service: where the blurred shape of group and unusual events is kept
+
+    def _note_shape(self, e: object) -> None:
+        """Keep the shape (never the content) of a message from a group, or with a field this adapter does not read, to learn how Zalo sends them."""
+        if self.shape_log is None or not isinstance(e, dict):
+            return
+        m = e.get("message") if isinstance(e.get("message"), dict) else {}
+        known = {"message_id", "date", "from", "chat", "text", "message_type", "photo_url", "caption"}
+        group = str((m.get("chat") or {}).get("chat_type") or "").upper() not in ("", "PRIVATE") or str((m.get("chat") or {}).get("id") or "").startswith("zgr")
+        if not group and not (set(m) - known):
+            return
+        try:
+            self.shape_log.parent.mkdir(parents=True, exist_ok=True)
+            lines = self.shape_log.read_text(encoding="utf8").splitlines()[-(SHAPE_KEEP - 1):] if self.shape_log.exists() else []
+            lines.append(json.dumps(shape(e), ensure_ascii=False))
+            self.shape_log.write_text("\n".join(lines) + "\n", encoding="utf8")
+        except OSError:
+            pass
+
     async def get_me(self) -> dict:
         r = await self._call("getMe", timeout=15) or {}
         name = str(r.get("account_name") or r.get("display_name") or r.get("name") or r.get("username") or "")
@@ -93,6 +132,7 @@ class ZaloAdapter(Adapter):
         events = r if isinstance(r, list) else ([r] if isinstance(r, dict) and r else [])
         out: list[Incoming] = []
         for e in events:
+            self._note_shape(e)
             inc = parse_event(e) if isinstance(e, dict) else None
             if not inc or not inc.message_id or inc.message_id in seen:
                 continue

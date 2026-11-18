@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Plug, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Plug, Smartphone, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -176,6 +176,7 @@ function NewMenu({ icons }: { icons: boolean }) {
       <PopoverTrigger title="New or share" aria-label="New or share" className={PILL}><Plus size={18} /></PopoverTrigger>
       <PopoverContent side="bottom" align={icons ? "start" : "end"} className="w-[230px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
         <button type="button" className={item} onClick={() => { setOpen(false); dispatch({ type: "newBot", open: true }); }}><UserPlus size={15} /> {tr("New bot")}</button>
+        <button type="button" data-testid="import-bot-item" className={item} onClick={() => { setOpen(false); dispatch({ type: "importBot", open: true }); }}><FileUp size={15} /> {tr("Import bot")}</button>
         <button type="button" data-testid="import-team-item" className={item} onClick={() => { setOpen(false); dispatch({ type: "importTeam", open: true }); }}><FileUp size={15} /> {tr("Import team")}</button>
         <button type="button" data-testid="new-group-item" className={item} onClick={() => { setOpen(false); dispatch({ type: "newGroup", open: true }); }}><Users size={15} /> {tr("New group chat")}</button>
       </PopoverContent>
@@ -503,6 +504,18 @@ export function Sidebar() {
                   className="flex size-9 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary ring-1 ring-inset ring-ink/[0.04] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-raised),var(--color-ink)_7%)] hover:text-ink"
                 >
                   <Plug size={16} />
+                </button>
+              )}
+              {!icons && (
+                <button
+                  type="button"
+                  data-testid="pair-phone"
+                  title={t("Pair a browser")}
+                  aria-label={t("Pair a browser")}
+                  onClick={() => dispatch({ type: "pair", open: true })}
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary ring-1 ring-inset ring-ink/[0.04] transition-colors duration-[120ms] hover:bg-ink/10 hover:text-ink"
+                >
+                  <Smartphone size={16} />
                 </button>
               )}
             </div>

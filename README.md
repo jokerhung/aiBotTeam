@@ -1,0 +1,161 @@
+# **BotTeam**
+
+BotTeam is a local chat app where every contact in the sidebar is a real AI agent: the Claude Code or Codex CLI (or any OpenAI-compatible endpoint) running on your computer, with its own name, instructions, model, memory and connected apps. Bots work together in channels, hand tasks to each other, run on a schedule, and answer people who write to them on Telegram or Zalo. Everything is kept on your machine.
+
+It is built with a Next.js web app and a Python (FastAPI) server, and follows the interaction design of [OpenMausBot](https://github.com/milind-soni/OpenMausBot).
+
+**English** | [Tiếng Việt](docs/user-guide.md)
+
+---
+
+## ⚡ Quick Start
+
+**macOS / Linux**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.sh -o install.sh && bash install.sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+The script installs Git, Node.js, Python and uv when they are missing, clones the repository and installs its dependencies. Add `--claude` / `-Claude` or `--codex` / `-Codex` to install the engine CLIs too. See [docs/user-guide.md](docs/user-guide.md) for every option and for signing in to an engine.
+
+---
+
+## ✨ 8 Superpowers
+
+- 🤖 **Real agents, not a chat wrapper** — each bot is a Claude Code or Codex CLI session (or an OpenAI-compatible endpoint) with its own model, working folder and approval level.
+- 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
+- ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
+- 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
+- 💬 **Telegram and Zalo input** — a bot answers every message, or collects photos and files into a batch and runs when someone presses *Check*.
+- 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
+- ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
+- 🧠 **Memory, skills and sharing** — notes that last between tasks, `SKILL.md` skills, and one-file export and import of a bot or a team.
+
+---
+
+## 🛡️ Security Architecture
+
+```mermaid
+flowchart LR
+    Browser["Web app<br/>(browser)"] -- "HTTP commands" --> API["BotTeam server<br/>127.0.0.1:8899"]
+    API -- "one SSE stream" --> Browser
+    API --> Bus["Event bus"]
+    API --> Broker["Permission broker<br/>(fail closed)"]
+    API --> Drivers["Drivers"]
+    Drivers --> CLI["Claude / Codex CLI<br/>OpenAI-compatible endpoint"]
+    CLI -- "asks permission" --> Broker
+    Broker -- "approval card" --> Browser
+    API --> Proxy["MCP proxy<br/>allowed tools, output limit"]
+    Proxy --> Apps["Composio and<br/>custom MCP servers"]
+    API --> Data[("~/.botteam<br/>SQLite and files")]
+    Channels["Telegram / Zalo"] -- "only allowed chats" --> API
+```
+
+- **Local first.** The server listens on `127.0.0.1`. Localhost, LAN and Tailscale addresses open directly; a domain or public address needs a one-time pairing code (valid 10 minutes).
+- **Fail closed.** A permission request that nobody answers is denied.
+- **Keys are write-only.** The app only shows that a key is configured. Composio, Telegram and Zalo tokens stay on this machine and never appear in an exported bot file.
+- **Outside text is data.** Text from tools, web pages, chats and photo captions is never treated as an instruction.
+- **Bounded access.** Bots cannot open internal addresses (localhost, private networks) unless you allow it; each connection can be limited to read or write and to a list of allowed tools; sending out always asks unless you say otherwise.
+
+---
+
+## 📂 Project Structure (Monorepo)
+
+| Path | Purpose |
+|---|---|
+| `web/` | Next.js (App Router) app, React, Tailwind v4: sidebar, chat, composer, panels, Connected apps |
+| `web/state/` | The single reducer and the SSE client |
+| `web/lib/` | Types shared with the server (`wire.ts`), skins, Vietnamese dictionary (`i18n-vi.ts`) |
+| `server/botteam/` | FastAPI server: `main.py` (routes), `turns.py`, `registry.py`, `broker.py`, `store.py`, `routines.py`, `memory.py` |
+| `server/botteam/drivers/` | One driver per engine: `claude.py`, `codex.py`, `openai_compat.py` |
+| `server/botteam/channels/` | Telegram and Zalo input, batch and chat modes |
+| `server/botteam/mcp_*.py`, `composio.py` | MCP servers, proxy and Composio connection |
+| `server/tests/` | pytest suites (a fake driver replays events) |
+| `scripts/` | Helpers: `run.mjs`, `free-ports.ps1`, visual and reference checks |
+| `docs/` | Phase plans, [user guide](docs/user-guide.md), visual report |
+| `install.ps1`, `install.sh`, `start.bat`, `zip-project.ps1` | Install, start and pack scripts |
+
+### Development Setup
+
+#### Prerequisites
+
+- Python 3.10 or newer and [uv](https://docs.astral.sh/uv/)
+- Node.js 20 or newer and pnpm
+- Git
+- At least one engine: the Claude Code CLI, the Codex CLI, or an OpenAI-compatible endpoint
+- Microsoft Edge or Chrome for the built-in browser (otherwise run `playwright install chromium`)
+
+The install scripts check all of this and install what is missing. Ports: web `5299`, API `8899`, webhooks `8900`.
+
+#### Windows — PowerShell
+
+**Quick start:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+.\start.bat
+```
+
+**Run one part only:**
+
+```powershell
+.\start.bat server   # the API server, with reload
+.\start.bat web      # the web app
+.\start.bat one      # built web app and API as one program (run pnpm build:static first)
+```
+
+`start.bat` frees its ports first, then starts. If `pnpm` or `uv` is not found right after the install, open a new terminal window.
+
+#### macOS
+
+```bash
+bash install.sh
+pnpm dev
+```
+
+`pnpm dev` starts the server and the web app together. Open a new terminal if `uv` or `pnpm` is not recognized after the install.
+
+#### Linux
+
+```bash
+bash install.sh      # uses sudo when you are not root
+pnpm dev
+```
+
+To use BotTeam from another computer on your LAN or Tailscale, set `WEB_HOST=0.0.0.0` in `.env`, keep `SERVER_HOST=127.0.0.1`, restart, and open `http://<ip>:5299`.
+
+#### Open the application and configure it
+
+1. Open `http://127.0.0.1:5299` in development, or `http://127.0.0.1:8899` after `pnpm build:static` and `botteam serve`.
+2. The welcome screen checks for an engine. Install and sign in (`claude`, `codex login`) or add an OpenAI-compatible endpoint in Settings → Engines, then press **Check again**.
+3. Press **+** → **New bot**, name it and pick a color.
+4. Choose the bot's approval level, and connect apps with **Connect apps** (Composio key, custom MCP servers, Telegram and Zalo input).
+
+> ⚠️ A bot on **Full** approval can run any command on your computer. Use **Ask** for any bot that talks to people outside your team.
+
+#### Build packages and run checks
+
+```bash
+pnpm test              # server (pytest) and web (Vitest)
+pnpm typecheck         # TypeScript
+pnpm test:ui           # reference and visual comparison (needs the reference app running)
+pnpm build:static      # static web app served by the Python server
+```
+
+Your data lives in `~/.botteam` (change it with `BOTTEAM_DATA_DIR`). Back it up with Settings → Backup or `botteam backup <file>`. The plan, scope and risks are in [docs/README.md](docs/README.md).
+
+---
+
+## 📄 License
+
+BotTeam does not have its own license file yet. Parts of its design tokens, skins and chat styling are adapted from OpenMausBot, which is licensed under the Apache License, Version 2.0. The notice is in [NOTICE](NOTICE), and the Apache-2.0 text must accompany any redistribution.
+
+- Repository: <https://github.com/jokerhung/aiBotTeam>
+- Original project: <https://github.com/milind-soni/OpenMausBot>
+- License: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)

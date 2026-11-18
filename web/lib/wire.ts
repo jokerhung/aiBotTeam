@@ -124,7 +124,7 @@ export interface Bot {
   mcpServers?: string[];
   memory?: boolean;
   skills?: string[];
-  mcpAccess?: Record<string, { scope: "read" | "write"; outbound: "ask" | "allow" }>;
+  mcpAccess?: Record<string, { scope: "read" | "write"; outbound: "ask" | "allow"; allowTools?: string[]; cacheMinutes?: number }>;
   fallbackSelection: ModelSelection | null;
   lastText: string;
   lastAt: number | null;

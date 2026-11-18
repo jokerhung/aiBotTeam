@@ -4,6 +4,7 @@ The list is the same on every turn; what a turn may not do it is told when it ca
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from .approval import normalize_mode
@@ -11,7 +12,7 @@ from .runtime import LEVELS
 
 TOOL_NAMES = ["remember", "recall", "forget", "team_remember", "list_bots", "coordinate_bots", "assignment_status", "start_thread", "list_threads", "post_to_room", "list_rooms",
               "trigger_info", "trigger", "delete_trigger", "browser_open", "browser_snapshot", "browser_click", "browser_type", "browser_scroll", "browser_back",
-              "browser_ask_for_help", "browser_close"]
+              "browser_ask_for_help", "browser_close", "sheet_rows"]
 
 
 class AgentTools:
@@ -19,6 +20,7 @@ class AgentTools:
         self.store, self.turns, self.runtime, self.host = store, turns, runtime, host
         self.groups = groups  # set by the app once rooms exist
         self.routines = routines
+        self.composio = None  # set by the app: reads of Google Sheets go through its Session
 
     # ---- helpers -----------------------------------------------------------------------------------------------------
     async def _resolve(self, ref: str) -> Optional[str]:
@@ -56,9 +58,15 @@ class AgentTools:
             n = await self.runtime.get(n["parent_id"]) if n["parent_id"] else None
         return None
 
+    CHANNEL_CHAT_TOOLS = {"sheet_rows", "recall"}
+
     # ---- dispatch ----------------------------------------------------------------------------------------------------
     async def call(self, thread_id: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
+            run = self.turns.runs.get(thread_id)
+            if run and (getattr(run, "channel_batch_id", None) or "").startswith("chat:") and tool not in self.CHANNEL_CHAT_TOOLS:
+                # an answering bot talks to strangers: whatever they write, it cannot hand work to other bots, make routines, post, browse or write notes
+                return {"ok": False, "reason": "not_allowed", "detail": "this tool is not available while answering a customer"}
             fn = getattr(self, f"t_{tool}", None)
             if not fn:
                 return {"ok": False, "reason": "unknown_tool", "detail": f"no tool {tool}; the tools are {', '.join(TOOL_NAMES)}"}
@@ -215,6 +223,113 @@ class AgentTools:
             return {"closed": await svc.sleep(bid)}
 
         return await self._browse(thread_id, go)
+
+    # ---- reading a spreadsheet the same way every time ----------------------------------------------------------------------------------
+    SHEET_TOOLS = ("GOOGLESHEETS_SEARCH_SPREADSHEETS", "GOOGLESHEETS_GET_SHEET_NAMES", "GOOGLESHEETS_VALUES_GET")
+    MAX_TABS = 8
+    MAX_MATCHES = 30
+
+    @staticmethod
+    def _norm(x: Any) -> str:
+        return re.sub(r"\s+", " ", str(x if x is not None else "")).strip().casefold()
+
+    @staticmethod
+    def _letters(i: int) -> str:
+        out = ""
+        i += 1
+        while i:
+            i, r = divmod(i - 1, 26)
+            out = chr(65 + r) + out
+        return out
+
+    async def t_sheet_rows(self, thread_id: str, args: dict) -> dict:
+        """Rows of a Google Sheets file whose cells equal what was asked, as {column title: value} with the empty cells left out. The columns are found by
+        their titles and the rows are matched in code, so no one has to count columns; the answers are kept for the bot's cache time."""
+        from .composio import ComposioError
+        from .mcp_proxy import refusal
+
+        bot = await self._me(thread_id)
+        comp = self.composio
+        if not bot or not comp or not comp.configured():
+            return {"ok": False, "reason": "unavailable", "detail": "Google Sheets is not connected"}
+        sid = await comp._mcp_id()
+        access = bot.mcpAccess.get(sid or "") or {}
+        allow = list(access.get("allowTools") or [])
+        if not sid or sid not in bot.mcpServers or not allow or any(refusal(allow, {"name": "COMPOSIO_MULTI_EXECUTE_TOOL", "arguments": {"tools": [{"tool_slug": t}]}}) for t in self.SHEET_TOOLS):
+            return {"ok": False, "reason": "not_allowed", "detail": "this bot may not read Google Sheets"}
+        name, match = str(args.get("spreadsheet") or "").strip(), args.get("match")
+        if not name or not isinstance(match, dict) or not match or len(match) > 4:
+            return {"ok": False, "reason": "bad_request", "detail": "give the spreadsheet name and match, such as {\"lô\": \"1401 AO\", \"CTN NO.\": \"291\"}"}
+        minutes = int(access.get("cacheMinutes") or 0)
+        fetched: list[float] = []
+        sheet_id = ""
+
+        async def tool(slug: str, arguments: dict) -> dict:
+            data, at = await comp.run_tool(slug, arguments, minutes)
+            fetched.append(at)
+            return data
+
+        async def values(rng: str) -> list:
+            return (await tool("GOOGLESHEETS_VALUES_GET", {"spreadsheet_id": sheet_id, "range": rng})).get("values") or []
+
+        try:
+            found = (await tool("GOOGLESHEETS_SEARCH_SPREADSHEETS", {"query": name, "max_results": 20})).get("spreadsheets") or []
+            exact = sorted((f for f in found if self._norm(f.get("name")) == self._norm(name)), key=lambda f: str(f.get("modifiedTime") or ""), reverse=True)
+            if not exact:
+                return {"ok": False, "reason": "not_found", "detail": f"no spreadsheet named “{name}”", "similar": [f.get("name") for f in found][:5]}
+            sheet_id = exact[0]["id"]
+            names = (await tool("GOOGLESHEETS_GET_SHEET_NAMES", {"spreadsheet_id": sheet_id})).get("sheet_names") or []
+            want_tab = str(args.get("tab") or "").strip()
+            if want_tab:
+                tabs = [n for n in names if self._norm(n) == self._norm(want_tab)]
+            else:  # the tabs named by a day (ddmmyy), the newest first
+                days = [n for n in names if re.fullmatch(r"\d{6}", n.strip())]
+                tabs = sorted(days, key=lambda n: n.strip()[4:6] + n.strip()[2:4] + n.strip()[0:2], reverse=True)[: self.MAX_TABS]
+            if not tabs:
+                return {"ok": False, "reason": "no_tab", "detail": "no such tab", "tabs": names[:30]}
+            searched: list[str] = []
+            for tab in tabs:
+                q = "'" + tab.replace("'", "''") + "'"
+                searched.append(tab)
+                head = (await values(f"{q}!A1:ZZ1") or [[]])[0]
+                index: dict[str, int] = {}
+                for i, h in enumerate(head):
+                    index.setdefault(self._norm(h), i)
+                cols: dict[str, int] = {}
+                for k in match:
+                    if self._norm(k) not in index:
+                        return {"ok": False, "reason": "no_column", "detail": f"tab {tab} has no column “{k}”", "columns": [h for h in head if h][:60]}
+                    cols[k] = index[self._norm(k)]
+                col_values: dict[int, list] = {}
+                for ci in set(cols.values()):
+                    letter, rows, start = self._letters(ci), [], 1
+                    while True:
+                        chunk = await values(f"{q}!{letter}{start}:{letter}{start + 1499}")
+                        rows += [(r[0] if r else "") for r in chunk]
+                        if len(chunk) < 1500:
+                            break
+                        start += 1500
+                    col_values[ci] = rows
+
+                def cell(k: str, n: int) -> str:
+                    column = col_values[cols[k]]
+                    return self._norm(column[n - 1]) if n - 1 < len(column) else ""
+
+                top = max((len(v) for v in col_values.values()), default=0)
+                hits = [n for n in range(2, top + 1) if all(cell(k, n) == self._norm(want) for k, want in match.items())]
+                if not hits:
+                    continue
+                if len(hits) > self.MAX_MATCHES:
+                    return {"ok": False, "reason": "too_many", "detail": f"{len(hits)} rows match; add more to match"}
+                out = []
+                for n in hits:
+                    row = (await values(f"{q}!A{n}:ZZ{n}") or [[]])[0]
+                    out.append({str(head[i]): str(v).strip() for i, v in enumerate(row) if i < len(head) and head[i] and str(v).strip() != ""})
+                return {"ok": True, "spreadsheet": exact[0]["name"], "tab": tab, "rows": out, "rowNumbers": hits, "searchedTabs": searched,
+                        "fetchedAt": int(min(fetched) * 1000), "cacheMinutes": minutes}
+            return {"ok": True, "spreadsheet": exact[0]["name"], "tab": None, "rows": [], "searchedTabs": searched, "fetchedAt": int(min(fetched) * 1000), "cacheMinutes": minutes}
+        except ComposioError as e:
+            return {"ok": False, "reason": "sheets", "detail": str(e)}
 
     async def t_list_bots(self, thread_id: str, args: dict) -> dict:
         me = (self.turns.runs.get(thread_id).bot_id if self.turns.runs.get(thread_id) else None)

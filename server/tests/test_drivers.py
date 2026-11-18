@@ -216,3 +216,104 @@ def test_claude_signed_in_parses_auth_status_json():
     assert claude_signed_in(0, '{"loggedIn": true}') is True
     assert claude_signed_in(-1, "boom") is None
     assert claude_signed_in(1, "Not logged in") is False
+
+
+def test_codex_gets_the_custom_mcp_servers_as_config_overrides():
+    from botteam.drivers.base import SendTurnInput
+    from botteam.drivers.codex import CodexDriver
+
+    bs = chr(92)
+    ent = {"command": f"C:{bs}py{bs}python.exe", "args": ["-m", "botteam.mcp_proxy"], "env": {"BT_MCP_SPEC_FILE": f"C:{bs}u{bs}s.json", "PYTHONPATH": f"C:{bs}srv"}}
+    args = CodexDriver("codex").build_args(SendTurnInput(thread_id="t", bot_id="b", text="x", approval_mode="ask", custom_mcp={"x_Composio-e25f": ent}))
+    over = [a for a in args if a.startswith("mcp_servers.")]
+    assert over[0] == f'mcp_servers.x_Composio_e25f.command="C:{bs}{bs}py{bs}{bs}python.exe"'  # a TOML string: the backslashes are escaped
+    assert 'mcp_servers.x_Composio_e25f.args=["-m", "botteam.mcp_proxy"]' in over
+    assert f'mcp_servers.x_Composio_e25f.env.BT_MCP_SPEC_FILE="C:{bs}{bs}u{bs}{bs}s.json"' in over
+    assert all(args[args.index(a) - 1] == "-c" for a in over)
+    assert not [a for a in CodexDriver("codex").build_args(SendTurnInput(thread_id="t", bot_id="b", text="x")) if a.startswith("mcp_servers.")]
+
+
+async def test_the_codex_app_server_is_started_with_the_custom_mcp_servers(monkeypatch):
+    import asyncio
+
+    from botteam.drivers import codex_app
+    from botteam.drivers.base import SendTurnInput
+
+    seen = {}
+
+    async def fake_spawn(args, cwd=None, env=None, stdin=True):
+        seen["args"] = list(args)
+        raise OSError("stop here")  # only the command line matters
+
+    monkeypatch.setattr(codex_app, "spawn", fake_spawn)
+    d = codex_app.CodexAppDriver("codex")
+    ent = {"command": "py", "args": ["-m", "botteam.mcp_proxy"], "env": {"BT_MCP_SPEC_FILE": "s.json"}}
+    inp = SendTurnInput(thread_id="t", bot_id="b", text="x", custom_mcp={"x_Composio_e25f": ent})
+    try:
+        await d._start(inp, ".")
+    except OSError:
+        pass
+    assert seen["args"][:2] == ["codex", "app-server"] and 'mcp_servers.x_Composio_e25f.env.BT_MCP_SPEC_FILE="s.json"' in seen["args"]
+    seen.clear()
+    try:
+        await d._start(SendTurnInput(thread_id="t2", bot_id="b", text="x"), ".")
+    except OSError:
+        pass
+    assert seen["args"] == ["codex", "app-server"]
+    # the team tools are given for a turn that asks for them (an answering bot), and only then
+    class FakeBroker:
+        port, token = 4321, "tok"
+
+    d2 = codex_app.CodexAppDriver("codex", broker=FakeBroker())
+    seen.clear()
+    try:
+        await d2._start(SendTurnInput(thread_id="t3", bot_id="b", text="x", mount_agents=True), ".")
+    except OSError:
+        pass
+    assert 'mcp_servers.bt.args=["-m", "botteam.mcp_bridge"]' in seen["args"] and 'mcp_servers.bt.env.BT_AGENTS="1"' in seen["args"]
+    seen.clear()
+    try:
+        await d2._start(SendTurnInput(thread_id="t4", bot_id="b", text="x"), ".")
+    except OSError:
+        pass
+    assert not [a for a in seen["args"] if "mcp_servers.bt" in a]
+
+
+async def test_codex_asks_the_permission_broker_before_an_mcp_tool_runs():
+    import asyncio
+
+    from botteam.drivers import codex_app
+
+    asked, written = [], []
+
+    class Broker:
+        port = 1
+        token = "t"
+
+        def __init__(self, behavior):
+            self.behavior = behavior
+
+        async def ask(self, thread_id, req_id, kind, tool, inp):
+            asked.append((tool, inp))
+            return {"behavior": self.behavior}
+
+    class Proc:
+        class stdin:
+            @staticmethod
+            async def drain():
+                return None
+
+    msg = {"method": "mcpServer/elicitation/request", "id": 7, "params": {"serverName": "x_Fake_1", "message": 'Allow the x_Fake_1 MCP server to run tool "echo"?',
+                                                                         "_meta": {"codex_approval_kind": "mcp_tool_call", "tool_params": {"text": "hi"}}}}
+    for behavior, expected in (("allow", "accept"), ("deny", "decline")):
+        d = codex_app.CodexAppDriver("codex", broker=Broker(behavior))
+        d._write = lambda s, obj: written.append(obj)
+        s = type("S", (), {"proc": Proc})()
+        await d._server_request("t1", s, msg)
+        assert written[-1] == {"id": 7, "result": {"action": expected}}
+    assert asked[0] == ("mcp__x_Fake_1__echo", {"text": "hi"})
+    # without a broker, or for something that is not a tool call, the answer is no
+    d = codex_app.CodexAppDriver("codex")
+    d._write = lambda s, obj: written.append(obj)
+    await d._server_request("t1", type("S", (), {"proc": Proc})(), msg)
+    assert written[-1] == {"id": 7, "result": {"action": "decline"}}

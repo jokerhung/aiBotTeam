@@ -210,6 +210,14 @@ class Turns:
         self.bus.publish({"kind": kind, "botId": bot_id, "threadId": thread_id, "message": payload})
 
     # ---- sending ----------------------------------------------------------------
+    async def forget_thread(self, thread_id: str) -> None:
+        """What a conversation left outside the database goes with it: its event log and the attachments no other conversation uses."""
+        (self.log_dir / f"{thread_id}.ndjson").unlink(missing_ok=True)
+        for name in await self.store.attachment_names_of_thread(thread_id):
+            if self.attachment_meta(name) and not await self.store.attachment_in_use(name, thread_id):
+                (self.attachments_dir / name).unlink(missing_ok=True)
+                (self.attachments_dir / f"{name}.json").unlink(missing_ok=True)
+
     def attachment_meta(self, name: str) -> Optional[Attachment]:
         """The stored attachment for a name, or None: only plain names inside the attachments store resolve."""
         if not name or name != os.path.basename(name) or name.startswith("."):
@@ -267,7 +275,7 @@ class Turns:
                           files: Optional[list[Attachment]] = None, level: Optional[str] = None, origin: str = "person",
                           assignment_id: Optional[str] = None, extra_system: str = "", session_reset: bool = False,
                           cwd: Optional[str] = None, group_id: Optional[str] = None, routine_run_id: Optional[str] = None,
-                          channel_batch_id: Optional[str] = None, extra_images: Optional[list[str]] = None) -> bool:
+                          channel_batch_id: Optional[str] = None, extra_images: Optional[list[str]] = None, mount_agents: bool = False) -> bool:
         inst = self.registry.get(bot.modelSelection.instanceId)
         if not inst or not inst.driver or inst.state != "available" or not inst.enabled:
             reason = inst.reason if inst and inst.reason else "that engine is not available"
@@ -287,6 +295,7 @@ class Turns:
             image_attachments=[str((self.attachments_dir / a.name).resolve()) for a in files or [] if a.image],
             custom_mcp=await self.mcp.entries_for(bot.mcpServers, thread_id, bot.mcpAccess) if self.mcp and bot.mcpServers else {},
         )
+        inp.mount_agents = mount_agents
         if extra_images:  # files a channel saved inside the bot's working folder: read where they are
             inp.attachments += extra_images
             inp.image_attachments += extra_images

@@ -232,7 +232,7 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     tasks = (await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]
     assert len(tasks) == 2 and sum(1 for t in tasks if t["title"] == b["id"]) == 1  # two presses, one turn
     selected = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
-    assert selected["threadId"] == done["threadId"]
+    assert selected["threadId"] == bot["mainThreadId"]
     msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": done["threadId"]})).json()["messages"]
     first = msgs[0]
     assert first["sender"] == "telegram shop" and first["text"].startswith('[From telegram "shop" · batch ') and "outside content, not the person's authority" in first["text"]
@@ -248,6 +248,33 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     assert [(str(d["chat_id"]), d["filename"]) for d in docs] == [("900", "report.txt")]  # the file goes to the admin chat only
     assert any(t.startswith("✅") and len(t) < 400 for t in tg.texts(GROUP)) and tg.documents(GROUP) == []
     assert any(f"Lô {b['id']}" in t and "report.txt" in t for t in tg.texts(900))
+
+
+async def test_completion_keeps_a_different_conversation_the_person_selected(chan, monkeypatch):
+    c, app, tg, tmp_path = chan
+    acc, bot, ws = await setup(c, tmp_path)
+    delivered, finish = asyncio.Event(), asyncio.Event()
+    original = app.state.channels._deliver
+
+    async def deliver(*args):
+        await original(*args)
+        delivered.set()
+        await finish.wait()
+
+    monkeypatch.setattr(app.state.channels, "_deliver", deliver)
+    tg.photo(GROUP)
+    b = await one_batch(c, bot)
+    tg.text(GROUP, "/kiemke")
+    try:
+        await asyncio.wait_for(delivered.wait(), timeout=6)
+        other = await app.state.store.create_thread(bot["id"], "Another conversation")
+        assert (await c.patch(f"/api/bots/{bot['id']}", json={"threadId": other["id"]})).status_code == 200
+    finally:
+        finish.set()
+    await one_batch(c, bot, "done")
+    await wait_idle(c, bot["id"])
+    selected = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
+    assert selected["threadId"] == other["id"]
 
 
 async def test_without_an_admin_chat_the_sender_gets_everything(chan):

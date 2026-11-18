@@ -74,13 +74,15 @@ try {
   await log.getByText("Live result: 42 items", { exact: true }).waitFor();
   target.threadId = "main-test";
   target.threadBusy = false;
+  target.busy = false;
+  target.tasks[0].busy = false;
   await page.evaluate((bot) => window.channelEvents.onmessage({ data: JSON.stringify({ kind: "bot", bot }) }), target);
   await log.getByText(summary, { exact: true }).waitFor();
   assert.equal(await log.getByText("Live result: 42 items", { exact: true }).count(), 0);
   assert.equal(await log.getByText("Full original Telegram prompt", { exact: true }).count(), 0);
   await page.getByTestId("thread-ref").click();
   await log.getByText("Inventory details visible", { exact: true }).waitFor();
-  console.log("PASS: job auto-selection shows live details; main contains only a compact reference that reopens the job.");
+  console.log("PASS: a running job shows live details, completion switches to compact main, and its reference reopens job history.");
 
 } finally {
   await browser.close();

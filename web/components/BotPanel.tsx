@@ -74,6 +74,22 @@ function ModelPicker({ value, onChange, allowNone }: { value: ModelSelection | n
 }
 
 /** Which custom MCP servers and connected apps this bot may use, read or write, and whether sending out asks first. */
+/** How long a bot that only reads reuses what it read (a sheet, a file) before it reads again; 0 reads every time. */
+function CacheMinutes({ name, value, onChange }: { name: string; value: number; onChange: (n: number) => void }) {
+  const t = useT();
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-6 text-[12.5px] text-ink-secondary" data-testid="cache-minutes">
+      <label htmlFor={`cache-${name}`}>{t("Cache (minutes)")}</label>
+      <input id={`cache-${name}`} type="number" inputMode="numeric" min={0} max={1440} value={text} aria-label={`${name} ${t("Cache (minutes)")}`}
+        onChange={(e) => { setText(e.target.value); const n = Number(e.target.value); if (e.target.value !== "" && Number.isInteger(n) && n >= 0 && n <= 1440) onChange(n); }}
+        onBlur={() => setText(String(value))} className="h-7 w-20 rounded-md bg-raised px-2 text-ink" />
+      <span className="text-ink-tertiary">{t("0 = no cache: every question reads the file again.")}</span>
+    </div>
+  );
+}
+
 function AppsField({ bot }: { bot: Bot }) {
   const { state } = useStore();
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -81,7 +97,7 @@ function AppsField({ bot }: { bot: Bot }) {
   const used = bot.mcpServers ?? [];
   const access = bot.mcpAccess ?? {};
   const setUsed = (id: string, on: boolean) => void queuePatch(bot.id, { mcpServers: on ? [...used, id] : used.filter((x) => x !== id) });
-  const setAccess = (id: string, patch: Partial<{ scope: "read" | "write"; outbound: "ask" | "allow" }>) =>
+  const setAccess = (id: string, patch: Partial<{ scope: "read" | "write"; outbound: "ask" | "allow"; cacheMinutes: number }>) =>
     void queuePatch(bot.id, { mcpAccess: { ...access, [id]: { ...(access[id] ?? { scope: "read" as const, outbound: "ask" as const }), ...patch } } });
   return (
     <Field label="Apps and servers" hint="What this bot may use. Read lets it look; Write lets it change things, and Ask makes it check with you before it sends anything out.">
@@ -108,6 +124,7 @@ function AppsField({ bot }: { bot: Bot }) {
                   )}
                 </div>
               )}
+              {on && (acc.allowTools?.length ?? 0) > 0 && <CacheMinutes name={s.name} value={acc.cacheMinutes ?? 0} onChange={(n) => setAccess(s.id, { cacheMinutes: n })} />}
             </div>
           );
         })}

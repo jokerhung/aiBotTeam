@@ -44,7 +44,7 @@ def cmd_serve(a: argparse.Namespace) -> int:
     url = f"http://{'127.0.0.1' if a.host in ('0.0.0.0', '::') else a.host}:{a.port}"
     print(f"BotTeam on {url}" + ("" if web else "  (no web build found: run `pnpm build:static`, or use `pnpm dev` for the UI)"), flush=True)
     if not is_loopback(a.host):
-        print("Domain access needs browser pairing; localhost and LAN/Tailscale IPs open directly. The code is printed below.", flush=True)
+        print("Domain access needs browser pairing; localhost and LAN/Tailscale IPs open directly. To pair a browser press the phone button in the app on this computer: it shows a one-time code.", flush=True)
     if not a.no_open and web:
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host=a.host, port=a.port, proxy_headers=False, loop="botteam.loop:loop_factory", log_level="warning")

@@ -18,6 +18,7 @@ SESSION_TTL = 30 * 24 * 3600
 COOKIE = "botteam_session"
 OPEN_PATHS = ("/api/auth/pair", "/api/auth/status", "/health")
 MAX_TRIES = 8
+MAX_CODES = 5
 
 
 def _hash(v: str) -> str:
@@ -32,6 +33,10 @@ class Pairing:
         self.tries: list[float] = []
 
     def new_code(self) -> str:
+        now = time.time()
+        self.codes = {k: e for k, e in self.codes.items() if e > now}  # an expired code is gone, and only the newest few stay valid
+        while len(self.codes) >= MAX_CODES:
+            self.codes.pop(min(self.codes, key=self.codes.get))
         code = f"{secrets.randbelow(10**8):08d}"
         code = f"{code[:4]}-{code[4:]}"
         self.codes[_hash(code)] = time.time() + CODE_TTL

@@ -21,6 +21,7 @@ from ..runtime import envelope, escape_notes
 from ..store import new_id, now_ms
 from ..wire import WireChannelAccount, WireChannelBatch, WireChannelGrant, WireMessage
 from .base import Adapter, Button, ChannelError, ChannelInfo, Incoming, Sent, safe_name, split_text
+from .chat import CHAT_TAG, HELP as HELP_CHAT, ChatRunner
 from .db import ChannelDb
 from .telegram import TelegramAdapter
 from .zalo import ZaloAdapter
@@ -94,6 +95,7 @@ class ChannelService:
         self.cleaned = ""
         self.maintenance: Optional[asyncio.Task] = None
         self.stopping = False
+        self.chat = ChatRunner(self)
 
     # ---- life ----------------------------------------------------------------------------------------------------------------
     async def start(self) -> None:
@@ -140,7 +142,10 @@ class ChannelService:
         cls = ADAPTERS.get(app)
         if not cls:
             raise ChannelError("Unknown channel", 404)
-        return cls(token, transport=self.transport)
+        adapter = cls(token, transport=self.transport)
+        if app == "zalo":
+            adapter.shape_log = Path(self.config.path).parent / "channel-raw" / "zalo-shapes.ndjson"  # the format of group messages and replies, content blurred
+        return adapter
 
     def _adapter(self, acc: dict) -> Optional[Adapter]:
         a = self.adapters.get(acc["id"])
@@ -343,6 +348,9 @@ class ChannelService:
             chats = []
             for c in body["chats"] or []:
                 c = str(c).strip()
+                if c == "*" and (body.get("mode") or cur.get("mode")) == "chat":
+                    chats.append(c)
+                    continue
                 if not CHAT_ID.match(c):
                     raise ChannelError(f"“{c}” is not a chat id", 400)
                 if c not in chats:
@@ -375,6 +383,10 @@ class ChannelService:
             if r and not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", r):
                 raise ChannelError("remindAt is a time such as 18:30", 400)
             f["remindAt"] = r
+        if "mode" in body:
+            if body["mode"] not in ("batch", "chat"):
+                raise ChannelError("mode is batch or chat", 400)
+            f["mode"] = body["mode"]
         if "prompt" in body:
             p = str(body["prompt"] or "")
             if len(p) > 4000:
@@ -382,7 +394,7 @@ class ChannelService:
             f["prompt"] = p
         g = await self.db.put_grant(account_id, bot_id, **f)
         out = await self.grant_public(g)
-        out["warnings"] = self.warnings(bot)
+        out["warnings"] = [] if g.get("mode") == "chat" else self.warnings(bot)  # an answering bot needs no working folder or image reading
         self.bus.publish({"kind": "channel.grant", "grant": out})
         await self.publish_account(account_id)
         return out
@@ -412,6 +424,19 @@ class ChannelService:
         await self.db.delete_grants_of_bot(bot_id)
         for g in grants:
             await self.publish_account(g["accountId"])
+
+    async def thread_deleted(self, thread_id: str) -> None:
+        """A conversation was deleted: what its batches kept (their folders of photos and files, their log lines) goes with it."""
+        for b in await self.db.batches_of_thread(thread_id):
+            if b["status"] in OPEN:
+                await self.cancel_batch(b["id"], "The conversation was deleted.")
+            job = Path(b["dir"]) if b["dir"] else None
+            if job and job.name == b["id"] and job.parent.name == "jobs" and job.is_dir():  # only the folder this service made
+                shutil.rmtree(job, ignore_errors=True)
+            await self.db.delete_batch(b["id"])
+            self.bus.publish({"kind": "channel.batch.deleted", "batchId": b["id"]})
+        for key in [k for k, v in self.chat.threads.items() if v == thread_id]:
+            self.chat.threads.pop(key, None)  # the next question from that chat starts a new conversation
 
     async def grants_of_bot(self, bot_id: str) -> list[dict]:
         out = []
@@ -502,7 +527,7 @@ class ChannelService:
 
     async def _route(self, acc: dict, chat_id: str) -> Optional[tuple[dict, Any]]:
         for g in await self.db.list_grants(acc["id"]):
-            if chat_id in g["chats"]:
+            if chat_id in g["chats"] or (g.get("mode") == "chat" and "*" in g["chats"]):  # `*`: an answering bot serves anyone who writes to it
                 bot = await self.store.get_bot(g["botId"])
                 if bot:
                     return g, bot
@@ -537,13 +562,19 @@ class ChannelService:
             await self._event(acc, inc, "filtered", "no bot serves this chat")
             return  # a chat that no bot serves gets nothing but /id
         grant, bot = routed
+        if grant.get("mode") == "chat":  # an answering bot: text is a question, everything else gets a pointer
+            if (inc.kind == "text" and not cmd) or inc.kind == "image":  # a photo (of a carton label) is a question too
+                await self.chat.ask(acc, adapter, grant, bot, inc)
+            else:
+                await self._say(adapter, inc.chat_id, HELP_CHAT)
+            return
         if cmd:
             await self._command_run(acc, adapter, grant, bot, inc, *cmd)
         elif inc.kind in ("image", "file"):
             await self._collect(acc, adapter, grant, bot, inc)
         elif inc.kind == "other" and inc.text:
             await self._event(acc, inc, "skipped", "unsupported message type", bot.id)
-            await self._say(adapter, inc.chat_id, "Loại tin nhắn này chưa được hỗ trợ. Hãy gửi ảnh hoặc chữ.")
+            await self._say(adapter, inc.chat_id, "Tôi không thể thực hiện yêu cầu này: loại tin nhắn này chưa được hỗ trợ. Hãy gửi ảnh hoặc chữ.")
 
     async def _command_run(self, acc, adapter, grant, bot, inc: Incoming, name: str, arg: str) -> None:
         chat = inc.chat_id
@@ -897,6 +928,9 @@ class ChannelService:
     async def turn_done(self, thread_id: str, run, d: dict) -> None:
         """The turn of a batch ended (called by the turn pipeline)."""
         bid = run.channel_batch_id
+        if bid and bid.startswith(CHAT_TAG):  # a question, not a batch
+            await self.chat.done(bid, run, d)
+            return
         b = await self.db.get_batch(bid) if bid else None
         if not b or b["status"] != "running":
             return  # stopped or timed out: that path already told everyone
@@ -915,6 +949,11 @@ class ChannelService:
             await self.db.update_batch(bid, status="done", error="", finishedAt=now_ms())
             await self._deliver(bid, run.final_text, outs)
             await self._status_now(bid)
+            bot = await self.store.get_bot(b["botId"])
+            if bot and bot.threadId == thread_id:
+                bot.threadId = bot.mainThreadId
+                await self.store.save_bot(bot)
+                await self.turns.publish_bot(bot)
             await self._next_for_bot(b["botId"])
 
     async def _targets(self, b: dict, acc: dict) -> list[tuple[Adapter, str]]:

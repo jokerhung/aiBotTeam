@@ -4,6 +4,7 @@ import { ArrowUp, Menu, Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { randomUuid } from "@/lib/random-uuid";
 import type { Bot, Group, Message } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
@@ -122,7 +123,7 @@ function RoomComposer({ group, dock }: { group: Group; dock?: React.ReactNode })
   const send = async () => {
     const body = text.trim();
     if (!body) return;
-    const sendId = crypto.randomUUID();
+    const sendId = randomUuid();
     save("");
     dispatch({ type: "optimistic", threadId: group.threadId, message: { id: `pending-${sendId}`, sendId, role: "user", kind: "text", text: body, at: Date.now(), pending: true } });
     try {

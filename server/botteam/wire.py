@@ -372,6 +372,7 @@ class WireChannelGrant(BaseModel):
     remindAt: str = ""
     retentionDays: int = 60
     prompt: str = ""
+    mode: str = "batch"  # batch: collect files and run on Check; chat: every text message is a question the bot answers
     warnings: list[str] = Field(default_factory=list)
 
 

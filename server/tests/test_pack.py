@@ -1,5 +1,6 @@
 """Running it for real: pairing for remote access, the backup and restore of the data folder, and serving the web build."""
 import io
+import re
 import zipfile
 
 import httpx
@@ -204,3 +205,35 @@ def test_one_command_serves_the_api_and_the_web_build(tmp_path):
             p.wait(10)
         except subprocess.TimeoutExpired:
             p.kill()
+
+
+async def test_a_pairing_code_is_made_in_the_app_only_from_a_direct_address_and_works_once(tmp_path):
+    app = create_app(home=tmp_path, remote=True)
+    async with LifespanManager(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost") as c:
+            local = {"host": "localhost:5299"}
+            made = (await c.post("/api/auth/pair-code", headers=local)).json()
+            assert made["required"] is True and re.fullmatch(r"\d{4}-\d{4}", made["code"]) and made["expiresIn"] == 600
+            domain = {"host": "127.0.0.1:8899", "x-forwarded-host": "bot.example.com:5299"}
+            assert (await c.post("/api/auth/pair", headers=domain, json={"code": made["code"]})).status_code == 200  # the browser that came through the domain
+            assert (await c.post("/api/auth/pair", headers=domain, json={"code": made["code"]})).status_code == 401  # and only once
+            # a browser that came through a domain cannot make codes, not even a paired one; a stranger cannot either
+            assert (await c.post("/api/auth/pair-code", headers=domain)).status_code == 403
+            # only the newest few codes are valid at a time
+            first = (await c.post("/api/auth/pair-code", headers=local)).json()["code"]
+            for _ in range(5):
+                await c.post("/api/auth/pair-code", headers=local)
+            assert (await c.post("/api/auth/pair", headers=domain, json={"code": first})).status_code == 401
+    (tmp_path / "off").mkdir()
+    off = create_app(home=tmp_path / "off", remote=False)
+    async with LifespanManager(off):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=off), base_url="http://localhost") as c:
+            assert (await c.post("/api/auth/pair-code")).json() == {"required": False}
+
+
+async def test_the_code_is_no_longer_printed_in_the_terminal(tmp_path, capsys):
+    app = create_app(home=tmp_path, remote=True)
+    async with LifespanManager(app):
+        pass
+    out = capsys.readouterr().out
+    assert "phone button" in out and not re.search(r"\d{4}-\d{4}", out)

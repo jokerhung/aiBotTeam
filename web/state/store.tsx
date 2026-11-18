@@ -53,12 +53,14 @@ export interface AppState {
   notifPinned: boolean;
   inboxOpen: boolean;
   appsOpen: boolean;
+  pairOpen: boolean;
   /** The tab the Connect apps dialog opens on. */
   appsTab: "apps" | "mcp" | "input";
   whatsNewOpen: boolean;
   usageOpen: boolean;
   shareSection: string | null;
   importOpen: boolean;
+  importBotOpen: boolean;
   /** Bumped when a custom MCP server changes (the panels refetch). */
   mcpTick: number;
   /** Bumped when an input channel's account, grant or batch changes (the Input tab and the bot's panel refetch). */
@@ -101,10 +103,12 @@ export type Action =
   | { type: "notifPanel"; open?: boolean; pinned?: boolean }
   | { type: "inboxPanel"; open: boolean }
   | { type: "apps"; open: boolean; tab?: "apps" | "mcp" | "input" }
+  | { type: "pair"; open: boolean }
   | { type: "whatsNew"; open: boolean }
   | { type: "usage"; open: boolean }
   | { type: "shareTeam"; id: string | null }
   | { type: "importTeam"; open: boolean }
+  | { type: "importBot"; open: boolean }
   | { type: "teamData"; groups?: Group[]; routines?: Routine[]; runs?: RoutineRun[]; webhooks?: Webhook[]; notifications?: Notification[]; inbox?: InboxItem[] }
   | { type: "attempts"; webhookId: string; attempts: WebhookAttempt[] }
   | { type: "frame"; frame: ServerFrame };
@@ -113,7 +117,7 @@ export const initialState: AppState = {
   panelView: "overview", panelVersion: 0,
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
-  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, mcpTick: 0, channelTick: 0,
+  groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, pairOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, importBotOpen: false, mcpTick: 0, channelTick: 0,
   routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
   settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
@@ -166,12 +170,16 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, notifOpen: action.open ?? state.notifOpen, notifPinned: action.pinned ?? state.notifPinned };
     case "shareTeam":
       return { ...state, shareSection: action.id };
+    case "importBot":
+      return { ...state, importBotOpen: action.open };
     case "importTeam":
       return { ...state, importOpen: action.open };
     case "usage":
       return { ...state, usageOpen: action.open };
     case "whatsNew":
       return { ...state, whatsNewOpen: action.open };
+    case "pair":
+      return { ...state, pairOpen: action.open };
     case "apps":
       return { ...state, appsOpen: action.open, appsTab: action.open ? action.tab ?? "apps" : "apps" };
     case "inboxPanel":

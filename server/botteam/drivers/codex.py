@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,6 +27,17 @@ def codex_models() -> list[dict]:
     return models
 
 
+def mcp_overrides(custom_mcp: dict | None) -> list[str]:
+    """The person's MCP servers (reached through our proxy) as Codex config overrides: `-c mcp_servers.<name>.<key>=<TOML>`."""
+    args: list[str] = []
+    for key, ent in (custom_mcp or {}).items():
+        name = re.sub(r"[^A-Za-z0-9_]", "_", key)
+        args += ["-c", f"mcp_servers.{name}.command={json.dumps(ent['command'])}", "-c", f"mcp_servers.{name}.args={json.dumps(ent.get('args') or [])}"]
+        for k, v in (ent.get("env") or {}).items():  # one dotted key each: an inline table does not survive Codex's -c parsing
+            args += ["-c", f"mcp_servers.{name}.env.{k}={json.dumps(v)}"]
+    return args
+
+
 @dataclass
 class Run:
     proc: object
@@ -38,7 +50,7 @@ class Run:
 
 class CodexDriver(Emitter):
     provider = "codex"
-    capabilities = Capabilities(images=True, effortLevels=["low", "medium", "high"], strictResume=True)
+    capabilities = Capabilities(images=True, effortLevels=["low", "medium", "high"], strictResume=True)  # custom MCP servers: see build_args
 
     def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None) -> None:
         super().__init__()
@@ -55,6 +67,7 @@ class CodexDriver(Emitter):
             args += ["-m", inp.model]
         if inp.effort:
             args += ["-c", f'model_reasoning_effort="{inp.effort}"']
+        args += mcp_overrides(inp.custom_mcp)
         for path in inp.image_attachments:
             args += ["-i", path]
         if inp.resume_cursor and not inp.session_reset:

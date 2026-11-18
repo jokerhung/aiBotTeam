@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS channel_accounts(
 CREATE TABLE IF NOT EXISTS channel_grants(
   account_id TEXT NOT NULL, bot_id TEXT NOT NULL, chats TEXT NOT NULL DEFAULT '[]', admin_chats TEXT NOT NULL DEFAULT '[]',
   max_photos INTEGER NOT NULL DEFAULT 40, timeout_sec INTEGER NOT NULL DEFAULT 900, remind_at TEXT NOT NULL DEFAULT '',
-  retention_days INTEGER NOT NULL DEFAULT 60, prompt TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+  retention_days INTEGER NOT NULL DEFAULT 60, prompt TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, mode TEXT NOT NULL DEFAULT 'batch',
   PRIMARY KEY(account_id, bot_id));
 CREATE TABLE IF NOT EXISTS channel_batches(
   id TEXT PRIMARY KEY, account_id TEXT NOT NULL, bot_id TEXT NOT NULL, chat_id TEXT NOT NULL, user_id TEXT NOT NULL, user_name TEXT NOT NULL DEFAULT '',
@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS cb_bot ON channel_batches(bot_id, status);
 
 ACCOUNT_COLS = {"label": "label", "username": "username", "enabled": "enabled", "cursor": "cursor", "lastAt": "last_at", "lastError": "last_error"}
 GRANT_COLS = {"chats": "chats", "adminChats": "admin_chats", "maxPhotos": "max_photos", "timeoutSec": "timeout_sec", "remindAt": "remind_at",
-              "retentionDays": "retention_days", "prompt": "prompt"}
+              "retentionDays": "retention_days", "prompt": "prompt", "mode": "mode"}
 BATCH_COLS = {"status": "status", "parked": "parked", "machine": "machine", "dir": "dir", "threadId": "thread_id", "statusMessageId": "status_message_id",
               "files": "files", "error": "error", "purged": "purged", "startedAt": "started_at", "finishedAt": "finished_at", "userName": "user_name", "cardId": "card_id"}
 JSON_COLS = {"chats", "adminChats", "files"}
@@ -43,7 +43,7 @@ def _account(r) -> dict[str, Any]:
 
 def _grant(r) -> dict[str, Any]:
     return {"accountId": r[0], "botId": r[1], "chats": json.loads(r[2]), "adminChats": json.loads(r[3]), "maxPhotos": r[4], "timeoutSec": r[5],
-            "remindAt": r[6], "retentionDays": r[7], "prompt": r[8], "createdAt": r[9]}
+            "remindAt": r[6], "retentionDays": r[7], "prompt": r[8], "createdAt": r[9], "mode": r[10]}
 
 
 def _batch(r) -> dict[str, Any]:
@@ -53,7 +53,7 @@ def _batch(r) -> dict[str, Any]:
 
 
 ACC_SEL = "id, app, label, remote_id, username, enabled, cursor, last_at, last_error, created_at"
-GRANT_SEL = "account_id, bot_id, chats, admin_chats, max_photos, timeout_sec, remind_at, retention_days, prompt, created_at"
+GRANT_SEL = "account_id, bot_id, chats, admin_chats, max_photos, timeout_sec, remind_at, retention_days, prompt, created_at, mode"
 BATCH_SEL = ("id, account_id, bot_id, chat_id, user_id, user_name, status, parked, machine, dir, thread_id, status_message_id, files, error, purged, "
              "started_at, finished_at, created_at, updated_at, card_id")
 
@@ -69,7 +69,11 @@ class ChannelDb:
     async def open(self) -> None:
         await self.db.executescript(SCHEMA)
         cur = await self.db.execute("PRAGMA table_info(channel_batches)")
-        if "card_id" not in {r[1] for r in await cur.fetchall()}:  # a database made before batches had a line in the chat
+        cols = {r[1] for r in await cur.fetchall()}
+        cur = await self.db.execute("PRAGMA table_info(channel_grants)")
+        if "mode" not in {r[1] for r in await cur.fetchall()}:  # a database made before a grant could answer questions
+            await self.db.execute("ALTER TABLE channel_grants ADD COLUMN mode TEXT NOT NULL DEFAULT 'batch'")
+        if "card_id" not in cols:  # a database made before batches had a line in the chat
             await self.db.execute("ALTER TABLE channel_batches ADD COLUMN card_id TEXT NOT NULL DEFAULT ''")
         await self.db.commit()
 
@@ -182,6 +186,15 @@ class ChannelDb:
         cur = await self.db.execute(f"SELECT {BATCH_SEL} FROM channel_batches" + (" WHERE " + " AND ".join(where) if where else "")
                                     + f" ORDER BY created_at {'DESC' if newest_first else 'ASC'}, rowid {'DESC' if newest_first else 'ASC'} LIMIT ?", (*args, limit))
         return [_batch(r) for r in await cur.fetchall()]
+
+    async def batches_of_thread(self, thread_id: str) -> list[dict]:
+        cur = await self.db.execute(f"SELECT {BATCH_SEL} FROM channel_batches WHERE thread_id=?", (thread_id,))
+        return [_batch(r) for r in await cur.fetchall()]
+
+    async def delete_batch(self, batch_id: str) -> None:
+        await self.db.execute("DELETE FROM channel_events WHERE batch_id=?", (batch_id,))
+        await self.db.execute("DELETE FROM channel_batches WHERE id=?", (batch_id,))
+        await self.db.commit()
 
     async def batch_of_thread(self, thread_id: str) -> Optional[dict]:
         cur = await self.db.execute(f"SELECT {BATCH_SEL} FROM channel_batches WHERE thread_id=? ORDER BY created_at DESC LIMIT 1", (thread_id,))

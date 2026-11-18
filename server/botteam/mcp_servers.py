@@ -200,7 +200,8 @@ class McpServers:
             run.mkdir(parents=True, exist_ok=True)
             path = run / f"{sid}.json"
             scope = ((access or {}).get(sid) or {}).get("scope")
-            body = {**spec, "outputDir": str(self.dir / "mcp-output"), "readOnly": scope == "read"}
+            body = {**spec, "outputDir": str(self.dir / "mcp-output"), "readOnly": scope == "read", "allowTools": list(((access or {}).get(sid) or {}).get("allowTools") or []),
+                    "cacheSeconds": int(((access or {}).get(sid) or {}).get("cacheMinutes") or 0) * 60, "cacheDir": str(self.dir / "mcp-cache" / sid)}
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w", encoding="utf8") as f:
                 json.dump(body, f)
@@ -220,6 +221,15 @@ class McpServers:
                 run.rmdir()
             except OSError:
                 pass
+
+    def sweep_cache(self, older_than_hours: int = 48) -> int:
+        """Saved tool answers are only ever used for minutes: the ones from long ago are removed."""
+        gone = 0
+        for f in (self.dir / "mcp-cache").glob("*/*"):
+            if f.is_file() and time.time() - f.stat().st_mtime > older_than_hours * 3600:
+                f.unlink(missing_ok=True)
+                gone += 1
+        return gone
 
     def sweep_output(self, older_than_days: int = 14) -> int:
         """Cut-off outputs are kept for a while, then removed."""

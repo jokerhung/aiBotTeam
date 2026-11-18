@@ -27,6 +27,7 @@ def new_id(prefix: str) -> str:
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS connected_apps_cache(cache_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS bots(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS threads(
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, title TEXT NOT NULL, main INTEGER NOT NULL DEFAULT 0,
@@ -78,6 +79,17 @@ class Store:
 
     async def close(self) -> None:
         await self.db.close()
+
+    async def connected_apps_cache(self, key: str) -> Optional[dict]:
+        cur = await self.db.execute("SELECT body FROM connected_apps_cache WHERE cache_key=?", (key,))
+        row = await cur.fetchone()
+        return json.loads(row[0]) if row else None
+
+    async def save_connected_apps_cache(self, key: str, body: dict) -> None:
+        await self.db.execute("INSERT INTO connected_apps_cache(cache_key,body,updated_at) VALUES(?,?,?) "
+                              "ON CONFLICT(cache_key) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at",
+                              (key, json.dumps(body, ensure_ascii=False), now_ms()))
+        await self.db.commit()
 
     async def _migrate(self) -> None:
         """Phase 1 stored messages per bot; give each bot a main thread and chain its messages."""
@@ -211,6 +223,21 @@ class Store:
         """Forget the engine's session so the next turn starts a fresh one (the transcript stays)."""
         await self.db.execute("UPDATE threads SET cursor=NULL WHERE id=?", (thread_id,))
         await self.db.commit()
+
+    async def attachment_names_of_thread(self, thread_id: str) -> set[str]:
+        """Stored attachment names that messages of this thread refer to (every branch)."""
+        cur = await self.db.execute("SELECT body FROM messages WHERE thread_id=?", (thread_id,))
+        names: set[str] = set()
+        for (body,) in await cur.fetchall():
+            try:
+                names.update(a["name"] for a in json.loads(body).get("attachments") or [] if isinstance(a, dict) and a.get("name"))
+            except ValueError:
+                continue
+        return names
+
+    async def attachment_in_use(self, name: str, except_thread: str) -> bool:
+        cur = await self.db.execute("SELECT 1 FROM messages WHERE thread_id!=? AND body LIKE ? LIMIT 1", (except_thread, f'%"{name}"%'))
+        return await cur.fetchone() is not None
 
     async def delete_thread(self, thread_id: str) -> None:
         await self.db.execute("DELETE FROM messages WHERE thread_id=?", (thread_id,))

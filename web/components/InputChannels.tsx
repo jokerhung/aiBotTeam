@@ -19,7 +19,7 @@ const HELP: Record<string, string> = {
 export interface ChannelAccount { id: string; app: string; label: string; username: string; enabled: boolean; state: "active" | "error" | "stopped"; error: string | null; usedBy: string[] }
 interface Channel { id: string; name: string; blurb: string; limits: string[]; maxAccounts: number; connected: boolean; accounts: ChannelAccount[] }
 interface AdminChat { accountId: string; chat: string }
-export interface ChannelGrant { accountId: string; botId: string; botName?: string; chats: string[]; adminChats: AdminChat[]; maxPhotos: number; timeoutSec: number; remindAt: string; retentionDays: number; prompt: string; warnings?: string[] }
+export interface ChannelGrant { accountId: string; botId: string; botName?: string; chats: string[]; adminChats: AdminChat[]; maxPhotos: number; timeoutSec: number; remindAt: string; retentionDays: number; mode?: "batch" | "chat"; prompt: string; warnings?: string[] }
 
 const list = (text: string) => text.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -29,6 +29,7 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
 }) {
   const t = useT();
   const adminText = (g: ChannelGrant | undefined) => (g?.adminChats ?? []).map((a) => (a.accountId === account.id ? a.chat : `${accounts.find((x) => x.id === a.accountId)?.label ?? a.accountId}:${a.chat}`)).join(", ");
+  const [mode, setMode] = useState<"batch" | "chat">(grant?.mode ?? "batch");
   const [chats, setChats] = useState((grant?.chats ?? []).join(", "));
   const [admins, setAdmins] = useState(adminText(grant));
   const [maxPhotos, setMaxPhotos] = useState(String(grant?.maxPhotos ?? 40));
@@ -48,7 +49,7 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
         const other = cut > 0 ? accounts.find((x) => x.label.toLowerCase() === entry.slice(0, cut).toLowerCase()) : undefined;
         return other ? { accountId: other.id, chat: entry.slice(cut + 1) } : { accountId: account.id, chat: entry };
       });
-      const r = await api<ChannelGrant>(base, { method: "PUT", body: JSON.stringify({ chats: list(chats), adminChats, maxPhotos: Number(maxPhotos), timeoutSec: Number(timeoutSec), remindAt: remindAt.trim(), prompt }) });
+      const r = await api<ChannelGrant>(base, { method: "PUT", body: JSON.stringify(mode === "chat" ? { mode, chats: list(chats), timeoutSec: Number(timeoutSec) } : { mode, chats: list(chats), adminChats, maxPhotos: Number(maxPhotos), timeoutSec: Number(timeoutSec), remindAt: remindAt.trim(), prompt }) });
       setWarnings(r.warnings ?? []);
       setNote({ ok: true, text: t("Saved") });
       onChanged();
@@ -71,30 +72,46 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
         <span data-no-i18n="" className="min-w-0 flex-1 truncate font-medium">{botName}</span>
         {grant && <button type="button" disabled={busy} onClick={() => void revoke()} className="rounded-full px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-ink/10">{t("Remove")}</button>}
       </div>
-      <label className={field}>{t("Chats this bot answers (chat ids, separated by commas)")}
-        <input value={chats} onChange={(e) => setChats(e.target.value)} aria-label={t("Chats this bot answers")} placeholder="-1001234567890" data-no-i18n="" className={cn(INPUT, "mt-1 h-9 font-mono text-[13px]")} />
+      <div role="radiogroup" aria-label={t("How the bot works here")} className="mt-2 flex gap-1.5 text-[12.5px]" data-testid="input-grant-mode">
+        {([["batch", "Collect files, run on Check"], ["chat", "Answer every message"]] as const).map(([id, label]) => (
+          <button key={id} type="button" role="radio" aria-checked={mode === id} onClick={() => setMode(id)}
+            className={cn("flex-1 rounded-lg px-2 py-1.5 ring-1 ring-ink/10", mode === id ? "bg-accent/12 ring-accent/60" : "hover:bg-ink/[0.04]")}>{t(label)}</button>
+        ))}
+      </div>
+      <label className={field}>{t(mode === "chat" ? "Chats this bot answers (chat ids, or * for anyone who writes to it)" : "Chats this bot answers (chat ids, separated by commas)")}
+        <input value={chats} onChange={(e) => setChats(e.target.value)} aria-label={t("Chats this bot answers")} placeholder={mode === "chat" ? "*" : "-1001234567890"} data-no-i18n="" className={cn(INPUT, "mt-1 h-9 font-mono text-[13px]")} />
       </label>
-      <label className={field}>{t("Chats that receive the result files (empty: the chat that sent the batch)")}
-        <input value={admins} onChange={(e) => setAdmins(e.target.value)} aria-label={t("Chats that receive the results")} placeholder="123456789" data-no-i18n="" className={cn(INPUT, "mt-1 h-9 font-mono text-[13px]")} />
-      </label>
-      <div className="flex gap-2">
-        <label className={cn(field, "flex-1")}>{t("Photos per batch")}
-          <input value={maxPhotos} onChange={(e) => setMaxPhotos(e.target.value)} inputMode="numeric" aria-label={t("Photos per batch")} className={cn(INPUT, "mt-1 h-9")} />
+      <div className="mt-1 text-[12px] leading-[1.4] text-ink-tertiary" data-testid="input-grant-chat-hint">{t("Required. To find a chat id, send /id in that chat (or to the bot): it answers with the id even before it is allowed.")}</div>
+      {mode === "batch" && (
+        <label className={field}>{t("Chats that receive the result files (empty: the chat that sent the batch)")}
+          <input value={admins} onChange={(e) => setAdmins(e.target.value)} aria-label={t("Chats that receive the results")} placeholder="123456789" data-no-i18n="" className={cn(INPUT, "mt-1 h-9 font-mono text-[13px]")} />
         </label>
+      )}
+      <div className="flex gap-2">
+        {mode === "batch" && (
+          <label className={cn(field, "flex-1")}>{t("Photos per batch")}
+            <input value={maxPhotos} onChange={(e) => setMaxPhotos(e.target.value)} inputMode="numeric" aria-label={t("Photos per batch")} className={cn(INPUT, "mt-1 h-9")} />
+          </label>
+        )}
         <label className={cn(field, "flex-1")}>{t("Time limit (seconds)")}
           <input value={timeoutSec} onChange={(e) => setTimeoutSec(e.target.value)} inputMode="numeric" aria-label={t("Time limit (seconds)")} className={cn(INPUT, "mt-1 h-9")} />
         </label>
-        <label className={cn(field, "flex-1")}>{t("Reminder time")}
-          <input value={remindAt} onChange={(e) => setRemindAt(e.target.value)} placeholder={t("e.g. 18:30")} aria-label={t("Reminder time")} className={cn(INPUT, "mt-1 h-9")} />
-        </label>
+        {mode === "batch" && (
+          <label className={cn(field, "flex-1")}>{t("Reminder time")}
+            <input value={remindAt} onChange={(e) => setRemindAt(e.target.value)} placeholder={t("e.g. 18:30")} aria-label={t("Reminder time")} className={cn(INPUT, "mt-1 h-9")} />
+          </label>
+        )}
       </div>
-      <label className={field}>{t("What the bot is told for each batch ({job} is the batch folder)")}
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} aria-label={t("What the bot is told for each batch")} className={cn(INPUT, "mt-1 resize-y py-2 text-[13px]")} />
-      </label>
+      {mode === "batch" && (
+        <label className={field}>{t("What the bot is told for each batch ({job} is the batch folder)")}
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} aria-label={t("What the bot is told for each batch")} className={cn(INPUT, "mt-1 resize-y py-2 text-[13px]")} />
+        </label>
+      )}
+      {mode === "chat" && <div className="mt-2 text-[12.5px] leading-[1.4] text-ink-secondary">{t("Every text message (or photo) sent to the bot is a question: it answers in the same chat, one question at a time. Give the bot its instructions in its profile.")}</div>}
       {warnings.map((w) => <div key={w} role="status" className="mt-1.5 text-[12.5px] text-warning">{t(w)}</div>)}
       <div className="mt-2 flex items-center justify-end gap-2">
         {note && <span role={note.ok ? "status" : "alert"} data-no-i18n={note.ok ? undefined : ""} className={cn("min-w-0 flex-1 text-[12.5px]", note.ok ? "text-success" : "text-danger")}>{note.text}</span>}
-        <button type="button" disabled={busy || !list(chats).length} onClick={() => void save()} data-testid="input-grant-save"
+        <button type="button" disabled={busy || !list(chats).length} onClick={() => void save()} data-testid="input-grant-save" title={!list(chats).length ? t("Enter at least one chat id first") : undefined}
           className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{grant ? t("Save") : t("Allow this bot")}</button>
       </div>
     </div>

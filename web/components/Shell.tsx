@@ -8,6 +8,8 @@ import { GroupPanelHost, GroupView } from "./GroupView";
 import { InboxPanel, NotificationsPanel } from "./NotificationsPanel";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { ConnectedApps } from "./ConnectedApps";
+import { ImportBotDialog } from "./BotFile";
+import { PairBrowser } from "./PairBrowser";
 import { GuidedTour, WelcomeGate, WhatsNew } from "./Welcome";
 import { UsagePage } from "./Observe";
 import { ImportTeamDialog, ShareTeamDialog } from "./TeamShare";
@@ -96,9 +98,11 @@ export function Shell() {
       <WhatsNew />
       <NewGroupDialog />
       <ConnectedApps />
+      <PairBrowser />
       <UsagePage />
       <ShareTeamDialog />
       <ImportTeamDialog />
+      <ImportBotDialog />
       <NewBotDialog />
       <SettingsModal />
       <CommandPalette />

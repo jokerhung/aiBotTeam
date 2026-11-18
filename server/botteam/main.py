@@ -27,9 +27,10 @@ from .notifications import Notifications
 from .routines import RoutineService
 from .channels import ChannelError, ChannelService
 from .composio import Composio, ComposioError, slug_of
+from . import botfile
 from . import teams as teamlib
 from . import observe
-from .auth import COOKIE, OPEN_PATHS, Pairing, request_needs_pairing
+from .auth import CODE_TTL, COOKIE, OPEN_PATHS, Pairing, request_needs_pairing
 from .backup import BackupError, make_backup
 from .memory import Memory, redact
 from .skills import SkillError, Skills
@@ -127,7 +128,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     browser = BrowserService(home, bus, allow_local=bool((config.data.get("browser") or {}).get("allowLocal")) or os.environ.get("BOTTEAM_BROWSER_LOCAL") == "1",
                              channel=os.environ.get("BOTTEAM_BROWSER_CHANNEL") or None)
     turns.browser = browser
-    composio = Composio(config, mcp, bus)
+    composio = Composio(config, mcp, bus, store)
+    agents.composio = composio
     turns.notify, routines.notify = notify, notify
     turns.groups, agents.groups = groups, groups
     turns.routines, agents.routines = routines, routines
@@ -144,8 +146,11 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def lifespan(app: FastAPI):
         await store.open()
         if pairing.required:
-            print(f"\nBotTeam domain access needs browser pairing (localhost and LAN/Tailscale IPs open directly). Code (valid 10 minutes, once): {pairing.new_code()}\n", flush=True)
+            print("\nBotTeam domain access needs browser pairing (localhost and LAN/Tailscale IPs open directly). "
+                  "To pair a browser, press the phone button at the bottom of the sidebar on this computer: it shows a one-time code.\n", flush=True)
         await store.expire_open_requests()
+        mcp.sweep_cache()  # saved tool answers and cut-off tool outputs are only kept for a while
+        mcp.sweep_output()
         await broker.start()
         await host.refresh()
         await registry.load()
@@ -170,6 +175,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             except Exception:
                 pass
         await channels.stop()
+        await composio.stop()
         await routines.stop()
         await browser.shutdown()
         await runtime.close()
@@ -213,6 +219,16 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         r = JSONResponse({"ok": True})
         r.set_cookie(COOKIE, token, httponly=True, samesite="lax", max_age=30 * 24 * 3600, path="/")
         return r
+
+    @app.post("/api/auth/pair-code")
+    async def auth_pair_code(request: Request):
+        """A one-time code (10 minutes) for pairing another browser: shown in the app instead of the terminal. Only a request that opens BotTeam
+        directly (this computer, your network) may ask for one, never a browser that came through a domain."""
+        if not pairing.required:
+            return {"required": False}
+        if request_needs_pairing(request, True):
+            raise HTTPException(403, "a pairing code can only be made from this computer or your own network")
+        return {"required": True, "code": pairing.new_code(), "expiresIn": CODE_TTL}
 
     @app.post("/api/auth/logout")
     async def auth_logout(request: Request):
@@ -375,7 +391,18 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             for sid, acc in fields["mcpAccess"].items():
                 if not isinstance(acc, dict) or acc.get("scope", "read") not in ("read", "write") or acc.get("outbound", "ask") not in ("ask", "allow"):
                     raise HTTPException(400, "access is a scope (read or write) and a policy for sending out (ask or allow)")
-            fields["mcpAccess"] = {sid: {"scope": a.get("scope", "read"), "outbound": a.get("outbound", "ask")} for sid, a in fields["mcpAccess"].items()}
+            for sid, acc in fields["mcpAccess"].items():
+                tools = acc.get("allowTools")
+                if tools is not None and (not isinstance(tools, list) or len(tools) > 40 or not all(isinstance(x, str) and re.match(r"^[A-Za-z0-9_*?]{1,80}$", x) for x in tools)):
+                    raise HTTPException(400, "allowTools is a list of tool names or patterns such as GOOGLESHEETS_VALUES_GET")
+            for sid, acc in fields["mcpAccess"].items():
+                mins = acc.get("cacheMinutes")
+                if mins is not None and (not isinstance(mins, int) or isinstance(mins, bool) or not 0 <= mins <= 1440):
+                    raise HTTPException(400, "cacheMinutes is a number of minutes between 0 and 1440")
+                if mins and not acc.get("allowTools"):
+                    raise HTTPException(400, "answers are only kept for a bot that has a list of tools it may use (allowTools)")
+            fields["mcpAccess"] = {sid: {"scope": a.get("scope", "read"), "outbound": a.get("outbound", "ask"), **({"allowTools": a["allowTools"]} if a.get("allowTools") else {}),
+                                         **({"cacheMinutes": a["cacheMinutes"]} if a.get("cacheMinutes") else {})} for sid, a in fields["mcpAccess"].items()}
         if fields.get("reportsTo"):
             boss, seen = fields["reportsTo"], {bot.id}
             while boss:  # the target must exist and the chain must not come back to this bot
@@ -509,6 +536,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         if tid == bot.mainThreadId:
             raise HTTPException(400, "the main conversation cannot be deleted")
         await turns.interrupt(bot, tid)
+        await channels.thread_deleted(tid)  # a batch's folder and log lines, if the conversation was one
+        await turns.forget_thread(tid)  # its event log and its attachments
         await store.delete_thread(tid)
         if bot.threadId == tid:
             bot.threadId = bot.mainThreadId
@@ -915,6 +944,36 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         except Exception as e:  # everything it made has been removed again
             raise HTTPException(500, f"the import failed and nothing was added: {e}")
 
+    # ---- one bot as one file ---------------------------------------------------------------------------------------------------
+    @app.post("/api/bots/{bot_id}/export-file")
+    async def export_bot_file(bot_id: str):
+        await need(bot_id)
+        try:
+            return await botfile.export_bot(store, mcp, skills, bot_id)
+        except teamlib.PackageError as e:
+            raise HTTPException(404, str(e))
+
+    @app.post("/api/bot-files/preview")
+    async def bot_file_preview(body: dict):
+        try:
+            pkg = botfile.parse(await team_text(body))
+        except teamlib.PackageError as e:
+            raise HTTPException(400, str(e))
+        return botfile.review(pkg, {i: s for i, s in await mcp.list()}, {b.name for b in await store.list_bots()})
+
+    @app.post("/api/bot-files/import", status_code=201)
+    async def bot_file_import(body: dict):
+        try:
+            pkg = botfile.parse(await team_text(body))
+        except teamlib.PackageError as e:
+            raise HTTPException(400, str(e))
+        defaults = config.data.get("botDefaults", {})
+        sel = defaults.get("modelSelection") or registry.default_selection()
+        try:
+            return await botfile.apply_import(store, bus, mcp, skills, turns, pkg, sel)
+        except Exception as e:  # everything it made has been removed again
+            raise HTTPException(500, f"the import failed and nothing was added: {e}")
+
     @app.get("/api/presets")
     async def list_presets():
         return {"presets": [*config.data.get("presets", []), *teamlib.BUILTIN_PRESETS]}
@@ -1081,22 +1140,17 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         return composio.public()
 
     @app.get("/api/apps")
-    async def apps():
-        cards, source = await composio.catalog()
-        out = {**composio.public(), "source": source, "apps": cards, "connections": {}, "error": None}
-        if composio.configured():
-            try:
-                out["connections"] = await composio.status()
-            except ComposioError as e:
-                out["error"] = str(e)
-        return out
+    async def apps(cached: bool = False):
+        return await composio.saved_apps(initialize=not cached)
+
+    @app.post("/api/apps/refresh")
+    async def refresh_apps():
+        return await composio.refresh_apps()
 
     @app.get("/api/apps/{slug}")
     async def app_status(slug: str):
-        try:
-            return (await composio.status([slug]))[slug_of(slug)]
-        except ComposioError as e:
-            raise composio_failed(e)
+        saved = await composio.saved_apps()
+        return saved["connections"].get(slug_of(slug), {"connected": False, "pending": False, "status": "NONE", "accounts": []})
 
     @app.post("/api/apps/{slug}/connect")
     async def connect_app(slug: str, body: ConnectBody):

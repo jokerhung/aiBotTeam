@@ -13,12 +13,19 @@ the apps through. No provider token (Gmail, Slack, GitHub…) is ever stored her
 from __future__ import annotations
 
 import os
+import asyncio
+import hashlib
+import json
+import logging
 import re
+import time
 import uuid
 from typing import Any, Optional
 from urllib.parse import quote, urlsplit
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 BACKEND = "https://backend.composio.dev"
 ACCOUNT_ID = re.compile(r"^[A-Za-z0-9_\-]{1,100}$")
@@ -109,10 +116,60 @@ def clean_alias(value: Any) -> Optional[str]:
 
 
 class Composio:
-    def __init__(self, config, mcp, bus, transport: Optional[httpx.AsyncBaseTransport] = None) -> None:
+    connection_poll_interval = 3.0
+    connection_poll_attempts = 100
+    connection_poll_timeout = 300.0
+
+    def __init__(self, config, mcp, bus, store, transport: Optional[httpx.AsyncBaseTransport] = None) -> None:
         self.config, self.mcp, self.bus = config, mcp, bus
+        self.store = store
+        self._apps_lock = asyncio.Lock()
         self._transport = transport
         self._catalog: Optional[tuple[float, list[dict], str]] = None
+        self._connections: Optional[dict[str, dict]] = None
+        self._authorization_tasks: set[asyncio.Task] = set()
+
+    async def stop(self) -> None:
+        tasks = list(self._authorization_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _watch_authorization(self, key: str, user_id: str, toolkit: str, alias: Optional[str], existing_ids: set[str]) -> None:
+        try:
+            await asyncio.wait_for(self._poll_authorization(key, user_id, toolkit, alias, existing_ids), timeout=self.connection_poll_timeout)
+        except asyncio.TimeoutError:
+            return
+
+    async def _poll_authorization(self, key: str, user_id: str, toolkit: str, alias: Optional[str], existing_ids: set[str]) -> None:
+        """Only an explicitly started sign-in is polled; ordinary app reads stay local."""
+        for _ in range(self.connection_poll_attempts):
+            if key != self._cache_key():
+                return
+            try:
+                accounts = await self.accounts(user_id, [toolkit])
+                matches = [a for a in accounts if a.get("id") not in existing_ids
+                           and slug_of((a.get("toolkit") or {}).get("slug") or "") == toolkit
+                           and (alias is None or str(a.get("alias") or "").casefold() == alias.casefold())]
+                if key != self._cache_key():
+                    return
+                active = {a["id"] for a in matches if str(a.get("status") or "").upper() == "ACTIVE"}
+                if active:
+                    refreshed = await self.refresh_apps()
+                    saved_accounts = refreshed["connections"].get(toolkit, {}).get("accounts", [])
+                    if any(a["id"] in active and a["status"] == "ACTIVE" for a in saved_accounts):
+                        self.bus.publish({"kind": "mcp.changed"})  # reread only after the database update succeeds
+                        return
+                if matches and all(str(a.get("status") or "").upper() in {"FAILED", "EXPIRED", "REVOKED", "INACTIVE", "DELETED"} for a in matches):
+                    return
+            except ComposioError:
+                pass  # a transient network failure may clear while sign-in is still open
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Could not update connected apps after authorization")
+                return
+            await asyncio.sleep(self.connection_poll_interval)
 
     # ---- the key ------------------------------------------------------------------------------------------------------------
     def _saved(self) -> dict:
@@ -219,12 +276,17 @@ class Composio:
             self.config.set_secret("composio:apiKey", previous_key)
             raise
         await self.sync_mcp(session)
+        if not same:
+            await self.stop()
+        self._connections = None
         return self.public()
 
     async def clear_key(self) -> None:
+        await self.stop()
         self.config.data.pop("composio", None)
         self.config.set_secret("composio:apiKey", None)
         self._catalog = None
+        self._connections = None
         await self._drop_mcp()
 
     # ---- the bot's MCP server ---------------------------------------------------------------------------------------------------
@@ -238,7 +300,7 @@ class Composio:
             return None
         session = session or await self.ensure_session()
         spec = {"name": "Composio", "transport": "sse" if session.get("mcp_type") == "sse" else "http", "url": session["mcp_url"], "appId": "composio",
-                "headers": {"x-api-key": self.key()}}
+                "headers": {"x-api-key": self.key()}, "outputBudget": 200_000}  # a sheet read is long: cut at 20,000 characters the end of a range is lost
         sid = await self._mcp_id()
         if sid:
             await self.mcp.update(sid, spec)
@@ -252,12 +314,65 @@ class Composio:
             await self.mcp.delete(sid)
 
     # ---- the catalog ------------------------------------------------------------------------------------------------------------
+    def _cache_key(self) -> str:
+        # Separate installations/projects without persisting another copy of the secret.
+        return hashlib.sha256(f"{api_base()}\0{toolkit_base()}\0{self.key() or ''}".encode()).hexdigest()
+
+    async def saved_apps(self, initialize: bool = True) -> dict:
+        key = self._cache_key()
+        saved = await self.store.connected_apps_cache(key)
+        if saved is not None:
+            return {**self.public(), **saved}
+        if not initialize:
+            return {**self.snapshot(), "initialized": False}
+        async with self._apps_lock:
+            saved = await self.store.connected_apps_cache(key)
+            if saved is None:
+                return await self._refresh_apps(key)
+            return {**self.public(), **saved}
+
+    async def refresh_apps(self) -> dict:
+        async with self._apps_lock:
+            return await self._refresh_apps(self._cache_key())
+
+    async def _refresh_apps(self, key: str) -> dict:
+        previous = await self.store.connected_apps_cache(key)
+        self._catalog = None  # explicit Refresh always bypasses the in-memory TTL
+
+        async def connections():
+            if not self.configured():
+                return {}, None
+            try:
+                return await self.status(), None
+            except ComposioError as error:
+                return (previous or {}).get("connections", {}), str(error)
+
+        (cards, source), (accounts, error) = await asyncio.gather(self.catalog(), connections())
+        if source != "api" and previous and previous.get("source") == "api":
+            cards, source = previous["apps"], previous["source"]
+            error = error or "Could not refresh the Composio catalog. Showing saved apps."
+        body = {"source": source, "apps": cards, "connections": accounts,
+                "connectionsLoaded": error is None or bool((previous or {}).get("connectionsLoaded")),
+                "initialized": True, "error": error}
+        # A key changed while the refresh ran must not populate the new project's cache.
+        if key != self._cache_key():
+            return await self.saved_apps(initialize=False)
+        await self.store.save_connected_apps_cache(key, body)
+        return {**self.public(), **body}
+
+    def snapshot(self) -> dict:
+        """Uninitialized local placeholder; saved account state comes only from SQLite."""
+        cards = [{"slug": s, "label": n, "blurb": b, "logo": None, "noAuth": False} for s, n, b in CURATED]
+        return {**self.public(), "source": "curated", "apps": cards, "connections": {},
+                "connectionsLoaded": not self.configured(), "error": None}
+
     async def catalog(self) -> tuple[list[dict], str]:
         import time
 
         if self._catalog and time.time() - self._catalog[0] < 600:
             return self._catalog[1], self._catalog[2]
         cards: list[dict] = []
+        seen_slugs: set[str] = set()
         if self.configured():
             cursor = None
             try:
@@ -271,7 +386,8 @@ class Composio:
                     body = res.json()
                     for t in body.get("items") or body.get("data") or []:
                         slug = slug_of(str(t.get("slug") or t.get("key") or t.get("name") or ""))
-                        if slug and all(c["slug"] != slug for c in cards):
+                        if slug and slug not in seen_slugs:
+                            seen_slugs.add(slug)
                             meta = t.get("meta") or {}
                             cards.append({"slug": slug, "label": t.get("name") or slug, "blurb": str(meta.get("description") or t.get("description") or "")[:90],
                                           "logo": meta.get("logo") or t.get("logo"), "noAuth": t.get("no_auth") is True})
@@ -331,6 +447,8 @@ class Composio:
                       "status": "ACTIVE" if any(x["status"] == "ACTIVE" for x in lst) else lst[0]["status"], "accounts": lst}
         for s in wanted:
             out.setdefault(s, {"connected": False, "pending": False, "status": "NONE", "accounts": []})
+        if not wanted:
+            self._connections = out
         return out
 
     async def authorize(self, slug: str, alias: Any = None) -> dict:
@@ -359,7 +477,76 @@ class Composio:
         url = (res.json() or {}).get("redirect_url")
         if not url:
             raise ComposioError(f"Composio returned no authorization link for {toolkit}", 502)
-        return {"url": trusted_url(url, "authorization link")}
+        url = trusted_url(url, "authorization link")
+        task = asyncio.create_task(self._watch_authorization(self._cache_key(), session["user_id"], toolkit, plan["alias"], {a["id"] for a in existing if a.get("id")}))
+        self._authorization_tasks.add(task)
+        task.add_done_callback(self._authorization_tasks.discard)
+        return {"url": url}
+
+    # ---- running a tool ourselves (a deterministic lookup, not a model's guess) ---------------------------------------------------------
+    async def _tool_call(self, name: str, arguments: dict) -> dict:
+        """One tool of the Session's MCP endpoint; the answer is the JSON the tool returned."""
+        from .mcp_client import McpError, connect
+
+        session = await self.ensure_session()
+        conn = connect({"transport": "http", "url": session["mcp_url"], "headers": {"x-api-key": self.key() or ""}})
+        try:
+            await conn.open()
+            r = await conn.request("tools/call", {"name": name, "arguments": arguments}, timeout=120.0)
+        except (McpError, OSError, httpx.HTTPError) as e:
+            raise ComposioError(f"Composio could not run the tool: {e}", 502) from e
+        finally:
+            await conn.close()
+        res = r.get("result") or {}
+        text = next((p.get("text") for p in res.get("content") or [] if isinstance(p, dict) and p.get("type") == "text"), "")
+        try:
+            return json.loads(text)
+        except ValueError as e:
+            raise ComposioError("Composio returned an unreadable answer", 502) from e
+
+    def _answers_dir(self):
+        from pathlib import Path
+
+        return Path(self.config.path).parent / "composio-cache"
+
+    async def run_tool(self, slug: str, arguments: dict, cache_minutes: int = 0) -> tuple[dict, float]:
+        """One Composio tool (for example GOOGLESHEETS_VALUES_GET): (its data, when it was fetched). With `cache_minutes` the same call is answered from
+        a file until that many minutes have passed since it was fetched, never from when it was last used; a failed call is never kept."""
+        key = hashlib.sha256(json.dumps([slug, arguments], sort_keys=True, ensure_ascii=False).encode("utf8")).hexdigest()
+        path = self._answers_dir() / f"{key}.json"
+        if cache_minutes > 0:
+            try:
+                kept = json.loads(path.read_text(encoding="utf8"))
+                if time.time() - float(kept["at"]) < cache_minutes * 60:
+                    return kept["data"], float(kept["at"])
+            except (OSError, ValueError, KeyError):
+                pass
+        for attempt in (1, 2):  # a hiccup of the network or of Google is tried once more before it is an error
+            try:
+                out = await self._tool_call("COMPOSIO_MULTI_EXECUTE_TOOL", {"tools": [{"tool_slug": slug, "arguments": arguments}], "sync_response_to_workbench": False,
+                                                                               "session_id": "botteam", "thought": "read only lookup", "current_step": "lookup", "memory": {}})
+                results = ((out.get("data") or {}).get("results")) or []
+                resp = (results[0] if results else {}).get("response") or {}
+                if not out.get("successful", True) or not resp.get("successful"):
+                    raise ComposioError(str(resp.get("error") or out.get("error") or f"{slug} failed")[:300], 502)
+                break
+            except ComposioError:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1.0)
+        if "data_preview" in resp and "data" not in resp:
+            raise ComposioError("the answer was too large to read at once; ask for a smaller range", 413)
+        data = resp.get("data") or {}
+        now = time.time()
+        if cache_minutes > 0:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(f".{os.getpid()}.tmp")
+                tmp.write_text(json.dumps({"at": now, "data": data}, ensure_ascii=False), encoding="utf8")
+                os.replace(tmp, path)
+            except OSError:
+                pass
+        return data, now
 
     async def _delete_account(self, account_id: str) -> None:
         res = await self._call("DELETE", f"{api_base()}/connected_accounts/{quote(account_id)}", params={"revoke_on_delete": "true"})
@@ -376,4 +563,14 @@ class Composio:
         if not owned:
             return {"removed": 0}
         await self._delete_account(account_id)
+        key = self._cache_key()
+        saved = await self.store.connected_apps_cache(key)
+        if saved:
+            state = saved.get("connections", {}).get(toolkit)
+            if state:
+                accounts = [a for a in state["accounts"] if a["id"] != account_id]
+                state.update(accounts=accounts, connected=any(a["status"] == "ACTIVE" for a in accounts),
+                             pending=any(a["status"] in ("INITIATED", "INITIALIZING", "PENDING") for a in accounts),
+                             status="ACTIVE" if any(a["status"] == "ACTIVE" for a in accounts) else (accounts[0]["status"] if accounts else "NONE"))
+                await self.store.save_connected_apps_cache(key, saved)
         return {"removed": 1}

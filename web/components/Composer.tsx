@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { randomUuid } from "@/lib/random-uuid";
 import { APPROVAL_MODES, type ApprovalMode, type Attachment, type Bot } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
@@ -75,7 +76,7 @@ export function Composer({ bot, dock }: { bot: Bot; dock?: React.ReactNode }) {
   const addFiles = useCallback((files: File[]) => {
     for (const file of files) {
       const image = file.type.startsWith("image/");
-      const key = crypto.randomUUID();
+      const key = randomUuid();
       if (image && !canImages) {
         setChips((c) => [...c, { key, filename: file.name, image, state: "error", error: `${inst?.displayName ?? "This engine"} cannot read images` }]);
         continue;
@@ -99,7 +100,7 @@ export function Composer({ bot, dock }: { bot: Bot; dock?: React.ReactNode }) {
     if (!sendable) return;
     const t = text.trim();
     const atts = chips.filter((c) => c.state === "done" && c.attachment).map((c) => c.attachment!);
-    const sendId = crypto.randomUUID();
+    const sendId = randomUuid();
     const before = { text, chips };
     saveDraft("");
     setChips([]);

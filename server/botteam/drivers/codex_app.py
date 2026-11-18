@@ -4,9 +4,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from .codex import mcp_overrides
 from .base import Capabilities, Emitter, SendTurnInput, new_turn_id, preview
 from .proc import kill_tree, spawn
 
@@ -130,7 +133,12 @@ class CodexAppDriver(Emitter):
         return await asyncio.wait_for(fut, timeout)
 
     async def _start(self, inp: SendTurnInput, cwd: str) -> Session:
-        proc = await spawn([*self.cmd, "app-server"], cwd=cwd, env=self.env)
+        entries = dict(inp.custom_mcp)
+        if inp.mount_agents and self.broker is not None and self.broker.port:  # the team tools, as the Claude driver mounts them
+            server_dir = str(__import__("pathlib").Path(__file__).resolve().parents[2])
+            entries["bt"] = {"command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
+                             "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_BROKER_PORT": str(self.broker.port), "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id}}
+        proc = await spawn([*self.cmd, "app-server", *mcp_overrides(entries)], cwd=cwd, env=self.env)
         s = Session(proc=proc, cwd=cwd, mode=inp.approval_mode)
         self.sessions[inp.thread_id] = s
         s.tasks = [asyncio.create_task(self._read(inp.thread_id, s)), asyncio.create_task(self._drain_stderr(s))]
@@ -224,6 +232,24 @@ class CodexAppDriver(Emitter):
                 decision = "cancel"
             except Exception:  # a broker failure is a refusal, never an allow
                 decision = "decline"
+        if method == "mcpServer/elicitation/request":  # Codex asks before a tool of an MCP server runs: the same permission broker answers it
+            action = "decline"
+            meta = params.get("_meta") or {}
+            m = re.search(r'run tool "([^"]+)"', str(params.get("message") or ""))
+            if self.broker is not None and meta.get("codex_approval_kind") == "mcp_tool_call" and m:
+                try:
+                    ans = await self.broker.ask(thread_id, f"cx_{thread_id}_{rid}", "permission", f"mcp__{params.get('serverName')}__{m.group(1)}", meta.get("tool_params") or {})
+                    action = "accept" if ans.get("behavior") == "allow" else "decline"
+                except asyncio.CancelledError:
+                    action = "cancel"
+                except Exception:  # a broker failure is a refusal, never an allow
+                    action = "decline"
+            try:
+                self._write(s, {"id": rid, "result": {"action": action}})
+                await s.proc.stdin.drain()
+            except (OSError, ConnectionError):
+                pass
+            return
         try:
             self._write(s, {"id": rid, "result": {"decision": decision}})
             await s.proc.stdin.drain()
@@ -257,7 +283,7 @@ class CodexAppDriver(Emitter):
             elif kind in ("commandExecution", "fileChange", "mcpToolCall"):
                 ok = it.get("status") in ("completed", "success") and it.get("exitCode") in (None, 0)
                 self.emit("item.completed", thread_id, tid, itemType="tool", itemId=it.get("id"), ok=ok,
-                          output=preview(it.get("aggregatedOutput") or it.get("result") or it.get("status") or ""))
+                          output=preview(it.get("aggregatedOutput") or it.get("result") or it.get("error") or it.get("status") or ""))
         elif method == "turn/completed":
             turn = p.get("turn") or {}
             status = turn.get("status")

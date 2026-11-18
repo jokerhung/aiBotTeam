@@ -5,6 +5,7 @@ Environment: BT_BROKER_PORT, BT_BROKER_TOKEN, BT_THREAD_ID.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import socket
@@ -174,6 +175,7 @@ TEAM_TOOLS = [
     {"name": "browser_scroll", "description": "Scroll the page by dy pixels (negative is up).", "inputSchema": {"type": "object", "properties": {"dy": {"type": "integer"}}}},
     {"name": "browser_back", "description": "Go back one page.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "browser_ask_for_help", "description": "Use this at a sign-in, a CAPTCHA or any step only a person should do: the browser is handed to them and you wait until they give it back. Never try to get past those yourself.", "inputSchema": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]}},
+    {"name": "sheet_rows", "description": "Look rows up in a Google Sheets file you were given read access to. Returns every row whose cells equal `match` (column title -> value) as {column title: value} with empty cells left out; the tool finds the columns by their titles and matches in code, so you never count columns. Without `tab` it searches the day-named tabs (ddmmyy), newest first, and stops at the first tab with matches. Answers can be a few minutes old. Use this instead of reading ranges yourself.", "inputSchema": {"type": "object", "properties": {"spreadsheet": {"type": "string"}, "match": {"type": "object", "additionalProperties": {"type": "string"}}, "tab": {"type": "string"}}, "required": ["spreadsheet", "match"]}},
     {"name": "browser_close", "description": "Close your browser when the work is done.", "inputSchema": {"type": "object", "properties": {}}},
 ]
 TEAM_NAMES = {t["name"] for t in TEAM_TOOLS}
@@ -228,6 +230,8 @@ def handle(msg: dict) -> None:
 
 
 def main() -> None:
+    # The client writes UTF-8 whatever the console's code page is: reading it with the locale's encoding turns Vietnamese text into surrogates
+    sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
     connection()  # connect at start so a stale process never reaches a newer broker
     for line in sys.stdin:
         if not line.strip():

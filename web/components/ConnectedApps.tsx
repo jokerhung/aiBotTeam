@@ -15,7 +15,7 @@ const KEYS_URL = "https://dashboard.composio.dev/~/project/settings/api-keys";
 interface Account { id: string; alias: string | null; status: string }
 interface Conn { connected: boolean; pending: boolean; status: string; accounts: Account[] }
 interface Card { slug: string; label: string; blurb: string; logo: string | null }
-interface AppsState { configured: boolean; source: string | null; keyHint: string | null; apps: Card[]; connections: Record<string, Conn>; error: string | null }
+interface AppsState { configured: boolean; source: string | null; keyHint: string | null; apps: Card[]; connections: Record<string, Conn>; connectionsLoaded?: boolean; error: string | null }
 
 /** "Connected apps" (the Connect apps pill): every app goes through Composio. One project key is pasted once; each app signs in in the person's own
  * browser, several accounts per app are told apart by a label, and no provider token is ever kept here. */
@@ -27,16 +27,38 @@ export function ConnectedApps() {
   const tab: Tab = state.appsTab;  // kept in the store, so another screen can open the dialog on a given tab
   const setTab = (next: Tab) => dispatch({ type: "apps", open: true, tab: next });
   const [data, setData] = useState<AppsState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const inFlight = useRef<Promise<void> | null>(null);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [alias, setAlias] = useState("");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ id: string; ok: boolean; text: string; url?: string } | null>(null);
-  const poll = useRef<ReturnType<typeof setInterval> | null>(null);
-  const load = useCallback(() => api<AppsState>("/api/apps").then(setData).catch(() => {}), []);
-  useEffect(() => { if (state.appsOpen) void load(); }, [state.appsOpen, state.mcpTick, load]);
-  useEffect(() => () => { if (poll.current) clearInterval(poll.current); }, []);
+  const load = useCallback((refresh = false) => {
+    if (inFlight.current) return inFlight.current;
+    const task = (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        setData(await api<AppsState>(refresh ? "/api/apps/refresh" : "/api/apps", refresh ? { method: "POST" } : undefined));
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : String(error));
+      } finally { setLoading(false); }
+    })().finally(() => { inFlight.current = null; });
+    inFlight.current = task;
+    return task;
+  }, []);
+  useEffect(() => {
+    if (!state.appsOpen || tab !== "apps") return;
+    let cancelled = false;
+    void (async () => {
+      if (inFlight.current) await inFlight.current;
+      if (!cancelled) await load();
+    })();
+    return () => { cancelled = true; };
+  }, [state.appsOpen, tab, state.mcpTick, load]);
   if (!state.appsOpen) return null;
   const apps = data?.apps ?? [];
   const conns = data?.connections ?? {};
@@ -62,12 +84,12 @@ export function ConnectedApps() {
     const tab = window.open("", "_blank");
     try {
       const r = await api<{ url: string }>(`/api/apps/${c.slug}/connect`, { method: "POST", body: JSON.stringify({ alias: alias.trim() || null }) });
-      if (tab) tab.location.href = r.url; else setNote({ id: c.slug, ok: true, text: t("Your browser blocked the sign-in page."), url: r.url });
+      if (tab) {
+        tab.location.href = r.url;
+        setNote({ id: c.slug, ok: true, text: t("Connected accounts update automatically after sign-in succeeds.") });
+      } else setNote({ id: c.slug, ok: true, text: t("Your browser blocked the sign-in page."), url: r.url });
       setOpen(null);
       setAlias("");
-      if (poll.current) clearInterval(poll.current);
-      let n = 0;
-      poll.current = setInterval(() => { void load(); if (++n > 40 && poll.current) clearInterval(poll.current); }, 3000); // until the person has finished
       await load();
     } catch (e) {
       tab?.close();
@@ -87,7 +109,7 @@ export function ConnectedApps() {
       <div className="flex h-[min(640px,88vh)] w-full max-w-[560px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10">
         <div className="flex h-[60px] shrink-0 items-center gap-2 px-5">
           <h2 className="flex-1 text-[17px] font-semibold">{t("Connected apps")}</h2>
-          <button type="button" title={t("Refresh")} aria-label={t("Refresh")} onClick={() => void load()} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10"><RefreshCw size={15} /></button>
+          {tab === "apps" && <button type="button" title={t("Refresh from Composio")} aria-label={t("Refresh")} disabled={loading} onClick={() => void load(true)} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10 disabled:opacity-40"><RefreshCw size={15} className={loading ? "animate-spin" : undefined} /></button>}
           <button type="button" aria-label="Close" onClick={close} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10"><X size={16} /></button>
         </div>
         <div role="tablist" aria-label={t("Connected apps")} className="mx-5 mb-3 flex h-9 shrink-0 items-center rounded-full bg-raised p-[3px]" data-testid="apps-tabs">
@@ -113,10 +135,12 @@ export function ConnectedApps() {
             {note?.id === "key" && <div role="alert" className="mt-1.5 text-[12.5px] text-danger">{note.text}</div>}
           </div>
         )}
-        {data?.configured && noneYet && !data.error && (
+        {data?.configured && noneYet && !loading && data.connectionsLoaded !== false && !data.error && !loadError && (
           <div role="status" className="mx-5 mb-3 rounded-xl bg-raised px-3.5 py-2.5 text-[13px] leading-5 text-ink-secondary">{t("No app is connected yet. Choose one; it signs in in your browser.")}</div>
         )}
         {data?.error && <div role="alert" className="mx-5 mb-3 rounded-xl bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger" data-no-i18n="">{data.error}</div>}
+        {loadError && <div role="alert" className="mx-5 mb-3 text-[13px] text-danger" data-no-i18n="">{loadError}</div>}
+        {loading && <div role="status" className="mx-5 mb-3 text-[13px] text-ink-tertiary">{t(data ? "Refreshing apps…" : "Loading apps…")}</div>}
         <div className="px-5 pb-3">
           <label className="flex h-10 items-center gap-2 rounded-xl bg-raised px-3 text-ink-tertiary">
             <Search size={15} />
@@ -124,7 +148,7 @@ export function ConnectedApps() {
           </label>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-          {shown.length === 0 && <div className="py-10 text-center text-[13.5px] text-ink-tertiary">{t("No app matches.")}</div>}
+          {shown.length === 0 && !loading && <div className="py-10 text-center text-[13.5px] text-ink-tertiary">{t("No app matches.")}</div>}
           {shown.map((a, i) => {
             const c = conns[a.slug];
             const accounts = c?.accounts ?? [];
@@ -134,7 +158,7 @@ export function ConnectedApps() {
                 <div className="flex items-center gap-3">
                   {a.logo
                     // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={a.logo} alt="" className="size-11 shrink-0 rounded-xl bg-white object-contain p-1.5" />
+                    ? <img src={a.logo} alt="" loading="lazy" decoding="async" className="size-11 shrink-0 rounded-xl bg-white object-contain p-1.5" />
                     : <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl text-[18px] font-semibold", TILE[i % TILE.length])} aria-hidden>{a.label[0]}</span>}
                   <div className="min-w-0 flex-1 leading-tight">
                     <div data-no-i18n="" className="truncate text-[14.5px] font-medium">{a.label}</div>
@@ -142,7 +166,7 @@ export function ConnectedApps() {
                   </div>
                   {c?.connected && <span className="flex items-center gap-1 text-[12.5px] text-success"><Check size={13} /> {t("Connected")}</span>}
                   {!c?.connected && c?.pending && <span className="text-[12.5px] text-ink-tertiary">{t("Waiting for sign-in")}</span>}
-                  <button type="button" disabled={!data?.configured} onClick={() => (needLabel ? (setOpen(open === a.slug ? null : a.slug), setAlias("")) : void connect(a))}
+                  <button type="button" disabled={!data?.configured || data.connectionsLoaded === false} onClick={() => (needLabel ? (setOpen(open === a.slug ? null : a.slug), setAlias("")) : void connect(a))}
                     aria-label={needLabel ? `${t("Add account")}: ${a.label}` : undefined}
                     className={cn("flex h-9 items-center gap-1 rounded-full px-4 text-[13.5px] font-medium disabled:opacity-40", needLabel ? "bg-raised text-ink hover:bg-raised-hover" : "bg-accent text-[var(--color-accent-ink)]")}>
                     {needLabel ? <><Plus size={13} /> {t("Add account")}</> : t("Connect")}
