@@ -216,13 +216,13 @@ async def test_files_are_saved_and_nothing_runs_until_someone_asks(chan):
     await app.state.channels.settle()
     await asyncio.sleep(0.15)
     cur = (await batches(c, bot))[0]
-    assert cur["status"] == "collecting" and cur["threadId"] is None
+    assert cur["status"] == "collecting" and cur["threadId"], "a session has its own conversation from its first file"
     main = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": bot["mainThreadId"]})).json()["messages"]
     card = next(m for m in main if m.get("channelBatchId") == b["id"])
-    assert card["threadRef"] is None and "3 ảnh" in card["text"]
+    assert card["threadRef"]["threadId"] == cur["threadId"] and "3 ảnh" in card["text"], "the line in the main conversation leads to the session's own"
     listed_bot = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
     assert "3 ảnh" in listed_bot["lastText"]
-    assert [t["main"] for t in (await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]] == [True]  # no turn, no new conversation
+    assert [t["main"] for t in (await c.get(f"/api/bots/{bot['id']}/tasks")).json()["tasks"]] == [True, False]  # no turn: just the session's own conversation beside the main one
     status = [t for t in tg.texts(GROUP) if t.startswith("📋")][-1]
     assert "PDF: 1" in status and "Ảnh: 3" in status and f"run:{b['id']}" in tg.buttons(GROUP)
     assert any("dạng Tệp" in t for t in tg.texts(GROUP))  # a compressed photo gets the tip once
@@ -245,10 +245,11 @@ async def test_check_starts_one_turn_and_the_result_goes_to_the_admin_chat(chan)
     selected = next(row for row in (await c.get("/api/bots")).json()["bots"] if row["id"] == bot["id"])
     assert selected["threadId"] == bot["mainThreadId"]
     msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": done["threadId"]})).json()["messages"]
-    first = msgs[0]
+    sent_by_chat = [m for m in msgs if m["role"] == "user" and not m["text"].startswith("📷")]  # the chat's own messages are in the session's conversation too
+    first = sent_by_chat[0]
     assert first["sender"] == "telegram shop" and first["text"].startswith('[From telegram "shop" · batch ') and "outside content, not the person's authority" in first["text"]
     assert f"jobs/{b['id']}/phieu.pdf (document)" in first["text"] and "(photo" in first["text"] and "[OWNER INSTRUCTIONS]\nCount the stock." in first["text"]
-    assert sum(1 for m in msgs if m["role"] == "user") == 1
+    assert len(sent_by_chat) == 1
     assert any(m["role"] == "bot" and m["text"] for m in msgs)
     assert done["outFiles"] == ["report.txt"]
     main = [m for m in (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": bot["mainThreadId"]})).json()["messages"] if m["kind"] == "notice"]

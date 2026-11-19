@@ -102,6 +102,8 @@ Với input ở chế độ trả lời từng tin (Answer every message), file 
 | `format`, `version` | `botteam.intake`, `1` | bắt buộc | Nhận ra file và phiên bản định dạng |
 | `mode` | `collect` \| `answer` | `collect` | `collect`: gom phiên rồi chạy một lượt. `answer`: mỗi tin là một câu hỏi, trả lời trong cùng chat (chế độ "Answer every message" hiện nay) |
 | `trigger.quietSeconds` | số nguyên 0 hoặc 10–600 | `30` | Hết số giây này không có tin mới thì chạy. `0` là không tự chạy (collect: chỉ chạy khi bấm nút; answer: trả lời ngay từng tin) |
+| `trigger.hintAfterSeconds` | số nguyên 0 hoặc 1–599, nhỏ hơn `quietSeconds` | `0` (tắt) | Sau số giây này không có ảnh hay tin mới, gửi tin `hint` báo sẽ làm gì tiếp và khi nào, rồi **cứ sau từng ấy giây lại cập nhật số giây còn lại** (25, 20, 15, … trong cùng một tin khi kênh sửa được tin; kênh không sửa được như Zalo chỉ báo một lần mỗi lượt im lặng). Có ảnh mới thì đếm lại; tới lúc bắt đầu thì dừng |
+| `hint` | chuỗi mẫu, tối đa 500 ký tự | `Nếu không còn ảnh nào thì sau {remaining} giây sẽ tiến hành.` | Tin báo trên. `{remaining}` = `quietSeconds` − `hintAfterSeconds` (số giây còn lại tới lúc bắt đầu) |
 | `trigger.button` | bool | `true` | Cho phép 🔍 Kiểm kê / `/kiemke` chạy ngay. `false`: không có nút Kiểm kê trong chat, `/kiemke` trả lời "không cần bấm", `/start` chỉ in hướng dẫn ngắn và gỡ bàn phím cố định cũ (có nút Kiểm kê) của người dùng. `collect` với `quietSeconds: 0` mà `button: false` là lỗi (không bao giờ chạy) |
 | `status` | bool | `true` | `false`: chat không nhận tin trạng thái "📋 Lô … Đang nhận file / Đã xong" của phiên (thẻ trong ứng dụng BotTeam vẫn cập nhật). Lỗi vẫn được báo |
 | `save.path` | mẫu đường dẫn tương đối, tối đa 200 ký tự, kết thúc bằng `/` | `"jobs/{session}/"` | Thư mục lưu ảnh của phiên (mục 4.5) |
@@ -116,6 +118,9 @@ Với input ở chế độ trả lời từng tin (Answer every message), file 
 | `run.agent` | bool | `true` | `false`: hết phiên thì **không chạy bot** và không cần file kết quả; chỉ gửi `run.reply` cho người gửi (và chat nhận kết quả) rồi đóng phiên. Không tốn lượt AI |
 | `run.reply` | chuỗi mẫu, tối đa 1000 ký tự | `Đã nhận đủ {photos} ảnh và lưu vào folder:
 {summary}` | Câu trả lời khi `run.agent: false`. Dùng được mọi biến, thêm `{summary}` |
+| `run.command` | danh sách chuỗi mẫu | không có | Chạy sau khi lưu ảnh, **một lần cho mỗi máy** của phiên, không qua shell. Phần tử đầu là `{python}` (Python của BotTeam, có sẵn Playwright) kèm script, hoặc một chương trình; script/chương trình phải nằm **trong thư mục làm việc**. Biến: các biến của `save.path` (trừ `{phase}`), `{machine_folder}` (thư mục của máy, bỏ đoạn `{phase}` cuối), `{workdir}`, `{python}`. Mã thoát 0 = xong (dòng cuối in ra được gửi lại), 3 = chưa có dữ liệu (thử lại), khác = lỗi (cũng thử lại) |
+| `run.retryMinutes`, `run.retryHours` | 1–1440; 0–48 | `10`; `3` | Thử lại `run.command` sau mỗi N phút, tối đa M giờ. Lần đầu chưa xong thì báo người gửi một lần; quá hạn thì báo **chat nhận kết quả** (người theo dõi, đặt ở tab Input). Việc chờ thử lại được lưu trong cơ sở dữ liệu nên vẫn tiếp tục sau khi server khởi động lại |
+| `run.commandTimeoutSec` | 10–3600 | `300` | Một lần chạy quá thời gian này thì bị dừng (tính như lỗi, được thử lại) |
 | `run.bot` | — | — | **Chừa sẵn, chưa làm**: giao phiên cho bot khác |
 | `limits.maxPhotos` | 1–100 | `40` | Như hiện nay |
 | `limits.timeoutSec` | 5–7200 | `900` | Như hiện nay |
@@ -138,6 +143,8 @@ Ai được nói chuyện với bot là quyền truy cập. Bot ở mức Full c
 | Biến | Dùng trong | Giá trị |
 |---|---|---|
 | `{session}` | path, ack, prompt | `session_id` của phiên |
+| `{dd}`, `{mm}`, `{yyyy}` | path, ack, prompt, command | Ngày của phiên tách ra, ví dụ `{dd}.{mm}` = `19.11` |
+| `{area}`, `{code}` | path, ack, prompt, command | Cột "Khu vực" và "Mã máy" của máy trong `machines.md`. Máy chưa có khu vực thì vào thư mục `Chưa có khu vực` (file được cảnh báo) |
 | `{date}` | path, prompt | Ngày giờ Việt Nam (`Asia/Ho_Chi_Minh`) lúc nhận tin đầu, `YYYY-MM-DD` |
 | `{time}` | path, prompt | `HHMMSS` lúc nhận tin đầu |
 | `{chat}` | path, prompt | Mã chat |
@@ -416,6 +423,7 @@ Khi nâng cấp, với mỗi bot đang có quyền input:
 
 - **`{folder}` và `{folders}`:** `{folder}` là thư mục đầu tiên (nơi có `out/`), `{folders}` là danh sách mọi thư mục. Bản nháp để `{folder}` là cả danh sách, nhưng như vậy `{folder}out/` sai khi có nhiều thư mục.
 - **Không lưu file trùng:** trước khi ghi một file vào thư mục, server kiểm thư mục đó đã có file **giống hệt nội dung** (cùng dung lượng, cùng mã băm SHA-256) chưa; có rồi thì không lưu lần nữa, bản kê trỏ tới file đã có và đánh dấu `duplicate`. Chỉ giống từng byte mới tính là trùng: cùng một ảnh gửi lại qua Telegram nén lại thì có thể khác byte. Dọn theo `retentionDays` không xóa file của một phiên khác mà phiên này chỉ trỏ tới.
+- **Thư mục riêng của phiên luôn là `jobs/<phiên>/`:** `intake.json`, `batch.json`, `messages.md` và `out/` nằm ở đó, không nằm lẫn trong thư mục ảnh của mẫu `save.path` (thư mục ảnh chỉ chứa ảnh). Biến `{out}` trỏ tới `jobs/<phiên>/out/`; lời nhắc mặc định dùng `{out}`.
 - **Bản kê:** server ghi cả `intake.json` (tên mới) lẫn `batch.json` (tên cũ, cùng nội dung) để các script cũ trong thư mục làm việc vẫn đọc được.
 - **Thư mục làm việc mặc định:** khi ứng dụng được dựng với thư mục dữ liệu riêng (test, nhúng), thư mục cha là `<thư mục dữ liệu>/workdirs`, không phải thư mục chạy, để không tạo gì ở nơi chương trình tình cờ chạy. Bộ nhớ của bot vẫn ở `<dữ liệu>/workspaces/` và khác với thư mục làm việc.
 - **Chế độ `answer`:** hiện bỏ qua `save.*` (ảnh vẫn được lưu vào kho đính kèm của cuộc trò chuyện như trước); chỉ `mode`, `limits.timeoutSec` có tác dụng.

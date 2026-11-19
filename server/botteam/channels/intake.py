@@ -30,13 +30,16 @@ MAX_INTAKE = 64 * 1024
 MAX_MACHINES = 256 * 1024
 MAX_MACHINE_LINES = 2000
 RECHECK_SECONDS = 1.0
-PATH_VARS = {"session", "date", "time", "chat", "machine", "phase"}
-ACK_VARS = {"session", "date", "time", "chat", "machine", "phase", "folder", "folders", "summary", "photos", "saved", "skipped", "skipped_note", "texts", "quietSeconds"}
+PATH_VARS = {"session", "date", "time", "dd", "mm", "yyyy", "chat", "machine", "code", "area", "phase"}
+ACK_VARS = {"session", "date", "time", "dd", "mm", "yyyy", "chat", "machine", "code", "area", "phase", "folder", "folders", "out", "summary", "photos", "saved", "skipped", "skipped_note", "texts", "quietSeconds", "remaining", "hintAfterSeconds"}
 PROMPT_VARS = ACK_VARS | {"sender"}
+COMMAND_VARS = (PATH_VARS - {"phase"}) | {"python", "workdir", "machine_folder"}
+CMD_NOT_READY = 3  # the exit code of a command that should be tried again later (what it fetches is not there yet)
 DEFAULT_PATH = "jobs/{session}/"
 DEFAULT_ACK = "Đã nhận {photos} ảnh. Sẽ xử lý sau {quietSeconds} giây nếu không có thêm."
 DEFAULT_PROMPT = ("Phiên {session}: {photos} ảnh và {texts} tin nhắn mới đã lưu trong {folder}. Làm tiếp theo chỉ dẫn của bạn. "
-                  "File kết quả cần gửi lại thì ghi vào {folder}out/.")
+                  "File kết quả cần gửi lại thì ghi vào {out}.")
+DEFAULT_HINT = "Nếu không còn ảnh nào thì sau {remaining} giây sẽ tiến hành."
 DEFAULT_REPLY = "Đã nhận đủ {photos} ảnh và lưu vào folder:\n{summary}"
 DEFAULT_LIMITS = {"maxPhotos": 40, "timeoutSec": 900, "retentionDays": 60}
 
@@ -97,7 +100,7 @@ MACHINES_SAMPLE = """# Danh sách máy
 def legacy_prompt(old: str) -> str:
     """An older grant's prompt with its `{job}` folders turned into `{folder}`."""
     s = old or ""
-    for a, b in ((r"\{job\}/images/?", "{folder}"), (r"\{job\}/files/?", "{folder}"), (r"\{job\}/out/", "{folder}out/"), (r"\{job\}/out\b", "{folder}out"),
+    for a, b in ((r"\{job\}/images/?", "{folder}"), (r"\{job\}/files/?", "{folder}"), (r"\{job\}/out/", "{out}"), (r"\{job\}/out\b", "{out}"),
                  (r"\{job\}/", "{folder}"), (r"\{job\}", "{folder}")):
         s = re.sub(a, b, s)
     return s
@@ -109,6 +112,7 @@ class Machine:
     name: str
     code: str = ""
     aliases: list[str] = field(default_factory=list)
+    area: str = ""  # the column "Khu vực": a folder level such as Vĩnh Phúc
 
 
 @dataclass
@@ -175,6 +179,7 @@ def parse_machines(text: str) -> list[Machine]:
         raise IntakeError(f"{MACHINES}: the first column of the table must be titled “Tên chuẩn”", 1)
     code_i = next((i for i, h in enumerate(head) if h in ("ma may", "ma", "code", "id")), None)
     alias_i = next((i for i, h in enumerate(head) if h in ("ten goi khac", "goi khac", "alias", "aliases")), None)
+    area_i = next((i for i, h in enumerate(head) if h in ("khu vuc", "area", "region", "khu")), None)
     out: list[Machine] = []
     for r in rows[1:]:
         name = r[name_i].strip() if name_i < len(r) else ""
@@ -182,7 +187,8 @@ def parse_machines(text: str) -> list[Machine]:
             continue
         code = r[code_i].strip() if code_i is not None and code_i < len(r) else ""
         aliases = [a.strip() for a in r[alias_i].split(",") if a.strip()] if alias_i is not None and alias_i < len(r) else []
-        out.append(Machine(name, code, aliases))
+        area = r[area_i].strip() if area_i is not None and area_i < len(r) else ""
+        out.append(Machine(name, code, aliases, area))
     if not out:
         raise IntakeError(f"{MACHINES} lists no machine")
     return out
@@ -220,7 +226,7 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
         raise IntakeError(f"format must be {FORMAT}", at("format"))
     if data.get("version") != 1:
         raise IntakeError("version must be 1", at("version"))
-    known = {"format", "version", "mode", "trigger", "save", "ack", "status", "run", "limits"}
+    known = {"format", "version", "mode", "trigger", "save", "ack", "hint", "status", "run", "limits"}
     for k in data:
         if k not in known:
             st.warnings.append(f"unknown setting “{k}” is ignored (line {at(str(k))})")
@@ -260,14 +266,17 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
     mode = data.get("mode", "collect")
     if mode not in ("collect", "answer"):
         raise IntakeError("mode must be collect or answer", at("mode"))
-    trig = section("trigger", {"quietSeconds", "button"})
+    trig = section("trigger", {"quietSeconds", "button", "hintAfterSeconds"})
     save = section("save", {"path", "texts", "phases", "machines", "unknown", "stage"})
-    run = section("run", {"prompt", "bot", "agent", "reply", "start"})
+    run = section("run", {"prompt", "bot", "agent", "reply", "start", "command", "retryMinutes", "retryHours", "commandTimeoutSec"})
     lim = section("limits", {"maxPhotos", "timeoutSec", "retentionDays", "remindAt"})
     if "bot" in run:
         st.warnings.append(f"run.bot is not used yet (line {at('bot')})")
     quiet = integer(trig.get("quietSeconds"), "trigger.quietSeconds", 10, 600, 30, zero=True)
     button = boolean(trig.get("button"), "trigger.button", True)
+    hint_after = integer(trig.get("hintAfterSeconds"), "trigger.hintAfterSeconds", 1, 599, 0, zero=True)
+    if hint_after and quiet and hint_after >= quiet:
+        raise IntakeError("trigger.hintAfterSeconds must be less than quietSeconds (the notice comes before the session starts)", at("hintAfterSeconds"))
     if mode == "collect" and quiet == 0 and not button:
         raise IntakeError("with quietSeconds 0 the only way to run is the button, so button cannot be false", at("button"))
     path = string(save.get("path"), "save.path", 200, DEFAULT_PATH)
@@ -293,6 +302,8 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
         raise IntakeError("save.machines is a file name in the working folder", at("machines"))
     if "phase" in _template_vars(path) and not phases:
         raise IntakeError("save.path uses {phase}, so save.phases must say which words mean which folder", at("path"))
+    if {"area", "code"} & _template_vars(path) and "machine" not in _template_vars(path):
+        raise IntakeError("save.path uses {area} or {code}, which come from the machine: it needs {machine} too", at("path"))
     if "machine" in _template_vars(path):
         if machines_text is None:
             raise IntakeError(f"save.path uses {{machine}}, so the working folder needs {machines_file}", at("path"))
@@ -300,22 +311,45 @@ def _parse(text: str, machines_text: Optional[str], st: State) -> dict:
             st.machines = parse_machines(machines_text)
         except IntakeError as e:
             raise IntakeError(str(e), e.line or at("path"))
+        if "area" in _template_vars(path):
+            for m in st.machines:
+                if not m.area:
+                    st.warnings.append(f"{m.name} has no “Khu vực” in {machines_file}: its photos go to a folder named “Chưa có khu vực”")
     ack = string(data.get("ack"), "ack", 500, DEFAULT_ACK if mode == "collect" else "")
+    hint = string(data.get("hint"), "hint", 500, DEFAULT_HINT)  # sent after `trigger.hintAfterSeconds` without news: what happens next, and when
     status = boolean(data.get("status"), "status", True)  # false: the chat gets no "📋 Lô …" status message of the session
     prompt = string(run.get("prompt"), "run.prompt", 4000, DEFAULT_PROMPT)
     agent = boolean(run.get("agent"), "run.agent", True)  # false: no bot run; the sender gets `run.reply` and the session ends
     reply = string(run.get("reply"), "run.reply", 1000, DEFAULT_REPLY)
     start = string(run.get("start"), "run.start", 500, "")  # sent when the session starts, before the photos are saved (with save.stage)
-    stage = boolean(save.get("stage"), "save.stage", False)  # true: photos wait in jobs/_inbox/ until the session starts, then go to their folders
+    stage = boolean(save.get("stage"), "save.stage", False)
+    command = run.get("command")  # run after the photos are saved, once per machine: exit 0 done, 3 "not there yet" (tried again later), else an error
+    if command is not None:
+        if isinstance(command, str):
+            command = [command]
+        if not isinstance(command, list) or not 1 <= len(command) <= 20 or not all(isinstance(a, str) and 0 < len(a) <= 500 for a in command):
+            raise IntakeError("run.command is a list such as [\"{python}\", \"_tools/fetch_pdfs.py\", \"{machine}\"]", at("command"))
+        unknown_vars = set().union(*(_template_vars(a) for a in command)) - COMMAND_VARS
+        if unknown_vars:
+            raise IntakeError(f"run.command cannot use {{{sorted(unknown_vars)[0]}}}; it may use " + ", ".join("{" + v + "}" for v in sorted(COMMAND_VARS)), at("command"))
+        if command[0] == "{python}" and len(command) < 2:
+            raise IntakeError("run.command: after {python} comes the script to run, inside the working folder", at("command"))
+        program = command[1] if command[0] == "{python}" else command[0]
+        if program.startswith(("/", "\\")) or ":" in program or ".." in program.replace("\\", "/").split("/") or _template_vars(program):
+            raise IntakeError("run.command runs a program inside the working folder: write its path relative to it, such as _tools/fetch_pdfs.py", at("command"))
+    retry_minutes = integer(run.get("retryMinutes"), "run.retryMinutes", 1, 1440, 10)
+    retry_hours = integer(run.get("retryHours"), "run.retryHours", 1, 48, 3, zero=True)
+    command_timeout = integer(run.get("commandTimeoutSec"), "run.commandTimeoutSec", 10, 3600, 300)  # true: photos wait in jobs/_inbox/ until the session starts, then go to their folders
     remind = string(lim.get("remindAt"), "limits.remindAt", 5, "")
     if remind and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", remind):
         raise IntakeError("limits.remindAt is a time such as 18:30", at("remindAt"))
-    for label, tpl, ok in (("ack", ack, ACK_VARS), ("run.prompt", prompt, PROMPT_VARS), ("run.reply", reply, PROMPT_VARS), ("run.start", start, PROMPT_VARS)):
+    for label, tpl, ok in (("ack", ack, ACK_VARS), ("run.prompt", prompt, PROMPT_VARS), ("run.reply", reply, PROMPT_VARS), ("run.start", start, PROMPT_VARS), ("hint", hint, PROMPT_VARS)):
         for v in sorted(_template_vars(tpl) - ok):
             st.warnings.append(f"{{{v}}} in {label} is not a known word and is left as written")
     return {
         "mode": mode, "quietSeconds": quiet, "button": button, "path": path, "texts": boolean(save.get("texts"), "save.texts", True), "phases": phases,
-        "machines": machines_file, "unknown": unknown, "ack": ack, "status": status, "prompt": prompt, "agent": agent, "reply": reply, "start": start, "stage": stage, "body": body.strip(),
+        "machines": machines_file, "unknown": unknown, "ack": ack, "hint": hint, "hintAfter": hint_after, "status": status, "prompt": prompt, "agent": agent, "reply": reply, "start": start, "stage": stage, "command": command or [], "retryMinutes": retry_minutes, "retryHours": retry_hours,
+        "commandTimeoutSec": command_timeout, "body": body.strip(),
         "maxPhotos": integer(lim.get("maxPhotos"), "limits.maxPhotos", 1, 100, DEFAULT_LIMITS["maxPhotos"]),
         "timeoutSec": integer(lim.get("timeoutSec"), "limits.timeoutSec", 5, 7200, DEFAULT_LIMITS["timeoutSec"]),
         "retentionDays": integer(lim.get("retentionDays"), "limits.retentionDays", 1, 365, DEFAULT_LIMITS["retentionDays"]), "remindAt": remind,
@@ -421,7 +455,7 @@ def fill(template: str, values: dict[str, Any]) -> str:
 
 def build_folder(cfg: dict, values: dict[str, Any], workdir: str | Path) -> Path:
     """The folder a session's photos go to, inside the working folder. Raises IntakeError for anything that would leave it."""
-    safe = {k: clean_segment(v) if k in ("machine", "phase", "chat") else str(v) for k, v in values.items() if k in PATH_VARS}
+    safe = {k: clean_segment(v) if k in ("machine", "phase", "chat", "area", "code") else str(v) for k, v in values.items() if k in PATH_VARS}
     rel = fill(cfg["path"], safe)
     if re.search(r"\{\w+\}", rel):
         raise IntakeError("the folder still has an unknown word in it")

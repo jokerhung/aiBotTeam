@@ -20,18 +20,18 @@ def test_the_default_file_checks_and_says_wait_30_seconds_then_save_into_jobs_se
     assert st.valid and not st.warnings
     assert st.cfg["mode"] == "collect" and st.cfg["quietSeconds"] == 30 and st.cfg["button"] is True
     assert st.cfg["path"] == "jobs/{session}/" and st.cfg["maxPhotos"] == 40 and st.cfg["timeoutSec"] == 900 and st.cfg["retentionDays"] == 60
-    assert "{folder}out/" in st.cfg["prompt"] and st.cfg["body"].startswith("# Quy trình nhận tin")
+    assert "{out}" in st.cfg["prompt"] and st.cfg["body"].startswith("# Quy trình nhận tin")
     answer = ik.parse(ik.default_text("answer"))
     assert answer.valid and answer.cfg["mode"] == "answer" and answer.cfg["quietSeconds"] == 0
     assert ik.summary(st.cfg) == "Runs after 30 s without news · saves to jobs/{session}/" and ik.summary(answer.cfg) == "Answers every message"
 
 
 def test_an_older_grants_values_carry_over_and_its_job_folders_become_the_session_folder():
-    text = ik.default_text("collect", prompt="Đọc {job}/images/ và {job}/files/, ghi {job}/out/report.xlsx rồi trả lời.", limits={"maxPhotos": 12, "timeoutSec": 120, "remindAt": "18:30"})
+    text = ik.default_text("collect", prompt=ik.legacy_prompt("Đọc {job}/images/ và {job}/files/, ghi {job}/out/report.xlsx rồi trả lời."), limits={"maxPhotos": 12, "timeoutSec": 120, "remindAt": "18:30"})
     st = ik.parse(text)
     assert st.valid and st.cfg["maxPhotos"] == 12 and st.cfg["timeoutSec"] == 120 and st.cfg["remindAt"] == "18:30"
-    assert st.cfg["prompt"] == "Đọc {folder} và {folder}, ghi {folder}out/report.xlsx rồi trả lời." or "{folder}out/report.xlsx" in ik.legacy_prompt("{job}/out/report.xlsx")
-    assert ik.legacy_prompt("{job}/images/ {job}/out/ {job}") == "{folder} {folder}out/ {folder}"
+    assert st.cfg["prompt"] == "Đọc {folder} và {folder}, ghi {out}report.xlsx rồi trả lời."
+    assert ik.legacy_prompt("{job}/images/ {job}/out/ {job}") == "{folder} {out} {folder}"
 
 
 @pytest.mark.parametrize("old,new,line,why", [

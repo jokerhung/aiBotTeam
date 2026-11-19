@@ -52,6 +52,7 @@ async def test_photos_arrive_once_and_a_text_command_runs_the_batch(chan, fakes)
     await wait_idle(c, bot["id"])
     assert done["machine"] == "BH-FLEX-M1" and done["outFiles"] == ["report.txt"]
     msgs = (await c.get(f"/api/bots/{bot['id']}/messages", params={"thread": done["threadId"]})).json()["messages"]
+    msgs = [m for m in msgs if m["role"] == "user" and not m["text"].startswith("📷")]  # what the chat sent and was told is in the session's conversation too
     assert sum(1 for m in msgs if m["role"] == "user") == 1 and "Machine: BH-FLEX-M1" in msgs[0]["text"]
     assert any("thư mục lô" in t and "report.txt" in t for t in zalo.texts(CHAT))  # a file cannot be sent here: say where it is
     assert all(len(t) <= 2000 for t in zalo.texts(CHAT))
