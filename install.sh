@@ -257,6 +257,13 @@ for e in "claude:Claude Code:@anthropic-ai/claude-code:$WANT_CLAUDE:claude (it o
   fi
 done
 
+# Antigravity (agy) has its own installer from Google, so this script only looks for it and says how to sign in.
+if has agy || [ -x "$HOME/.local/bin/agy" ]; then
+  ok "Antigravity CLI found; sign in once with:  agy (it opens a browser to sign in)"
+else
+  printf '%s    Antigravity CLI (agy) not found: optional. Install it from antigravity.google, then sign in once with:  agy%s\n' "$C_DIM" "$C_OFF"
+fi
+
 printf '\n%sBotTeam is installed in %s%s\n' "$C_GREEN" "$ROOT" "$C_OFF"
 echo "  Start it for development (API, web, Zalo service):   cd \"$ROOT\" && pnpm dev"
 echo "  Start it as one program (needs the web build):       cd \"$ROOT\" && pnpm start:one   (API + web build + Zalo service)"

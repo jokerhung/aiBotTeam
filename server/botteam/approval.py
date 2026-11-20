@@ -70,6 +70,11 @@ def claude_permission_mode(mode: str) -> str:
     return {"edits": "acceptEdits", "full": "bypassPermissions"}.get(mode, "default")
 
 
+def antigravity_mode(mode: str) -> str:
+    """Antigravity's own mode per level: Edits accepts file edits, Full skips every question, Ask and Auto run in `default` where the broker answers."""
+    return {"edits": "accept-edits", "full": "auto"}.get(mode, "default")
+
+
 def codex_sandbox(mode: str) -> str:
     """Codex `exec` has no interactive approvals, so each level maps to the sandbox it may run in."""
     return {"ask": "read-only", "edits": "workspace-write", "auto": "workspace-write", "full": "danger-full-access"}.get(mode, "read-only")

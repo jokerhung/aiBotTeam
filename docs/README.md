@@ -16,6 +16,7 @@ Kế hoạch chia **5 phase**, mỗi phase kết thúc bằng một bản chạy
 | 4 | [phase-4-teams-automations.md](phase-4-teams-automations.md) | Channel nhiều bot, bot giao việc cho nhau, lịch & webhook |
 | 5 | [phase-5-extensions-polish.md](phase-5-extensions-polish.md) | Plugins/MCP, Computer panel, memory, i18n, đóng gói |
 | 6 | [phase-6-telegram-channel.md](phase-6-telegram-channel.md) | Kênh Telegram và Zalo Bot trong Connected apps, gom lô theo thư mục, bot kiểm kê máy bán hàng (thêm ngoài bản gốc) |
+| 7 | [phase-7-antigravity-engine.md](phase-7-antigravity-engine.md) | Engine Antigravity (`agy`, giao thức ACP) hỗ trợ giống Claude Code và Codex: dò và đăng nhập, chat, duyệt quyền, công cụ đội, tiếp tục, ảnh, chạy ổn định trên Windows (kế hoạch) |
 
 ## 1. Bản gốc là gì
 

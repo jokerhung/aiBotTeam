@@ -46,6 +46,7 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 ## 3. Cấu hình engine
 
 - **Claude Code / Codex CLI:** cài CLI chính thức và đăng nhập (`claude login`, `codex login`). BotTeam tự dò.
+- **Antigravity (`agy`):** cài Antigravity CLI từ antigravity.google rồi chạy `agy` một lần để đăng nhập bằng tài khoản Google. BotTeam tự dò `agy` (trên PATH, hoặc `%LOCALAPPDATA%\agy\bin` / `~/.local/bin`), lấy danh sách model từ `agy models` và nói chuyện với nó qua giao thức ACP. Mức duyệt: Ask và Auto hỏi bạn qua thẻ duyệt, Edits cho sửa file không hỏi, Full không hỏi gì. Bot đọc được ảnh, dùng được công cụ đội và MCP riêng. Nếu `agy` nằm chỗ khác, nhập đường dẫn ở Settings → Engines. Script cài đặt chỉ dò `agy` và in cách đăng nhập, không tự cài.
 - **Endpoint tương thích OpenAI:** Settings → Engines → thêm địa chỉ và khoá. Khoá chỉ lưu trên máy này.
 - Mỗi bot có model riêng; đổi ở nút model trên đầu cuộc trò chuyện.
 

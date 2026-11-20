@@ -242,6 +242,11 @@ foreach ($e in $engines) {
   }
 }
 
+# Antigravity (agy) has its own installer from Google, so this script only looks for it and says how to sign in.
+$agy = (Has "agy") -or (Test-Path (Join-Path $env:LOCALAPPDATA "agy\bin\agy.exe"))
+if ($agy) { Ok "Antigravity CLI found; sign in once with:  agy   (it opens a browser to sign in)" }
+else { Write-Host "    Antigravity CLI (agy) not found: optional. Install it from antigravity.google, then sign in once with:  agy" -ForegroundColor DarkGray }
+
 Write-Host ""
 Write-Host "BotTeam is installed in $root" -ForegroundColor Green
 Write-Host "  Start it for development (API, web, Zalo service):   .\start.bat        (frees the ports first, then runs pnpm dev)"

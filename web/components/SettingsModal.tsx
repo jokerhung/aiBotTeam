@@ -159,7 +159,7 @@ function EngineRow({ inst }: { inst: InstanceInfo }) {
   const [busy, setBusy] = useState(false);
   const patch = (body: object) => api(`/api/instances/${inst.id}`, { method: "PATCH", body: JSON.stringify(body) }).catch(() => {});
   const ok = inst.snapshot.state === "available";
-  const cli = inst.driver === "claude" || inst.driver === "codex";
+  const cli = inst.driver === "claude" || inst.driver === "codex" || inst.driver === "antigravity";
   return (
     <div className="border-b border-hairline/60 py-3.5 last:border-0" data-testid={`engine-${inst.id}`}>
       <div className="flex items-center gap-2">

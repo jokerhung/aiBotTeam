@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from .config import ConfigStore
+from .drivers.antigravity import AntigravityDriver, antigravity_default_models, parse_models
 from .drivers.base import Listener
 from .drivers.claude import CLAUDE_MODELS, ClaudeDriver
 from .drivers.codex import codex_models
@@ -39,6 +40,13 @@ def claude_signed_in(code: int, out: str) -> bool | None:
         return bool(json.loads(out).get("loggedIn"))
     except ValueError:
         return False if "not logged in" in out.lower() else (True if code == 0 else None)
+
+
+def antigravity_paths() -> list[str]:
+    """Where the installer puts `agy` when it is not on PATH yet."""
+    home = os.path.expanduser("~")
+    local = os.environ.get("LOCALAPPDATA") or ""
+    return [p for p in (os.path.join(local, "agy", "bin", "agy.exe") if local else "", os.path.join(home, ".local", "bin", "agy")) if p]
 
 
 @dataclass
@@ -98,6 +106,7 @@ class Registry:
         self.instances.clear()
         await self._add("claude", "claude", "Claude Code")
         await self._add("codex", "codex", "Codex")
+        await self._add("antigravity", "antigravity", "Antigravity")
         for iid, cfg in self.config.instances.items():
             if cfg.get("driver") == "openai-compat":
                 await self._add(iid, "openai-compat", cfg.get("displayName") or iid)
@@ -136,6 +145,8 @@ class Registry:
         if kind == "echo":
             inst.driver, inst.state, inst.version = EchoDriver(broker=self.broker, agents=self.agents), "available", "0.1.0"
             inst.models = [{"id": "echo-1", "label": "Echo 1", "default": True}]
+        elif kind == "antigravity":
+            await self._detect_antigravity(inst, cfg)
         elif kind in ("claude", "codex"):
             binary = cfg.get("path") or shutil.which(kind)
             if not binary or not os.path.exists(binary):
@@ -177,6 +188,30 @@ class Registry:
                 inst.models[0] = {**inst.models[0], "default": True}
         else:
             inst.state, inst.reason = "unavailable", f"Unknown driver {kind!r}"
+
+    async def _detect_antigravity(self, inst: Instance, cfg: dict) -> None:
+        binary = cfg.get("path") or shutil.which("agy") or next((p for p in antigravity_paths() if os.path.exists(p)), None)
+        inst.models = antigravity_default_models()
+        if not binary or not os.path.exists(binary):
+            inst.state, inst.reason = "unavailable", "agy CLI not found on PATH"
+            return
+        code, out = await run_text([binary, "--version"])
+        if code != 0:
+            inst.state, inst.reason = "unavailable", out or "could not run --version"
+            return
+        inst.version = out.splitlines()[0] if out else None
+        inst.driver = AntigravityDriver(binary, broker=self.broker)
+        inst.state = "available"
+        code, out = await run_text([binary, "models"], timeout=20)  # lists models only for a signed-in account
+        listed = parse_models(out) if code == 0 else []
+        if listed:
+            inst.signed_in = True
+            inst.models = antigravity_default_models() + listed
+        elif code == -1:
+            inst.signed_in = None
+        else:
+            inst.signed_in = False
+            inst.reason = "Sign in: run `agy` once"
 
     # ---- api keys -------------------------------------------------------------
     def key_status(self) -> dict[str, dict]:

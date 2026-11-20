@@ -182,7 +182,7 @@ async def test_unavailable_engine_reports_instead_of_crashing(ctx):
 async def test_instances_listed_and_secrets_never_returned(ctx):
     c, app = ctx
     ids = {i["id"] for i in (await c.get("/api/instances")).json()["instances"]}
-    assert {"claude", "codex", "echo"} <= ids
+    assert {"claude", "codex", "antigravity", "echo"} <= ids
     r = await c.post("/api/instances", json={"displayName": "Local", "baseUrl": "http://127.0.0.1:9/v1", "apiKey": "sk-secret", "models": ["m1"]})
     assert r.status_code == 201 and "sk-secret" not in r.text
     assert "sk-secret" not in (await c.get("/api/instances")).text

@@ -1,6 +1,6 @@
 # **BotTeam**
 
-BotTeam is a local chat app where every contact in the sidebar is a real AI agent: the Claude Code or Codex CLI (or any OpenAI-compatible endpoint) running on your computer, with its own name, instructions, model, memory and connected apps. Bots work together in channels, hand tasks to each other, run on a schedule, and answer people who write to them on Telegram or Zalo. Everything is kept on your machine.
+BotTeam is a local chat app where every contact in the sidebar is a real AI agent: the Claude Code, Codex or Antigravity CLI (or any OpenAI-compatible endpoint) running on your computer, with its own name, instructions, model, memory and connected apps. Bots work together in channels, hand tasks to each other, run on a schedule, and answer people who write to them on Telegram or Zalo. Everything is kept on your machine.
 
 It is built with a Next.js web app and a Python (FastAPI) server, and is inspired by [OpenMausBot](https://github.com/milind-soni/OpenMausBot).
 
@@ -34,13 +34,13 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.
 iwr -useb https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-The script installs Git, Node.js, Python and uv when they are missing, clones the repository and installs its dependencies. Add `--claude` / `-Claude` or `--codex` / `-Codex` to install the engine CLIs too. See [docs/user-guide.md](docs/user-guide.md) for every option and for signing in to an engine.
+The script installs Git, Node.js, Python and uv when they are missing, clones the repository and installs its dependencies. Add `--claude` / `-Claude` or `--codex` / `-Codex` to install the engine CLIs too (Antigravity has its own installer; the script only looks for `agy`). See [docs/user-guide.md](docs/user-guide.md) for every option and for signing in to an engine.
 
 ---
 
 ## ✨ 8 Superpowers
 
-- 🤖 **Real agents, not a chat wrapper** — each bot is a Claude Code or Codex CLI session (or an OpenAI-compatible endpoint) with its own model, working folder and approval level.
+- 🤖 **Real agents, not a chat wrapper** — each bot is a Claude Code, Codex or Antigravity CLI session (or an OpenAI-compatible endpoint) with its own model, working folder and approval level.
 - 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
@@ -60,7 +60,7 @@ flowchart LR
     API --> Bus["Event bus"]
     API --> Broker["Permission broker<br/>(fail closed)"]
     API --> Drivers["Drivers"]
-    Drivers --> CLI["Claude / Codex CLI<br/>OpenAI-compatible endpoint"]
+    Drivers --> CLI["Claude / Codex / Antigravity CLI<br/>OpenAI-compatible endpoint"]
     CLI -- "asks permission" --> Broker
     Broker -- "approval card" --> Browser
     API --> Proxy["MCP proxy<br/>allowed tools, output limit"]
@@ -85,7 +85,7 @@ flowchart LR
 | `web/state/` | The single reducer and the SSE client |
 | `web/lib/` | Types shared with the server (`wire.ts`), skins, Vietnamese dictionary (`i18n-vi.ts`) |
 | `server/botteam/` | FastAPI server: `main.py` (routes), `turns.py`, `registry.py`, `broker.py`, `store.py`, `routines.py`, `memory.py` |
-| `server/botteam/drivers/` | One driver per engine: `claude.py`, `codex.py`, `openai_compat.py` |
+| `server/botteam/drivers/` | One driver per engine: `claude.py`, `codex.py`, `antigravity.py`, `openai_compat.py` |
 | `server/botteam/channels/` | Telegram, Zalo bot and Zalo personal-account input, batch and chat modes |
 | `zalo-service/` | Node.js service on [zca-js](https://github.com/RFS-ADRENO/zca-js): QR sign-in, receives and sends Zalo messages for a personal account; reached through the `/zalo-api` proxy in `web/next.config.mjs` |
 | `server/botteam/mcp_*.py`, `composio.py` | MCP servers, proxy and Composio connection |
@@ -103,7 +103,7 @@ flowchart LR
 - Python 3.10 or newer and [uv](https://docs.astral.sh/uv/)
 - Node.js 20 or newer and pnpm
 - Git
-- At least one engine: the Claude Code CLI, the Codex CLI, or an OpenAI-compatible endpoint
+- At least one engine: the Claude Code CLI, the Codex CLI, the Antigravity CLI (`agy`, from antigravity.google), or an OpenAI-compatible endpoint
 - Microsoft Edge or Chrome for the built-in browser (otherwise run `playwright install chromium`)
 
 The install scripts check all of this and install what is missing. Ports: web `5299`, API `8899`, webhooks `8900`, Zalo service `8902`.
@@ -148,7 +148,7 @@ To use BotTeam from another computer on your LAN or Tailscale, set `WEB_HOST=0.0
 #### Open the application and configure it
 
 1. Open `http://127.0.0.1:5299` in development, or `http://127.0.0.1:8899` after `pnpm build:static` and `botteam serve`.
-2. The welcome screen checks for an engine. Install and sign in (`claude`, `codex login`) or add an OpenAI-compatible endpoint in Settings → Engines, then press **Check again**.
+2. The welcome screen checks for an engine. Install and sign in (`claude`, `codex login`, `agy`) or add an OpenAI-compatible endpoint in Settings → Engines, then press **Check again**.
 3. Press **+** → **New bot**, name it and pick a color.
 4. Choose the bot's approval level, and connect apps with **Connect apps** (Composio key, custom MCP servers, Telegram and Zalo input). A bot you make without a working folder gets `workspaces/<bot id>/`; when it is given an input, an `intake.md` is made there (Bot settings → *Intake workflow* edits it).
 

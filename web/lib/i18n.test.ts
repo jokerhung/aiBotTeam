@@ -70,7 +70,7 @@ describe("Vietnamese interface", () => {
     const missing = [...found].filter((m) => /\s/.test(m) && translate("vi", m) === m); // words alone are keys, not sentences
     expect(missing).toEqual([]);
     // messages with a value inside
-    for (const sample of ["unknown key: groq", "files are limited to 100 MB", "Could not start Codex: boom", "Claude Code exited unexpectedly: x", "Endpoint error: 500", "an interval must be between 1 and 10080 minutes"]) {
+    for (const sample of ["unknown key: groq", "files are limited to 100 MB", "Could not start Codex: boom", "Could not start Antigravity: boom", "Claude Code exited unexpectedly: x", "Antigravity exited unexpectedly: x", "Endpoint error: 500", "an interval must be between 1 and 10080 minutes"]) {
       expect(translate("vi", sample), sample).not.toBe(sample);
     }
   });

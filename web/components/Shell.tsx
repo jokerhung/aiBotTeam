@@ -46,7 +46,7 @@ export function Shell() {
       )}
       {state.hydrated && noRealEngine && (
         <div role="status" className="shrink-0 bg-warning/15 px-4 py-1.5 text-center text-[13px] text-warning">
-          No AI engine is ready. Install and sign in to the Claude Code or Codex CLI, or add an OpenAI-compatible endpoint.
+          No AI engine is ready. Install and sign in to the Claude Code, Codex or Antigravity CLI, or add an OpenAI-compatible endpoint.
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">
