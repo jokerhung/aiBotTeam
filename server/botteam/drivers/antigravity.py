@@ -19,6 +19,8 @@ AUTH_FAILURE = re.compile(r"sign in|log ?in|authenticat|unauthori[sz]ed|credenti
 USAGE_LIMIT = re.compile(r"quota|usage limit|rate limit|resource.?exhausted|too many requests", re.I)
 # Variables that would make `agy` use another credential than the signed-in account.
 REMOVED_ENV = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GOOGLE_GENAI_USE_VERTEXAI")
+AUTH_LINK = re.compile(r"(?i)(authenticat|sign.?in|log.?in).*?(https?://\S+)")
+MAX_IMAGE_BYTES = 8 * 1024 * 1024  # a bigger image is not sent inline: the agent is told its path and reads it with its own tools
 START_TIMEOUT = 90  # seconds for `initialize` + `session/new`; the first start after an update can be slow
 CANCEL_GRACE = 3  # seconds a cancelled turn gets to end before the process is killed
 
@@ -72,6 +74,7 @@ class Session:
     started: set = field(default_factory=set)  # tool call ids already announced
     prompt_task: Optional[asyncio.Task] = None
     asked: set = field(default_factory=set)
+    auth_url: Optional[str] = None  # the sign-in link `agy` printed on stderr
 
 
 class AntigravityDriver(Emitter):
@@ -110,8 +113,10 @@ class AntigravityDriver(Emitter):
                     pass  # the model has no thinking level
                 s.effort = inp.effort
         except (OSError, RuntimeError, asyncio.TimeoutError) as e:
+            failed = self.sessions.get(inp.thread_id)
+            link = failed.auth_url if failed else None
             await self._close(inp.thread_id, settle=False)
-            self._start_failed(inp.thread_id, turn_id, e)
+            self._start_failed(inp.thread_id, turn_id, e, link)
             return turn_id
         s.turn_id, s.settled, s.explained, s.stop_requested, s.text, s.started, s.asked = turn_id, False, False, False, "", set(), set()
         prompt = inp.text
@@ -120,19 +125,22 @@ class AntigravityDriver(Emitter):
         others = [p for p in inp.attachments if p not in inp.image_attachments]
         if others:
             prompt += "\n\nAttached files (read them with your tools):\n" + "\n".join(f"- {p}" for p in others)
+        images = [(p, self._image_block(p)) for p in inp.image_attachments]
+        big = [p for p, b in images if b is None]
+        if big:  # too large (or unreadable) to send inline: say where it is
+            prompt += "\n\nImages too large to attach here (open them with your tools):\n" + "\n".join(f"- {p}" for p in big)
         blocks: list[dict] = [{"type": "text", "text": prompt}]
-        for path in inp.image_attachments:
-            block = self._image_block(path)
-            if block:
-                blocks.append(block)
+        blocks += [b for _, b in images if b]
         s.prompt_task = asyncio.create_task(self._run_prompt(inp.thread_id, s, blocks))
         return turn_id
 
-    def _start_failed(self, thread_id: str, turn_id: str, e: Exception) -> None:
+    def _start_failed(self, thread_id: str, turn_id: str, e: Exception, link: Optional[str] = None) -> None:
         msg = str(e) or type(e).__name__
-        setup = bool(AUTH_FAILURE.search(msg)) or isinstance(e, OSError)
+        setup = bool(AUTH_FAILURE.search(msg)) or isinstance(e, OSError) or bool(link)
         if isinstance(e, asyncio.TimeoutError):
             msg = "Antigravity did not start in time"
+        if link:
+            msg += f". Sign in at {link} (or run `agy` once)"
         self.emit("runtime.error", thread_id, turn_id, message=f"Could not start Antigravity: {msg}", setup=setup, terminal=True)
         self.emit("turn.completed", thread_id, turn_id, ok=False)
 
@@ -147,7 +155,7 @@ class AntigravityDriver(Emitter):
                 data = f.read()
         except OSError:
             return None
-        if len(data) > 8 * 1024 * 1024:
+        if len(data) > MAX_IMAGE_BYTES:
             return None
         return {"type": "image", "mimeType": mime, "data": base64.b64encode(data).decode()}
 
@@ -267,7 +275,11 @@ class AntigravityDriver(Emitter):
     async def _drain_stderr(self, s: Session) -> None:
         try:
             async for raw in s.proc.stderr:
-                s.stderr_tail = (s.stderr_tail + [raw.decode("utf8", "replace").rstrip()])[-8:]
+                line = raw.decode("utf8", "replace").rstrip()
+                s.stderr_tail = (s.stderr_tail + [line])[-8:]
+                m = AUTH_LINK.search(line)
+                if m:
+                    s.auth_url = m.group(2)
         except asyncio.CancelledError:
             pass
 
@@ -304,6 +316,8 @@ class AntigravityDriver(Emitter):
             await self.broker.cancel_thread(thread_id)
 
     def _exit_message(self, s: Session) -> str:
+        if s.auth_url:
+            return f"Antigravity is not signed in. Sign in at {s.auth_url} (or run `agy` once)"
         tail = " ".join(s.stderr_tail).strip()
         return f"Antigravity exited unexpectedly{': ' + tail if tail else ''}"
 
@@ -325,6 +339,8 @@ class AntigravityDriver(Emitter):
             if not s.explained and not s.stop_requested:
                 s.explained = True
                 msg = str(e)
+                if s.auth_url and AUTH_FAILURE.search(msg):
+                    msg += f". Sign in at {s.auth_url} (or run `agy` once)"
                 self.emit("runtime.error", thread_id, tid, message=msg, setup=bool(AUTH_FAILURE.search(msg)),
                           limit="engine" if USAGE_LIMIT.search(msg) else None,
                           retryable=msg.startswith("Antigravity exited"), terminal=bool(AUTH_FAILURE.search(msg)) or None)

@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.
 iwr -useb https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-The script installs Git, Node.js, Python and uv when they are missing, clones the repository and installs its dependencies. Add `--claude` / `-Claude` or `--codex` / `-Codex` to install the engine CLIs too (Antigravity has its own installer; the script only looks for `agy`). See [docs/user-guide.md](docs/user-guide.md) for every option and for signing in to an engine.
+The script installs Git, Node.js, Python and uv when they are missing, clones the repository and installs its dependencies. Add `--claude` / `-Claude`, `--codex` / `-Codex` or `--antigravity` / `-Antigravity` to install the engine CLIs too. See [docs/user-guide.md](docs/user-guide.md) for every option and for signing in to an engine.
 
 ---
 

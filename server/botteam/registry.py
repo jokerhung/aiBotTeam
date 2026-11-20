@@ -42,6 +42,22 @@ def claude_signed_in(code: int, out: str) -> bool | None:
         return False if "not logged in" in out.lower() else (True if code == 0 else None)
 
 
+_MODELS_CACHE: dict[str, tuple[float, tuple[int, str]]] = {}
+
+
+async def models_listing(binary: str, ttl: float = 120.0) -> tuple[int, str]:
+    """`agy models` goes to the network and can take seconds: a recent answer is reused (a failed run never is)."""
+    import time
+
+    hit = _MODELS_CACHE.get(binary)
+    if hit and time.monotonic() - hit[0] < ttl:
+        return hit[1]
+    res = await run_text([binary, "models"], timeout=20)
+    if res[0] != -1:
+        _MODELS_CACHE[binary] = (time.monotonic(), res)
+    return res
+
+
 def antigravity_paths() -> list[str]:
     """Where the installer puts `agy` when it is not on PATH yet."""
     home = os.path.expanduser("~")
@@ -118,6 +134,7 @@ class Registry:
         old = self.instances.get(instance_id)
         if not old:
             return None
+        _MODELS_CACHE.clear()  # "Check again" asks the CLI afresh
         if old.driver:
             await old.driver.stop_all()
         return await self._add(old.id, old.driver_kind, old.display_name)
@@ -202,7 +219,7 @@ class Registry:
         inst.version = out.splitlines()[0] if out else None
         inst.driver = AntigravityDriver(binary, broker=self.broker)
         inst.state = "available"
-        code, out = await run_text([binary, "models"], timeout=20)  # lists models only for a signed-in account
+        code, out = await models_listing(binary)  # lists models only for a signed-in account
         listed = parse_models(out) if code == 0 else []
         if listed:
             inst.signed_in = True

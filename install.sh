@@ -9,6 +9,7 @@
 #   --repo URL        the repository to clone
 #   --claude          also install the Claude Code CLI (npm @anthropic-ai/claude-code); you sign in yourself: run `claude` once
 #   --codex           also install the Codex CLI (npm @openai/codex); you sign in yourself: run `codex login`
+#   --antigravity     also install the Antigravity CLI (agy) with Google's own installer; you sign in yourself: run `agy` once
 #   --browser         also download Playwright's Chromium (about 150 MB) for the bots' built-in browser
 #   --skip-build      do not build the static web app (`pnpm dev` does not need it; `botteam serve` does)
 #   --dry-run         print what would be done and change nothing
@@ -23,6 +24,7 @@ REPO="https://github.com/jokerhung/aiBotTeam"
 BROWSER=0
 WANT_CLAUDE=0
 WANT_CODEX=0
+WANT_AGY=0
 SKIP_BUILD=0
 DRY=0
 MIN_NODE=20
@@ -35,9 +37,10 @@ while [ $# -gt 0 ]; do
     --browser) BROWSER=1; shift ;;
     --claude) WANT_CLAUDE=1; shift ;;
     --codex) WANT_CODEX=1; shift ;;
+    --antigravity) WANT_AGY=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n '2,15p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -257,11 +260,22 @@ for e in "claude:Claude Code:@anthropic-ai/claude-code:$WANT_CLAUDE:claude (it o
   fi
 done
 
-# Antigravity (agy) has its own installer from Google, so this script only looks for it and says how to sign in.
+# Antigravity (agy) is installed with Google's own installer (--antigravity); signing in needs you and a browser.
+if ! has agy && [ ! -x "$HOME/.local/bin/agy" ] && [ "$WANT_AGY" = 1 ]; then
+  say "Installing the Antigravity CLI with Google's installer"
+  if [ "$DRY" = 1 ]; then
+    printf '%s    [dry run] curl -fsSL https://antigravity.google/cli/install.sh | bash%s\n' "$C_DIM" "$C_OFF"
+  else
+    curl -fsSL https://antigravity.google/cli/install.sh | bash || die "could not install the Antigravity CLI"
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+fi
 if has agy || [ -x "$HOME/.local/bin/agy" ]; then
   ok "Antigravity CLI found; sign in once with:  agy (it opens a browser to sign in)"
+elif [ "$DRY" = 1 ] && [ "$WANT_AGY" = 1 ]; then
+  printf '%s    Antigravity CLI would be installed; then sign in with:  agy%s\n' "$C_DIM" "$C_OFF"
 else
-  printf '%s    Antigravity CLI (agy) not found: optional. Install it from antigravity.google, then sign in once with:  agy%s\n' "$C_DIM" "$C_OFF"
+  printf '%s    Antigravity CLI (agy) not found: optional. Run this script again with --antigravity to install it, then sign in once with:  agy%s\n' "$C_DIM" "$C_OFF"
 fi
 
 printf '\n%sBotTeam is installed in %s%s\n' "$C_GREEN" "$ROOT" "$C_OFF"

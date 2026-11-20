@@ -296,3 +296,48 @@ async def test_registry_without_the_cli_is_unavailable(tmp_path, monkeypatch):
     r = reg.Registry(ConfigStore(tmp_path / "cfg"), with_echo=False)
     inst = await r._add("antigravity", "antigravity", "Antigravity")
     assert inst.state == "unavailable" and "not found" in inst.reason
+
+
+async def test_sign_in_link_from_stderr_reaches_the_error(monkeypatch):
+    monkeypatch.setenv("FAKE_ACP_AUTH", "1")
+    d = AntigravityDriver([sys.executable, FAKE])
+    c = Collector(d)
+    await d.send_turn(inp("hello"))
+    await c.until("turn.completed")
+    err = [e for e in c.events if e.type == "runtime.error"][0].data
+    assert err["setup"] is True and "https://accounts.example/auth?x=1" in err["message"]
+    await d.stop_all()
+
+
+async def test_an_image_too_big_to_send_is_named_by_path(tmp_path, log, monkeypatch):
+    from botteam.drivers import antigravity as ag
+
+    monkeypatch.setattr(ag, "MAX_IMAGE_BYTES", 3)
+    img = tmp_path / "big.png"
+    img.write_bytes(b"\x89PNG-more-than-3-bytes")
+    d = AntigravityDriver([sys.executable, FAKE])
+    c = Collector(d)
+    await d.send_turn(inp("hello", attachments=[str(img)], image_attachments=[str(img)]))
+    await c.until("turn.completed")
+    blocks = [m for m in log() if m.get("method") == "session/prompt"][0]["params"]["prompt"]
+    assert len(blocks) == 1 and str(img) in blocks[0]["text"]
+    await d.stop_all()
+
+
+async def test_models_listing_is_reused_but_a_failure_is_not(monkeypatch):
+    from botteam import registry as reg
+
+    calls = []
+
+    async def fake_run(args, timeout=15):
+        calls.append(1)
+        return (0, "m\tM") if len(calls) < 3 else (-1, "boom")
+
+    monkeypatch.setattr(reg, "run_text", fake_run)
+    reg._MODELS_CACHE.clear()
+    assert await reg.models_listing("agy-x") == (0, "m\tM") and await reg.models_listing("agy-x") == (0, "m\tM")
+    assert len(calls) == 1
+    reg._MODELS_CACHE.clear()
+    calls.extend([1, 1])
+    assert (await reg.models_listing("agy-y"))[0] == -1 and (await reg.models_listing("agy-y"))[0] == -1
+    assert len(calls) == 5

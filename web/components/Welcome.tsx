@@ -17,7 +17,7 @@ const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none
 const SETUP: Record<string, { install: string; signIn: string }> = {
   claude: { install: "npm install -g @anthropic-ai/claude-code", signIn: "claude  (then sign in when it asks)" },
   codex: { install: "npm install -g @openai/codex", signIn: "codex login" },
-  antigravity: { install: "the Antigravity CLI from antigravity.google (it installs `agy`)", signIn: "agy  (then sign in when it asks)" },
+  antigravity: { install: "irm https://antigravity.google/cli/install.ps1 | iex   (Windows)  ·  curl -fsSL https://antigravity.google/cli/install.sh | bash   (macOS, Linux)", signIn: "agy  (then sign in when it asks)" },
 };
 
 function EngineRow({ inst, onCheck }: { inst: InstanceInfo; onCheck: () => void }) {

@@ -24,6 +24,7 @@
 .PARAMETER Browser    Also download Playwright's Chromium (about 150 MB).
 .PARAMETER Claude     Also install the Claude Code CLI (npm package @anthropic-ai/claude-code). You still sign in yourself: run `claude` once.
 .PARAMETER Codex      Also install the Codex CLI (npm package @openai/codex). You still sign in yourself: run `codex login`.
+.PARAMETER Antigravity  Also install the Antigravity CLI (`agy`) with Google's own installer. You still sign in yourself: run `agy` once.
 .PARAMETER SkipBuild  Do not build the static web app (`pnpm dev` does not need it; `botteam serve` does).
 .PARAMETER DryRun     Print what would be done and change nothing.
 #>
@@ -34,6 +35,7 @@ param(
   [switch]$Browser,
   [switch]$Claude,
   [switch]$Codex,
+  [switch]$Antigravity,
   [switch]$SkipBuild,
   [switch]$DryRun
 )
@@ -242,10 +244,15 @@ foreach ($e in $engines) {
   }
 }
 
-# Antigravity (agy) has its own installer from Google, so this script only looks for it and says how to sign in.
-$agy = (Has "agy") -or (Test-Path (Join-Path $env:LOCALAPPDATA "agy\bin\agy.exe"))
-if ($agy) { Ok "Antigravity CLI found; sign in once with:  agy   (it opens a browser to sign in)" }
-else { Write-Host "    Antigravity CLI (agy) not found: optional. Install it from antigravity.google, then sign in once with:  agy" -ForegroundColor DarkGray }
+# Antigravity (agy) is installed with Google's own installer (-Antigravity); signing in needs you and a browser.
+$agyExe = Join-Path $env:LOCALAPPDATA "agy\bin\agy.exe"
+if (-not (Has "agy") -and -not (Test-Path $agyExe) -and $Antigravity) {
+  Say "Installing the Antigravity CLI with Google's installer"
+  Run "irm https://antigravity.google/cli/install.ps1 | iex" { Invoke-RestMethod https://antigravity.google/cli/install.ps1 | Invoke-Expression }
+}
+if ((Has "agy") -or (Test-Path $agyExe)) { Ok "Antigravity CLI found; sign in once with:  agy   (it opens a browser to sign in)" }
+elseif ($DryRun -and $Antigravity) { Write-Host "    Antigravity CLI would be installed; then sign in with:  agy" -ForegroundColor DarkGray }
+else { Write-Host "    Antigravity CLI (agy) not found: optional. Run this script again with -Antigravity to install it, then sign in once with:  agy" -ForegroundColor DarkGray }
 
 Write-Host ""
 Write-Host "BotTeam is installed in $root" -ForegroundColor Green

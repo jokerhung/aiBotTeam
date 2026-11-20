@@ -16,7 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.
 iwr -useb https://raw.githubusercontent.com/jokerhung/aiBotTeam/master/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Muốn cài luôn engine AI: thêm `--claude` / `-Claude` (Claude Code CLI) và/hoặc `--codex` / `-Codex` (Codex CLI). Việc đăng nhập phải do bạn làm một lần, vì cần trình duyệt: chạy `claude` (nó mở trình duyệt để đăng nhập) hoặc `codex login`, rồi bấm **Check again** ở màn hình chào của BotTeam. Không dùng CLI thì thêm một endpoint tương thích OpenAI trong Cài đặt → Engines.
+Muốn cài luôn engine AI: thêm `--claude` / `-Claude` (Claude Code CLI) và/hoặc `--codex` / `-Codex` (Codex CLI) và/hoặc `--antigravity` / `-Antigravity` (Antigravity CLI, `agy`, dùng bộ cài chính thức của Google). Việc đăng nhập phải do bạn làm một lần, vì cần trình duyệt: chạy `claude` (nó mở trình duyệt để đăng nhập) hoặc `codex login`, rồi bấm **Check again** ở màn hình chào của BotTeam. Không dùng CLI thì thêm một endpoint tương thích OpenAI trong Cài đặt → Engines.
 
 Tuỳ chọn: `--browser` / `-Browser` (tải thêm Chromium cho trình duyệt tích hợp của bot, khi máy không có Edge hoặc Chrome), `--skip-build` / `-SkipBuild`, `--dry-run` / `-DryRun` (chỉ in việc sẽ làm), `--dir` / `-Dir` (nơi clone). Script chạy lại được nhiều lần: cái gì có rồi thì bỏ qua. Trên Windows cần `winget` (có sẵn từ Windows 10 bản mới); trên Linux cần `sudo` nếu không chạy bằng root. Sau khi cài xong mà lệnh `uv`/`pnpm` chưa nhận, mở một cửa sổ terminal mới.
 
@@ -46,7 +46,7 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 ## 3. Cấu hình engine
 
 - **Claude Code / Codex CLI:** cài CLI chính thức và đăng nhập (`claude login`, `codex login`). BotTeam tự dò.
-- **Antigravity (`agy`):** cài Antigravity CLI từ antigravity.google rồi chạy `agy` một lần để đăng nhập bằng tài khoản Google. BotTeam tự dò `agy` (trên PATH, hoặc `%LOCALAPPDATA%\agy\bin` / `~/.local/bin`), lấy danh sách model từ `agy models` và nói chuyện với nó qua giao thức ACP. Mức duyệt: Ask và Auto hỏi bạn qua thẻ duyệt, Edits cho sửa file không hỏi, Full không hỏi gì. Bot đọc được ảnh, dùng được công cụ đội và MCP riêng. Nếu `agy` nằm chỗ khác, nhập đường dẫn ở Settings → Engines. Script cài đặt chỉ dò `agy` và in cách đăng nhập, không tự cài.
+- **Antigravity (`agy`):** cài Antigravity CLI (`install.ps1` / `install.sh` của antigravity.google, hoặc chạy script cài của BotTeam với `-Antigravity` / `--antigravity`) rồi chạy `agy` một lần để đăng nhập bằng tài khoản Google. BotTeam tự dò `agy` (trên PATH, hoặc `%LOCALAPPDATA%\agy\bin` / `~/.local/bin`), lấy danh sách model từ `agy models` và nói chuyện với nó qua giao thức ACP. Mức duyệt: Ask và Auto hỏi bạn qua thẻ duyệt, Edits cho sửa file không hỏi, Full không hỏi gì. Bot đọc được ảnh, dùng được công cụ đội và MCP riêng. Nếu `agy` nằm chỗ khác, nhập đường dẫn ở Settings → Engines. Việc đăng nhập vẫn do bạn làm một lần.
 - **Endpoint tương thích OpenAI:** Settings → Engines → thêm địa chỉ và khoá. Khoá chỉ lưu trên máy này.
 - Mỗi bot có model riêng; đổi ở nút model trên đầu cuộc trò chuyện.
 

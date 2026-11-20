@@ -36,6 +36,11 @@ def update(sid, u):
 
 
 log({"argv": sys.argv[1:]})
+if os.environ.get("FAKE_ACP_AUTH"):  # not signed in: print the link and die, as `agy acp` does
+    sys.stderr.write("Open the following link to authenticate the ACP server: https://accounts.example/auth?x=1\n")
+    sys.stderr.flush()
+    time.sleep(0.3)
+    os._exit(1)
 
 
 def prompt(rid, sid, text):

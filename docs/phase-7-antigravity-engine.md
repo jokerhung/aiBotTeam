@@ -45,7 +45,7 @@
 - [x] Phiên bản: `agy --version` (dòng đầu).
 - [x] Đã đăng nhập chưa: chưa thấy lệnh `auth status`; dùng `agy models` có thời hạn 10 giây. Mã thoát 0 và có danh sách → đã đăng nhập; thông báo "Please sign in" → `signed_in = False` kèm lý do "Sign in: chạy `agy` một lần"; không chạy được → `None`. **Không** mở trình duyệt và không treo chờ đăng nhập.
 - [x] Model: lấy từ `agy models` khi đã đăng nhập, lưu cache vào `Instance.models`; nếu chưa đăng nhập hiện một mục `default` ("Antigravity (account default)") như Claude/Codex. Chọn `default` thì không truyền `--model`.
-- [x] Mức suy luận (`effortLevels`): `low, medium, high, xhigh, max` khi ACP/`agy` công bố; thiếu thì để trống (ô chọn không hiện).
+- [x] Mức suy luận: id model của `agy models` đã gồm mức (`gemini-3.8-flash-high`…), nên `effortLevels` để trống (ô chọn không hiện); nếu một lượt vẫn mang `effort`, driver gửi `session/set_config_option thought_level` và bỏ qua lỗi.
 - [x] Giữ khóa API ngoài đường đi: bỏ khỏi môi trường của tiến trình `agy` các biến làm nó đổi cách xác thực (`GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_GENAI_USE_VERTEXAI`…), giống `REMOVED_ENVIRONMENT_KEYS` của OpenMausBot, để bot luôn dùng tài khoản đã đăng nhập.
 - **Tiêu chí:** Settings → Engines và màn chào hiện "Antigravity" với trạng thái đúng trong ba trường hợp: chưa cài, chưa đăng nhập, sẵn sàng; không có lượt chạy nào được mở.
 
@@ -53,7 +53,7 @@
 
 **Vì sao ACP, không phải chế độ in:** ACP cho từng session một danh sách MCP server riêng (công cụ đội và MCP riêng của bot), gửi yêu cầu quyền ra ngoài để broker trả lời, có `session/cancel`, đổi model trong session và `session/resume`. Chế độ in stream-json chỉ có `--mode`/`--dangerously-skip-permissions` cho quyền và cấu hình MCP toàn cục qua `agy mcp add` (ghi vào cấu hình của người dùng, không an toàn cho nhiều bot). Phase 7.0 vẫn đo cả hai trước khi chốt (mục 11).
 
-- [x] `drivers/acp.py`: client ACP tổng quát bằng asyncio — khung JSON-RPC theo dòng NDJSON, `initialize` (đọc `authMethods`, `promptCapabilities`, `agentCapabilities`), `authenticate`, `session/new`, `session/resume`, `session/prompt`, `session/cancel`, `session/set_model`/`configOptions`, thông báo `session/update`, yêu cầu ngược `session/request_permission`. Dòng tối đa 16 MB (dùng `STREAM_LIMIT` của `proc.py`). Tiến trình lỗi hay đóng giữa chừng → mọi yêu cầu đang chờ trả lỗi, không treo.
+- [x] Client ACP (JSON-RPC theo dòng, `initialize`, `session/new|resume|prompt|cancel|set_model|set_mode|set_config_option`, thông báo `session/update`, yêu cầu ngược `session/request_permission`, dòng tối đa 32 MB, tiến trình chết thì mọi yêu cầu đang chờ báo lỗi) **nằm trong `drivers/antigravity.py`**, không tách `acp.py`: chưa có engine ACP thứ hai để dùng chung. Tách khi cần.
 - [x] `drivers/antigravity.py`: `AntigravityDriver(Emitter)` với `provider = "antigravity"`, cùng hợp đồng `ProviderAdapter`:
   - `send_turn`: tạo hoặc tiếp tục session (khóa theo `thread_id`), gửi `session/prompt` gồm `system` (nếu có), chữ, tệp đính kèm dạng danh sách đường dẫn như `with_attachments()` của Claude, ảnh nếu agent nhận (mục 7). Phát `turn.started`, các `content.delta`, `item.started/completed` cho công cụ, `turn.completed` với `ok` và `stopReason` suy từ kết quả `session/prompt`.
   - `interrupt_turn`: `session/cancel`; quá 3 giây không dừng thì giết tiến trình dùng chung của session đó (`kill_tree`) và tạo lại ở lượt sau.
@@ -78,7 +78,7 @@ Bốn mức của BotTeam áp vào Antigravity (đề xuất, xác nhận ở sp
 - [x] Yêu cầu `session/request_permission` đưa vào permission broker như Claude/Codex; trả lời ghép đúng `optionId` agent đưa (cho phép một lần / từ chối; "luôn cho phép trong session" chỉ khi người dùng chọn rõ). Không ai trả lời trong thời hạn → từ chối (fail-closed), như các engine khác.
 - [x] Công cụ đội: `botteam.mcp_bridge` là MCP stdio trong `session/new.mcpServers` (biến `BT_AGENTS`, `BT_BROKER_PORT`, `BT_BROKER_TOKEN`, `BT_THREAD_ID` như `claude.py`), gồm `list_bots`, `coordinate_bots`, `ask_user`, `remember`… Công cụ của bridge không cần thẻ duyệt (`OWN_PREFIX`).
 - [x] MCP riêng của bot (`custom_mcp`): đổi sang dạng ACP (`stdio`: command/args/env; `http`/`sse`: url + headers). Header là bí mật: chỉ đi trong tham số session, không ghi log. Ngân sách ký tự và bộ lọc `allowTools`/cache đã nằm ở proxy MCP của BotTeam nên không cần làm lại.
-- [x] Kỹ năng (`skills_dir`): thử `--add-dir`/thư mục làm việc của ACP; nếu Antigravity không đọc `.claude/skills` thì chép nội dung kỹ năng vào `system` của lượt (câu hỏi 7).
+- [x] Kỹ năng: BotTeam đã chép nội dung kỹ năng vào `system` cho engine không phải Claude (`turns.py`), và `system` được đặt đầu tin đầu của session mới; `--add-dir` được truyền khi có `skills_dir`.
 - [x] `engine_caps` = `{"edits": true, "nativeReviewer": false, "agentsMcp": true, "resume": true}` (xác nhận ở spike).
 - **Tiêu chí:** với driver giả, đủ bốn mức cho đúng kết quả cho cùng một chuỗi yêu cầu; Auto tự duyệt `ls` nhưng hỏi `rm`; Full không hỏi nhưng `TeamMemory` vẫn hỏi; bot gọi được `coordinate_bots` và `list_bots`.
 
@@ -94,26 +94,26 @@ Bốn mức của BotTeam áp vào Antigravity (đề xuất, xác nhận ở sp
 ## 7. Ảnh và tệp
 
 - [x] `images = True` khi `initialize` báo `promptCapabilities.image`; ảnh đi trong `session/prompt` dạng khối ảnh. Nếu không báo (một số bản chạy được dù không báo, OpenMausBot có cờ `acceptsUnadvertisedImages`), thì `images = False` và kênh nhận ảnh (Telegram/Zalo) cảnh báo "Engine của bot không đọc được ảnh" như hiện nay.
-- [x] Giới hạn kích thước và số ảnh theo agent; ảnh quá lớn thu nhỏ trước khi gửi (dùng lại hàm sẵn có của kênh nếu có).
+- [x] Ảnh quá lớn (trên 8 MB) hoặc không đọc được: không gửi inline mà ghi đường dẫn vào lời nhắc để agent tự mở bằng công cụ (không có thư viện thu nhỏ ảnh trong dự án, nên không thu nhỏ). Đã có test.
 - **Tiêu chí:** bot kiểm kê/tra cứu chạy bằng Antigravity đọc được ảnh gửi qua Telegram, hoặc báo rõ vì sao không.
 
 ## 8. Windows: chạy ổn định (Phase 7.5)
 
 Điều OpenMausBot đã gặp (xem `antigravity-temp.ts`, `antigravity-acp.ts`) và ta phải xử lý:
 
-- [x] **Khởi động lâu:** lần đầu tiến trình ACP có thể mất hàng chục giây (đã đo ở OpenMausBot: 90 giây, tối đa 5 phút khi diệt virus quét). Dùng hạn khởi động 90 giây, gia hạn khi thư mục TEMP còn đang phình ra, tối đa 5 phút; báo "Antigravity đang khởi động…" thay vì treo im.
-- [x] **Giải nén vào TEMP:** mỗi lần chạy giải nén hàng nghìn tệp (0,3–1,3 GB) vào `%TEMP%\_MEI…`; giết cưỡng bức không dọn được. Dùng một tiến trình dùng chung cho mọi thread của cùng engine (tắt khi rảnh quá hạn, ví dụ 10 phút), đặt `TEMP`/`TMP` của tiến trình vào một thư mục ngắn cố định trong dữ liệu BotTeam, thoát êm trước khi giết (5 giây), và khi khởi động dọn thư mục sót lại **chỉ khi** có đủ tệp đánh dấu của Antigravity (để không xóa nhầm thư mục của chương trình khác dùng PyInstaller).
-- [x] **Liên kết đăng nhập trên stderr:** tiến trình in "Open the following link to authenticate the ACP server: <url>" khi cần đăng nhập. Hiện đường dẫn trên màn Settings → Engines kèm nút mở trình duyệt, thời hạn chờ 5 phút; không đăng nhập thì lượt báo `auth_required` chứ không treo.
+- [x] **Khởi động:** `agy` 1.5.13 là chương trình native, khởi động ~1,5 giây (đã đo); hạn khởi động 90 giây cho máy chậm, quá hạn báo "did not start in time". Không cần gia hạn theo TEMP.
+- [x] **TEMP và tiến trình mồ côi:** đã đo với `agy` thật: 5 session chạy song song (5 tiến trình), `stop_all` xong còn 0 tiến trình `agy`, 0 thư mục `_MEI`, số mục trong TEMP không đổi. Vì vậy **không** làm tiến trình dùng chung hay dọn `_MEI`; xem lại nếu bản `agy` sau này đóng gói kiểu PyInstaller.
+- [x] **Liên kết đăng nhập trên stderr:** dòng "Open the following link to authenticate…" được bắt từ stderr và đưa vào thông báo lỗi (`Sign in at <url> (or run agy once)`), lượt báo lỗi cài đặt thay vì treo. Đã có test.
 - [x] Không bao giờ ghi hay in token; không gọi dịch vụ Google để "tra email tài khoản" (khác OpenMausBot, ta không cần hiển thị danh tính).
 - **Tiêu chí:** chạy 20 lượt liên tiếp rồi tắt BotTeam: không còn tiến trình `agy` mồ côi, thư mục TEMP không phình thêm sau lần chạy thứ hai; tiến trình khởi động chậm vẫn cho lượt đầu thành công.
 
 ## 9. Giao diện, tài liệu, cài đặt (Phase 7.6)
 
-- [x] `Welcome.tsx` `SETUP`: thêm `antigravity` (cách cài do Google công bố, cách đăng nhập "chạy `agy` một lần"). Không đoán đường cài: ghi sau khi xác nhận ở spike (câu hỏi 2).
+- [x] `Welcome.tsx` `SETUP`: thêm `antigravity` (lệnh cài của Google cho Windows và macOS/Linux; đăng nhập: chạy `agy`).
 - [x] `ModelMenu.tsx`, `SettingsModal.tsx`: engine mới hiện theo danh sách `instances` có sẵn (không cần sửa cấu trúc); nhãn chú thích mức duyệt cho Antigravity (mục 5); biểu tượng/ký hiệu engine.
 - [x] `lib/i18n-vi.ts`: chuỗi mới (đăng nhập, đang khởi động, lỗi), chạy bài kiểm tra thiếu khóa.
 - [x] `docs/user-guide.md` §3 (cấu hình engine), `README.md` (danh sách engine, ví dụ "Claude Code, Codex hoặc Antigravity"); theo quy tắc `AGENTS.md` số 3.
-- [x] `install.ps1` / `install.sh`: **chỉ** thêm cờ `-Antigravity` / `--antigravity` nếu Google có bộ cài tự động không cần tương tác; nếu không thì script chỉ dò `agy` và in cách cài và đăng nhập ở cuối, như phần "engines" hiện có. Cập nhật `docker-compose.yml`/Dockerfile chỉ khi cài được trong image (không, theo mặc định: ảnh Docker không chứa các engine CLI).
+- [x] `install.ps1` / `install.sh`: cờ `-Antigravity` / `--antigravity` chạy bộ cài chính thức của Google (`irm https://antigravity.google/cli/install.ps1 | iex`, `curl -fsSL https://antigravity.google/cli/install.sh | bash`; `agy` vào `%LOCALAPPDATA%\agy\bin` hoặc `~/.local/bin`); script luôn dò `agy` và in cách đăng nhập. Docker không đổi.
 - [x] `docs/README.md`: thêm hàng Phase 7 vào bảng.
 - **Tiêu chí:** người dùng mới thấy Antigravity trong màn chào, biết cách cài và đăng nhập, rồi chọn nó khi tạo bot.
 
@@ -186,13 +186,6 @@ Cả phase xong khi: các bước trên đạt, toàn bộ test server và web �
 
 Đã làm: `drivers/antigravity.py` (driver + client ACP nhỏ), `antigravity_mode()` trong `approval.py`, dò engine ở `registry.py`, giao diện (Welcome, Settings, i18n), install script, README và user-guide, `tests/fake_acp.py` + `tests/test_antigravity.py` (driver, mức duyệt, MCP, ảnh, Stop, tiến trình chết, ba trạng thái dò engine).
 
-Khác kế hoạch, do kiểm thật:
+Khác kế hoạch, do kiểm thật (chi tiết ở các mục trên): client ACP nằm trong `antigravity.py`; một tiến trình mỗi thread và không cần dọn TEMP (đã đo); `steer` giữ `refused` vì đã đo: `agy` chỉ xếp hàng tin thứ hai chứ không điều hướng lượt đang chạy, và kết quả lượt đầu đến sớm (xem verification); ảnh lớn đi bằng đường dẫn; install script có cờ `-Antigravity` / `--antigravity` (bộ cài chính thức của Google).
 
-- **Không cần `drivers/acp.py` riêng**: client ACP nằm trong `antigravity.py` (một engine dùng); tách ra khi có engine ACP thứ hai.
-- **Một tiến trình `agy acp` mỗi thread**, như Claude/Codex, không dùng chung. `agy` 1.5.13 là chương trình native, khởi động ~1,5 giây và không giải nén vào TEMP, nên các việc dọn TEMP, hạn khởi động dài và tiến trình dùng chung ở mục 8 **không cần**; chỉ giữ hạn khởi động 90 giây và thoát bằng `kill_tree`.
-- **Mức duyệt**: Ask/Auto = chế độ `default` (agent hỏi, broker trả lời); Edits = `session/set_mode accept-edits`; Full = cờ `--dangerously-skip-permissions` khi mở tiến trình. Đổi mức thì mở lại tiến trình.
-- **Tên công cụ MCP** agent gửi là `mcp_<server>_<tool>`; driver đổi sang `mcp__<server>__<tool>` để broker tự duyệt công cụ đội như với Claude. Đã kiểm thật: `list_bots` qua bridge chạy ở mức Ask không hiện thẻ.
-- **System prompt** đặt ở đầu tin đầu của session mới (như Codex), không dùng `_meta.systemPrompt.append`; session được `session/resume` thì không gửi lại.
-- **Model**: id model của `agy models` đã gồm mức suy luận (vd. `gemini-3.8-flash-high`), nên `effortLevels` để trống.
-- **Install script**: chỉ dò `agy` và in cách đăng nhập; chưa có bộ cài không tương tác đã xác minh.
-- **Chưa làm**: `steer` (tin mới xếp hàng như Codex), thu nhỏ ảnh lớn (ảnh trên 8 MB bị bỏ qua), tải `agy` tự động, cảnh báo phiên bản ngoài khoảng đã thử.
+Đã kiểm với `agy` thật: chat, resume, quyền Ask, Edits (ghi file không hỏi, lệnh chỉ-đọc broker tự duyệt), Full, MCP bridge, ảnh, Stop, và 5 session liên tiếp không để lại tiến trình hay thư mục tạm (`docs/verification/antigravity.md`). Test tự động: 23 test Antigravity, 382 pass trong bộ test server đầy đủ; một test (`test_memory::test_a_compaction_is_marked_in_the_chat`) timeout khi dựng fixture trong lần chạy dài và pass khi chạy riêng. Danh sách `agy models` giờ được nhớ 2 phút trong tiến trình để các lần dò không gọi mạng lặp lại.

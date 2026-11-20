@@ -28,4 +28,9 @@ Máy: Windows, `agy` **1.5.13**, đã đăng nhập (ngày 2026-11-20).
 - `session/prompt` trả `stopReason` và `usage` (inputTokens, outputTokens, cachedReadTokens, thoughtTokens). Suy nghĩ đến dưới dạng `agent_thought_chunk`.
 - Khởi động ~1,5 giây, không giải nén TEMP.
 - Ảnh qua ACP: ảnh PNG đỏ 16x16 được nhận ra là "Red". `session/cancel` giữa lúc đang đếm số: lượt kết thúc `interrupted`, bot dùng tiếp được.
-- Chưa kiểm thật: Edits `accept-edits` (đã kiểm bằng tác tử giả).
+- Edits (`session/set_mode accept-edits`): ghi `edit.txt` không hỏi; lệnh `echo hi` (chỉ-đọc) broker tự duyệt, không hiện thẻ.
+- Windows, 5 session liên tiếp (5 tiến trình `agy`, mỗi lượt 5–7 giây): sau `stop_all` còn 0 tiến trình `agy`, 0 thư mục `_MEI`, số mục trong TEMP không đổi. Không cần dọn TEMP hay dùng chung tiến trình.
+- Đăng nhập: khi chưa đăng nhập tiến trình in "Open the following link to authenticate the ACP server: <url>" trên stderr; driver đưa liên kết vào thông báo lỗi (kiểm bằng tác tử giả).
+
+## `steer` (tin gửi khi lượt đang chạy), 2026-11-20
+Gửi `session/prompt` thứ hai trong lúc lượt đầu đang đếm số: `agy` không điều hướng lượt đang chạy. Kết quả của lượt đầu trả `end_turn` ngay khi tin thứ hai tới, lượt đầu vẫn đếm hết đến 80, rồi mới trả lời tin thứ hai (BANANA). Tức là tin thứ hai chỉ xếp hàng chứ không đổi hướng, và kết quả lượt đầu đến sớm làm lệch việc đếm lượt của BotTeam. Vì vậy `steer` giữ `refused` và BotTeam tự xếp hàng tin mới (như Codex); cách này chính xác hơn.
