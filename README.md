@@ -8,13 +8,13 @@ It is built with a Next.js web app and a Python (FastAPI) server, and is inspire
 
 ---
 
-<p align="center"><img src="docs/screenshots/chat.png" alt="A bot answering a lookup question in chat, with its tool calls and profile panel" width="100%"></p>
+<p align="center"><img src="docs/screenshots/workspace-chat.png" alt="The workspace layout: the main menu, the chat list and a conversation" width="100%"></p>
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/screenshots/input-channels.png" alt="Input tab: Telegram and Zalo bots start a bot when a message arrives"></td>
-    <td width="33%"><img src="docs/screenshots/connected-apps.png" alt="Connected apps through Composio"></td>
-    <td width="33%"><img src="docs/screenshots/new-bot.png" alt="New bot dialog with role, model, color and approval level"></td>
+    <td width="33%"><img src="docs/screenshots/workspace-input.png" alt="Input page: Telegram and Zalo bots start a bot when a message arrives"></td>
+    <td width="33%"><img src="docs/screenshots/workspace-agents.png" alt="Agents page: every bot with its model, approval level and working folder"></td>
+    <td width="33%"><img src="docs/screenshots/workspace-dashboard.png" alt="Dashboard: what the bots did and what they cost"></td>
   </tr>
 </table>
 
@@ -45,7 +45,7 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
 - 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files and runs by itself after 30 quiet seconds (or when someone presses *Check*). How a bot receives messages is written in an `intake.md` in its working folder, which you can edit in Bot settings: progress messages while photos arrive, saving them into folders such as `<machine>/<date>/Truoc|Sau` read from the caption (identical files are not saved twice), and a short reply with or without running a bot. Each batch of photos gets its own conversation in the app that also shows everything sent to the chat, and `run.command` can run a script of the working folder afterwards (for example to download PDFs), retrying until it succeeds.
-- 🧭 **Workspace layout** — one left menu: Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Knowledge bases, Documents, Skills) and Connect (Apps, Input), in the style of [agenticos](https://github.com/vstorm-co/agenticos). Pages that do not exist yet are empty pages; Settings → Appearance → Layout → Classic brings the old bot list back.
+- 🧭 **Workspace layout** — one left menu: Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Knowledge bases, Documents, Skills) and Connect (Apps, Input), in the style of [agenticos](https://github.com/vstorm-co/agenticos). Pages that do not exist yet are empty pages.
 - 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
 - ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
 - 🧠 **Memory, skills and sharing** — notes that last between tasks, `SKILL.md` skills, and one-file export and import of a bot or a team.

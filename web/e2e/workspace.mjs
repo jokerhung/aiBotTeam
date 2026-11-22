@@ -1,7 +1,7 @@
 // Workspace layout check: every menu item opens its page, the empty ones are empty, the address follows the page (Back, Forward, reload),
 // the rail collapses and remembers it, and a narrow screen opens the menu as a drawer.
 //   node web/e2e/workspace.mjs            against the running app (BASE, default http://127.0.0.1:5299)
-// It changes nothing in the data: it only clicks through the menu.
+// It clicks through the menu and, for the chat check, makes one throw-away Echo bot and deletes it again.
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -40,6 +40,62 @@ for (const [nav, pageId] of [["nav-workflows", "page-workflows"], ["nav-bases", 
   ok(await page.locator(`[data-testid="${pageId}"] [data-testid="empty-page"]`).count() === 1, `${pageId} is an empty page`);
   ok(await page.locator(`[data-testid="${pageId}"] [data-testid="empty-page"] button, [data-testid="${pageId}"] [data-testid="empty-page"] a`).count() === 0, `${pageId} has nothing to press`);
 }
+
+// projects: every group of bots in the chat list is a project in the menu and opens its own page
+const sections = await page.evaluate(async () => (await (await fetch("/api/sidebar-sections")).json()).sections ?? []);
+if (sections.length) {
+  ok(await page.locator('[data-testid="rail-section"]').count() === sections.length, "the menu lists every group of bots as a project");
+  await page.locator('[data-testid="rail-section"]').first().click();
+  await page.waitForSelector('[data-testid="chat-list-title"]', { timeout: 5000 }).catch(() => {});
+  ok((await page.evaluate(() => location.hash)).startsWith("#/section/"), "a project writes its address");
+  const firstId = sections[0].id;
+  const inProject = await page.evaluate(async (id) => (await (await fetch("/api/bots")).json()).bots.filter((b) => !b.hidden && b.section === id).length, firstId);
+  ok(await page.locator('[data-testid="chat-list-title"]').innerText() === sections[0].name, "a project shows the chat list titled with its name");
+  ok(await page.locator('nav[aria-label="Bots"] [role="button"]').count() === inProject, "the list holds only the bots of that project");
+  if (inProject > 1) {
+    await page.locator('nav[aria-label="Bots"] [role="button"]').nth(1).click();
+    await page.waitForTimeout(400);
+    ok((await page.evaluate(() => location.hash)).startsWith("#/section/") && await page.locator('[data-testid="chat-list-title"]').innerText() === sections[0].name, "choosing a bot of the project stays in the project");
+  }
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector('[data-testid="chat-list-title"]', { timeout: 8000 }).catch(() => {});
+  ok((await page.evaluate(() => location.hash)).startsWith("#/section/") && await page.locator('[data-testid="chat-list-title"]').innerText() === sections[0].name, "a reload keeps the project");
+  // opening a project from a bare #/chat address (no bot in it) still writes the project's address
+  await page.goto(`${BASE}/#/chat`, { waitUntil: "networkidle" });
+  await page.locator('[data-testid="rail-section"]').first().click();
+  await page.waitForTimeout(400);
+  ok((await page.evaluate(() => location.hash)).startsWith("#/section/"), "a project opened from #/chat writes its address");
+}
+
+// the go-to keys: G then a letter
+await page.click('[data-testid="nav-dashboard"]');
+await page.keyboard.press("g");
+await page.keyboard.press("a");
+await page.waitForSelector('[data-testid="page-agents"]', { timeout: 3000 }).catch(() => {});
+ok(await page.locator('[data-testid="page-agents"]').count() === 1, "G then A opens Agents");
+await page.keyboard.press("g");
+await page.keyboard.press("w");
+ok(await page.locator('[data-testid="page-workflows"]').count() === 1, "G then W opens Workflows");
+await page.keyboard.press("a");
+ok(await page.locator('[data-testid="page-workflows"]').count() === 1, "a letter alone does nothing");
+
+// a chat message to a throw-away Echo bot (the demo engine: no model is called), removed afterwards
+const made = await page.evaluate(async () => {
+  const r = await fetch("/api/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "E2E check", modelSelection: { instanceId: "echo", model: "echo-1" }, approvalMode: "ask" }) });
+  return r.ok ? r.json() : null;
+});
+if (made) {
+  await page.click('[data-testid="nav-chat"]');
+  await page.evaluate((id) => { location.hash = `#/chat/${id}`; }, made.id);
+  await page.waitForSelector("textarea, [contenteditable=true]", { timeout: 8000 }).catch(() => {});
+  const box = page.locator('[contenteditable="true"], textarea').last();
+  await box.click();
+  await page.keyboard.type("hello from the workspace check");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("text=You said: hello from the workspace check", { timeout: 15000 }).catch(() => {});
+  ok(await page.locator("text=You said: hello from the workspace check").count() > 0, "a message sent from the Chat page is answered");
+  await page.evaluate((id) => fetch(`/api/bots/${id}`, { method: "DELETE" }), made.id);
+} else ok(false, "could not make the Echo bot for the chat check");
 
 // Back, Forward and reload
 await page.click('[data-testid="nav-agents"]');

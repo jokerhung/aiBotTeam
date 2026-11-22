@@ -7,12 +7,14 @@ import type { AppConfig, AppSettings, Bot, Group, InboxItem, InstanceInfo, Messa
 
 export type SettingsPage = "general" | "connections" | "engines" | "appearance";
 export const DEFAULT_SETTINGS: AppSettings = {
-  displayName: "", uiMode: "simple", skin: "daylight", font: "skin", chatWidth: "default", layout: "workspace", reduceMotion: false, language: "en",
+  displayName: "", uiMode: "simple", skin: "daylight", font: "skin", chatWidth: "default", reduceMotion: false, language: "en",
 };
 
 export interface AppState {
   /** The page on screen in the workspace layout (the classic layout keeps using the flags below). */
   view: View;
+  /** The project (a section of bots) on the Project page. */
+  selectedSectionId: string;
   /** The navigation rail as a drawer on a narrow screen. */
   railOpen: boolean;
   bots: Bot[];
@@ -83,6 +85,7 @@ export interface AppState {
 
 export type Action =
   | { type: "view"; view: View }
+  | { type: "openSection"; id: string }
   | { type: "rail"; open: boolean }
   | { type: "hydrate"; bots: Bot[]; instances: InstanceInfo[] }
   | { type: "instances"; instances: InstanceInfo[] }
@@ -129,7 +132,7 @@ export const initialState: AppState = {
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
   groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, pairOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, importBotOpen: false, mcpTick: 0, channelTick: 0,
-  routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [], view: "chat", railOpen: false,
+  routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [], view: "chat", selectedSectionId: "", railOpen: false,
   settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null, adminBot: null, adminOpen: false,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
@@ -163,7 +166,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, connected: action.connected };
     case "select": {
       const bot = state.bots.find((b) => b.id === action.id);
-      return { ...state, view: "chat", railOpen: false, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
+      return { ...state, view: state.view === "section" && bot?.section === state.selectedSectionId ? "section" : "chat", railOpen: false, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
         dividerAt: { ...state.dividerAt, [action.id]: bot?.readAt ?? 0 } };
     }
     case "selectGroup":
@@ -175,6 +178,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, newGroupOpen: action.open };
     case "view":
       return { ...state, view: action.view, railOpen: false, drawerOpen: false, automationsOpen: false, teamMapOpen: false, usageOpen: false, appsOpen: false, inboxOpen: false };
+    case "openSection":
+      return { ...state, view: "section", selectedSectionId: action.id, railOpen: false, drawerOpen: false, automationsOpen: false, teamMapOpen: false, usageOpen: false, appsOpen: false, inboxOpen: false };
     case "rail":
       return { ...state, railOpen: action.open };
     case "automations":

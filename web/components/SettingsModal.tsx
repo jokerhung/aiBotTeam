@@ -293,12 +293,6 @@ function Appearance() {
           <option value="system">System</option>
         </select>
       </Row>
-      <Row title={t("Layout")} hint="Workspace has the menu with pages on the left; Classic is the bot list alone.">
-        <select aria-label="Layout" data-testid="layout-select" value={s.layout ?? "workspace"} onChange={(e) => void save({ layout: e.target.value as "workspace" | "classic" })} className={SELECT}>
-          <option value="workspace">Workspace</option>
-          <option value="classic">Classic</option>
-        </select>
-      </Row>
       <Row title={t("Chat width")}>
         <select aria-label="Chat width" value={s.chatWidth} onChange={(e) => void save({ chatWidth: e.target.value as AppSettings["chatWidth"] })} className={SELECT}>
           <option value="default">Default</option>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV, PROJECTS_ITEM, VIEWS, hasChatList, isView, itemOf, parseHash, toHash } from "./nav";
+import { GO_KEYS, NAV, PROJECTS_ITEM, VIEWS, hasChatList, isView, itemOf, parseHash, toHash } from "./nav";
 import { vi } from "./i18n-vi";
 import { initialState, reducer, type AppState } from "../state/store";
 
@@ -20,8 +20,16 @@ describe("menu table", () => {
   it("knows every view and which ones keep the chat list", () => {
     for (const v of VIEWS) expect(isView(v)).toBe(true);
     expect(isView("nope")).toBe(false);
-    expect(VIEWS.filter(hasChatList)).toEqual(["chat", "project"]);
+    expect(VIEWS.filter(hasChatList)).toEqual(["chat", "project", "section"]);
     expect(itemOf("workflows")?.label).toBe("Workflows");
+  });
+});
+
+describe("go-to keys", () => {
+  it("give every page of the menu one distinct letter", () => {
+    const pages = [...NAV.flatMap((g) => g.items.map((i) => i.view)), PROJECTS_ITEM.view].sort();
+    expect(Object.values(GO_KEYS).sort()).toEqual(pages);
+    expect(new Set(Object.keys(GO_KEYS)).size).toBe(Object.keys(GO_KEYS).length);
   });
 });
 
@@ -31,6 +39,8 @@ describe("hash route", () => {
     expect(toHash("chat", "bot 1")).toBe("#/chat/bot%201");
     expect(parseHash("#/chat/bot%201")).toEqual({ view: "chat", id: "bot 1" });
     expect(parseHash("#/project/g1")).toEqual({ view: "project", id: "g1" });
+    expect(toHash("section", "sec_1")).toBe("#/section/sec_1");
+    expect(parseHash("#/section/sec_1")).toEqual({ view: "section", id: "sec_1" });
     expect(parseHash("#/agents")).toEqual({ view: "agents", id: undefined });
     for (const v of VIEWS) expect(parseHash(toHash(v))?.view).toBe(v);
   });
@@ -71,6 +81,17 @@ describe("view in the store", () => {
   it("choosing a bot or a room opens its chat from any page", () => {
     expect(reducer({ ...s0, view: "skills" }, { type: "select", id: "a" }).view).toBe("chat");
     expect(reducer({ ...s0, view: "skills" }, { type: "selectGroup", id: "g" }).view).toBe("project");
+  });
+
+  it("opening a project (a section of bots) shows its page from any page", () => {
+    const s = reducer({ ...s0, view: "skills" }, { type: "openSection", id: "sec_1" });
+    expect(s).toMatchObject({ view: "section", selectedSectionId: "sec_1", railOpen: false });
+  });
+
+  it("choosing a bot of the open project stays in the project; any other bot opens the plain chat", () => {
+    const inProject = { ...s0, view: "section" as const, selectedSectionId: "sec_1", bots: [{ id: "a", section: "sec_1" }, { id: "b", section: "sec_2" }] as never };
+    expect(reducer(inProject, { type: "select", id: "a" }).view).toBe("section");
+    expect(reducer(inProject, { type: "select", id: "b" }).view).toBe("chat");
   });
 
   it("the rail drawer opens and closes", () => {

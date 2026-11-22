@@ -41,7 +41,7 @@ export function CommandPalette() {
       { id: "appearance", label: "Change skin", icon: Palette, run: go(() => dispatch({ type: "settings", open: true, page: "appearance" })) },
       { id: "keys", label: "Keyboard shortcuts", hint: "?", icon: Keyboard, run: go(() => dispatch({ type: "shortcuts", open: true })) },
     ];
-    const pages: Item[] = state.config.settings.layout === "classic" ? [] : [...NAV.flatMap((g) => g.items), PROJECTS_ITEM].map((n) => ({
+    const pages: Item[] = [...NAV.flatMap((g) => g.items), PROJECTS_ITEM].map((n) => ({
       id: `page-${n.view}`, label: `${tr("Go to")} ${tr(n.label)}`, icon: n.icon, run: go(() => dispatch({ type: "view", view: n.view })),
     }));
     const bots: Item[] = state.bots.filter((b) => !b.hidden).map((b) => ({
@@ -51,7 +51,7 @@ export function CommandPalette() {
     const needle = q.trim().toLowerCase();
     return [...bots, ...pages, ...commands].filter((i) => !needle || i.label.toLowerCase().includes(needle));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.bots, state.selectedId, state.config.settings.layout, q]);
+  }, [state.bots, state.selectedId, q]);
 
   useEffect(() => { setCursor(0); }, [q, open]);
   useEffect(() => { if (open) setQ(""); }, [open]);

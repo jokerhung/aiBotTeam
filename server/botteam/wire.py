@@ -244,7 +244,6 @@ class ConfigPatch(BaseModel):
     skin: Optional[str] = Field(default=None, max_length=40)
     font: Optional[str] = Field(default=None, max_length=40)
     chatWidth: Optional[Literal["narrow", "default", "wide"]] = None
-    layout: Optional[Literal["workspace", "classic"]] = None
     reduceMotion: Optional[bool] = None
     language: Optional[str] = Field(default=None, max_length=12)
     keys: Optional[dict[str, Optional[str]]] = None  # name -> secret; null/empty clears

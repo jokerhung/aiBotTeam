@@ -1,12 +1,11 @@
 "use client";
-import { Check, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Check, ExternalLink, KeyRound, Plug, Plus, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { InputChannels } from "./InputChannels";
-import { useWorkspace } from "./layout/useWorkspace";
 import { McpServersView } from "./McpServers";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
@@ -22,13 +21,10 @@ interface AppsState { configured: boolean; source: string | null; keyHint: strin
  * browser, several accounts per app are told apart by a label, and no provider token is ever kept here. */
 type Tab = "apps" | "mcp" | "input";
 
-export function ConnectedApps({ embedded = false, tabs }: { embedded?: boolean; tabs?: Tab[] } = {}) {
-  const { state, dispatch } = useStore();
+export function ConnectedApps({ tabs }: { tabs?: Tab[] } = {}) {
+  const { state } = useStore();
   const t = useT();
-  const workspace = useWorkspace();
-  const [localTab, setLocalTab] = useState<Tab>(tabs?.[0] ?? "apps");
-  const tab: Tab = embedded ? localTab : state.appsTab;  // in the dialog the tab is kept in the store, so another screen can open it on a given tab
-  const setTab = (next: Tab) => (embedded ? setLocalTab(next) : dispatch({ type: "apps", open: true, tab: next }));
+  const [tab, setTab] = useState<Tab>(tabs?.[0] ?? "apps");
   const shownTabs = (tabs ?? ["apps", "mcp", "input"]) as Tab[];
   const [data, setData] = useState<AppsState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,15 +51,14 @@ export function ConnectedApps({ embedded = false, tabs }: { embedded?: boolean; 
     return task;
   }, []);
   useEffect(() => {
-    if ((!state.appsOpen && !embedded) || tab !== "apps") return;
+    if (tab !== "apps") return;
     let cancelled = false;
     void (async () => {
       if (inFlight.current) await inFlight.current;
       if (!cancelled) await load();
     })();
     return () => { cancelled = true; };
-  }, [state.appsOpen, embedded, tab, state.mcpTick, load]);
-  if (!embedded && (!state.appsOpen || workspace)) return null;
+  }, [tab, state.mcpTick, load]);
   const apps = data?.apps ?? [];
   const conns = data?.connections ?? {};
   const shown = apps.filter((a) => `${a.label} ${a.blurb}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 80);
@@ -106,15 +101,14 @@ export function ConnectedApps({ embedded = false, tabs }: { embedded?: boolean; 
     await api(`/api/apps/${slug}/accounts/${id}`, { method: "DELETE" }).catch((e: Error) => setNote({ id: slug, ok: false, text: e.message }));
     await load();
   };
-  const close = () => dispatch({ type: "apps", open: false });
   return (
-    <div role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : true} aria-label="Connected apps" data-testid="connected-apps"
-      className={embedded ? "flex min-h-0 flex-1 flex-col" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
-      <div className={embedded ? "mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col" : "flex h-[min(640px,88vh)] w-full max-w-[560px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10"}>
+    <div aria-label="Connected apps" data-testid="connected-apps"
+      className="flex min-h-0 flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col">
         <div className="flex h-[60px] shrink-0 items-center gap-2 px-5">
           <h2 className="flex-1 text-[17px] font-semibold">{t("Connected apps")}</h2>
           {tab === "apps" && <button type="button" title={t("Refresh from Composio")} aria-label={t("Refresh")} disabled={loading} onClick={() => void load(true)} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10 disabled:opacity-40"><RefreshCw size={15} className={loading ? "animate-spin" : undefined} /></button>}
-          {!embedded && <button type="button" aria-label="Close" onClick={close} className="rounded-full p-2 text-ink-secondary hover:bg-ink/10"><X size={16} /></button>}
+          
         </div>
         {shownTabs.length > 1 && <div role="tablist" aria-label={t("Connected apps")} className="mx-5 mb-3 flex h-9 shrink-0 items-center rounded-full bg-raised p-[3px]" data-testid="apps-tabs">
           {([["apps", "Connected apps", "tab-apps"], ["mcp", "Custom MCP servers", "open-mcp"], ["input", "Input", "tab-input"]] as const).filter(([id]) => shownTabs.includes(id)).map(([id, label, testid]) => (

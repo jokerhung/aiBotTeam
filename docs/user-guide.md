@@ -49,12 +49,12 @@ Thanh bên trái (bố cục **Không gian làm việc**, mặc định) gom m�
 
 - **Dashboard:** chi phí và token theo ngày, bot hoặc model; số bot đang làm việc và số việc đang chờ bạn.
 - **Chat:** danh sách bot ở cột giữa, khung chat bên phải. **Inbox:** mọi thẻ đang chờ bạn trả lời.
-- **Projects:** các phòng nhiều bot làm việc chung; **All projects** liệt kê và tạo mới.
+- **Projects:** mỗi nhóm bot bạn đã gom trong danh sách chat (section) là một dự án, hiện với biểu tượng `#`; bấm vào thì cột giữa chỉ còn các bot của dự án đó và bên phải là khung chat như ở mục Chat; các phòng nhiều bot làm việc chung cũng nằm ở đây. **All projects** liệt kê cả hai và tạo phòng mới.
 - **Build:** **Agents** (bảng các bot, mở hồ sơ, tạo hoặc nhập bot), **Workflows** (chưa có, trang trống), **Routines** (lịch và webhook).
 - **Knowledge:** **Knowledge bases** và **Documents** (chưa có, trang trống), **Skills** (thư viện kỹ năng).
 - **Connect:** **Apps** (Composio và MCP riêng), **Input** (Telegram, Zalo).
 
-Nút thu gọn ở đầu menu chỉ để lại biểu tượng (trình duyệt nhớ lựa chọn). Trên màn hình hẹp menu mở bằng nút ☰. Muốn quay lại danh sách bot như trước: Settings → Appearance → Layout → **Classic**.
+Nút thu gọn ở đầu menu chỉ để lại biểu tượng (trình duyệt nhớ lựa chọn). Trên màn hình hẹp menu mở bằng nút ☰.
 
 ## 3. Cấu hình engine
 

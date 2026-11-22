@@ -1,5 +1,5 @@
 "use client";
-import { Bot as BotIcon, FileUp, Folders, Inbox as InboxIcon, LayoutDashboard, Pencil, Plug, Plus, RadioTower, Sparkles, Trash2 } from "lucide-react";
+import { Bot as BotIcon, FileUp, Folders, Hash, Inbox as InboxIcon, LayoutDashboard, Pencil, Plug, Plus, RadioTower, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,7 @@ export function DashboardPage() {
           <div key={label} className="rounded-xl bg-raised/60 px-3.5 py-3"><div className="text-[12px] text-ink-tertiary">{t(label)}</div><div className="text-[22px] font-semibold tabular-nums">{n}</div></div>
         ))}
       </div>
-      <div className="mt-5"><UsagePage embedded /></div>
+      <div className="mt-5"><UsagePage /></div>
     </PageFrame>
   );
 }
@@ -42,7 +42,7 @@ export function DashboardPage() {
 export function InboxPage() {
   return (
     <PageFrame title="Inbox" icon={InboxIcon} description="Everything waiting for your answer, from all bots and rooms." testid="page-inbox">
-      <div className="flex min-h-[60vh] flex-col"><InboxPanel embedded /></div>
+      <div className="flex min-h-[60vh] flex-col"><InboxPanel /></div>
     </PageFrame>
   );
 }
@@ -84,23 +84,47 @@ export function ProjectsPage() {
   const { state, dispatch } = useStore();
   const t = useT();
   const groups = state.groups.filter((g) => !g.hidden);
+  const sections = state.sections.map((x) => ({ ...x, bots: state.bots.filter((b) => !b.hidden && b.section === x.id) }));
+  const card = "flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 text-left ring-1 ring-ink/[0.06] hover:bg-raised";
+  const badge = () => <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-panel text-ink-secondary"><Hash size={17} /></span>;
   return (
-    <PageFrame title="All projects" icon={Folders} description="Rooms where several bots work together." testid="page-projects"
-      actions={<button type="button" data-testid="projects-new" onClick={() => dispatch({ type: "newGroup", open: true })} className={PRIMARY}><Plus size={14} /> {t("New project")}</button>}>
-      {groups.length === 0 && <div className="py-16 text-center text-[13.5px] text-ink-tertiary">{t("No projects yet. A project is a room where several bots work together.")}</div>}
-      <div className="grid gap-2 md:grid-cols-2" data-testid="projects-list">
-        {groups.map((g) => (
-          <button key={g.id} type="button" data-testid="project-card" onClick={() => dispatch({ type: "selectGroup", id: g.id })}
-            className="flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 text-left ring-1 ring-ink/[0.06] hover:bg-raised">
-            <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-panel text-[15px] font-semibold text-ink-secondary"><span data-no-i18n="">{(g.name.trim()[0] ?? "#").toUpperCase()}</span></span>
-            <span className="min-w-0 flex-1">
-              <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{g.name}</span>
-              <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{g.memberInfo.map((m) => m.name).join(", ") || "—"}</span>
-            </span>
-            {g.unread && <span aria-label={t("Unread")} className="size-2 shrink-0 rounded-full bg-accent" />}
-          </button>
-        ))}
-      </div>
+    <PageFrame title="All projects" icon={Folders} description="Your groups of bots, and the rooms where several bots work together." testid="page-projects"
+      actions={<button type="button" data-testid="projects-new" onClick={() => dispatch({ type: "newGroup", open: true })} className={PRIMARY}><Plus size={14} /> {t("New room")}</button>}>
+      {sections.length === 0 && groups.length === 0 && <div className="py-16 text-center text-[13.5px] text-ink-tertiary">{t("No projects yet. Group your bots in the chat list, or make a room where several bots work together.")}</div>}
+      {sections.length > 0 && (
+        <>
+          <h2 className="mb-2 text-[12px] font-medium text-ink-tertiary">{t("Groups of bots")}</h2>
+          <div className="mb-5 grid gap-2 md:grid-cols-2" data-testid="sections-list">
+            {sections.map((x) => (
+              <button key={x.id} type="button" data-testid="section-card" onClick={() => dispatch({ type: "openSection", id: x.id })} className={card}>
+                {badge()}
+                <span className="min-w-0 flex-1">
+                  <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{x.name}</span>
+                  <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{x.bots.map((b) => b.name).join(", ") || "—"}</span>
+                </span>
+                <span className="text-[12px] tabular-nums text-ink-tertiary">{x.bots.length}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {groups.length > 0 && (
+        <>
+          <h2 className="mb-2 text-[12px] font-medium text-ink-tertiary">{t("Rooms")}</h2>
+          <div className="grid gap-2 md:grid-cols-2" data-testid="projects-list">
+            {groups.map((g) => (
+              <button key={g.id} type="button" data-testid="project-card" onClick={() => dispatch({ type: "selectGroup", id: g.id })} className={card}>
+                {badge()}
+                <span className="min-w-0 flex-1">
+                  <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{g.name}</span>
+                  <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{g.memberInfo.map((m) => m.name).join(", ") || "—"}</span>
+                </span>
+                {g.unread && <span aria-label={t("Unread")} className="size-2 shrink-0 rounded-full bg-accent" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </PageFrame>
   );
 }
@@ -138,7 +162,7 @@ export function SkillsPage() {
 export function AppsPage() {
   return (
     <PageFrame title="Apps" icon={Plug} description="Connect Gmail, Sheets, Slack and more, or add your own MCP servers." testid="page-apps">
-      <div className="flex min-h-[70vh] flex-col"><ConnectedApps embedded tabs={["apps", "mcp"]} /></div>
+      <div className="flex min-h-[70vh] flex-col"><ConnectedApps tabs={["apps", "mcp"]} /></div>
     </PageFrame>
   );
 }

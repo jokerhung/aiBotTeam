@@ -13,6 +13,13 @@ const GROUPS: { title: string; rows: [string, string][] }[] = [
     ],
   },
   {
+    title: "Go to a page",
+    rows: [
+      ["G  D", "Dashboard"], ["G  C", "Chat"], ["G  I", "Inbox"], ["G  P", "All projects"], ["G  A", "Agents"], ["G  W", "Workflows"], ["G  R", "Routines"],
+      ["G  B", "Knowledge bases"], ["G  O", "Documents"], ["G  S", "Skills"], ["G  N", "Apps"], ["G  U", "Input"],
+    ],
+  },
+  {
     title: "Create",
     rows: [
       ["Ctrl / ⌘ N", "New bot"],

@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- the saved collapse choice and the window size are read from the browser after the first render */
-import { Bell, PanelLeft, Search } from "lucide-react";
+import { Bell, Hash, PanelLeft, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { NAV, PROJECTS_ITEM, hasChatList, type NavItem, type View } from "@/lib/nav";
@@ -51,6 +51,7 @@ export function AppRail() {
   };
   const label = (text: string) => (icons ? <div aria-hidden className="mx-2 my-2 h-px bg-edge" /> : <div className="px-2.5 pb-1 pt-4 text-[12px] font-medium text-ink-tertiary">{t(text)}</div>);
 
+  const sections = state.sections.map((x) => ({ ...x, bots: state.bots.filter((b) => !b.hidden && b.section === x.id).length }));
   const projects = state.groups.filter((g) => !g.hidden).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)).slice(0, MAX_PROJECTS);
   const openProject = (id: string, unread: boolean) => {
     dispatch({ type: "selectGroup", id });
@@ -87,12 +88,23 @@ export function AppRail() {
           <div className="flex flex-col gap-0.5 pt-2">{NAV[0].items.map(item)}</div>
           {label("Projects")}
           <div className="flex flex-col gap-0.5" data-testid="rail-projects">
+            {sections.map((x) => {
+              const active = state.view === "section" && state.selectedSectionId === x.id;
+              return (
+                <button key={x.id} type="button" title={x.name} data-testid="rail-section" aria-current={active ? "page" : undefined} onClick={() => dispatch({ type: "openSection", id: x.id })}
+                  className={cn(ROW, icons && "justify-center px-0", active && "bg-raised text-ink")}>
+                  <Hash size={16} strokeWidth={1.9} aria-hidden className="shrink-0" />
+                  {!icons && <span data-no-i18n="" className="min-w-0 flex-1 truncate">{x.name}</span>}
+                  {!icons && <span className="text-[11.5px] tabular-nums text-ink-tertiary">{x.bots}</span>}
+                </button>
+              );
+            })}
             {projects.map((g) => {
               const active = state.view === "project" && state.selectedGroupId === g.id;
               return (
                 <button key={g.id} type="button" title={g.name} data-testid="rail-project" aria-current={active ? "page" : undefined} onClick={() => openProject(g.id, g.unread)}
                   className={cn(ROW, icons && "justify-center px-0", active && "bg-raised text-ink")}>
-                  <span aria-hidden className="flex size-5 shrink-0 items-center justify-center rounded-md bg-raised text-[11px] font-semibold text-ink-secondary ring-1 ring-inset ring-ink/[0.06]"><span data-no-i18n="">{(g.name.trim()[0] ?? "#").toUpperCase()}</span></span>
+                  <Hash size={16} strokeWidth={1.9} aria-hidden className="shrink-0" />
                   {!icons && <span data-no-i18n="" className="min-w-0 flex-1 truncate">{g.name}</span>}
                   {!icons && g.unread && <span aria-label={t("Unread")} className="size-2 shrink-0 rounded-full bg-accent" />}
                 </button>

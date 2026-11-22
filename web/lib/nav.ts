@@ -2,15 +2,15 @@ import { BookOpen, Bot, CalendarClock, FileText, Folders, Inbox, LayoutDashboard
 
 /** Every page of the workspace layout. `chat` and `project` keep the chat list beside them; the others use the whole width. */
 export type View =
-  | "chat" | "dashboard" | "inbox" | "project" | "projects"
+  | "chat" | "dashboard" | "inbox" | "project" | "section" | "projects"
   | "agents" | "workflows" | "routines"
   | "bases" | "documents" | "skills"
   | "apps" | "input" | "team-map";
 
-export const VIEWS: readonly View[] = ["chat", "dashboard", "inbox", "project", "projects", "agents", "workflows", "routines", "bases", "documents", "skills", "apps", "input", "team-map"];
+export const VIEWS: readonly View[] = ["chat", "dashboard", "inbox", "project", "section", "projects", "agents", "workflows", "routines", "bases", "documents", "skills", "apps", "input", "team-map"];
 export const isView = (v: unknown): v is View => typeof v === "string" && (VIEWS as readonly string[]).includes(v);
-/** The views that show the chat list as a second column. */
-export const hasChatList = (v: View) => v === "chat" || v === "project";
+/** The views that show the chat list as a second column (a project shows the same list, only with its own bots). */
+export const hasChatList = (v: View) => v === "chat" || v === "project" || v === "section";
 
 export interface NavItem {
   view: View;
@@ -47,13 +47,19 @@ export const NAV: NavGroup[] = [
   ] },
 ];
 
+/** `g` then a letter opens a page (like Gmail's go-to keys). */
+export const GO_KEYS: Record<string, View> = {
+  d: "dashboard", c: "chat", i: "inbox", p: "projects", a: "agents", w: "workflows", r: "routines",
+  b: "bases", o: "documents", s: "skills", n: "apps", u: "input",
+};
+
 export const PROJECTS_ITEM: NavItem = { view: "projects", label: "All projects", icon: Folders, testid: "nav-projects" };
 
 export const itemOf = (view: View): NavItem | undefined => [...NAV.flatMap((g) => g.items), PROJECTS_ITEM].find((i) => i.view === view);
 
-/** `#/chat/<bot id>`, `#/project/<room id>`, `#/agents` … The app is one static page, so the route lives in the hash. */
+/** `#/chat/<bot id>`, `#/project/<room id>`, `#/section/<section id>`, `#/agents` … The app is one static page, so the route lives in the hash. */
 export function toHash(view: View, id?: string): string {
-  return `#/${view}${id && (view === "chat" || view === "project") ? `/${encodeURIComponent(id)}` : ""}`;
+  return `#/${view}${id && (view === "chat" || view === "project" || view === "section") ? `/${encodeURIComponent(id)}` : ""}`;
 }
 
 export function parseHash(hash: string): { view: View; id?: string } | null {

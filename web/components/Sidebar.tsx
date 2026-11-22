@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Menu, Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Plug, Smartphone, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Smartphone, Menu, Archive, BarChart3, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -245,6 +245,7 @@ export function ProfileMenu({ icons }: { icons: boolean }) {
         <button type="button" data-testid="open-usage" onClick={() => { setOpen(false); dispatch({ type: "usage", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><BarChart3 size={15} /> Usage</button>
         <button type="button" data-testid="open-team-map" onClick={() => { setOpen(false); dispatch({ type: "teamMap", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Network size={15} /> Team map</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "settings", open: true, page: "general" }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Settings size={15} /> Settings</button>
+        <button type="button" data-testid="pair-phone" onClick={() => { setOpen(false); dispatch({ type: "pair", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Smartphone size={15} /> {tr("Pair a browser")}</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "shortcuts", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Keyboard size={15} /> Keyboard shortcuts</button>
       </PopoverContent>
       {icons && null}
@@ -280,7 +281,8 @@ function BulkSelectBar() {
   );
 }
 
-export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
+/** The chat list: bots, rooms and sections, the second column of the layout. */
+export function Sidebar({ sectionId }: { sectionId?: string } = {}) {
   const { state, dispatch } = useStore();
   const t = useT();
   const [q, setQ] = useState("");
@@ -322,14 +324,14 @@ export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
   }, [q]);
 
   const needle = q.trim().toLowerCase();
-  const visible = useMemo(() => state.bots.filter((b) => !b.hidden && (!needle || b.name.toLowerCase().includes(needle))), [state.bots, needle]);
-  const archived = state.bots.filter((b) => b.hidden);
+  const visible = useMemo(() => state.bots.filter((b) => !b.hidden && (!sectionId || b.section === sectionId) && (!needle || b.name.toLowerCase().includes(needle))), [state.bots, needle, sectionId]);
+  const archived = sectionId ? [] : state.bots.filter((b) => b.hidden);
   const pinned = visible.filter((b) => b.pinned);
   const unpinned = visible.filter((b) => !b.pinned);
   const sectionIds = new Set(state.sections.map((s) => s.id));
   const loose = unpinned.filter((b) => !b.section || !sectionIds.has(b.section));
 
-  const visibleGroups = useMemo(() => state.groups.filter((g) => !g.hidden && (!needle || g.name.toLowerCase().includes(needle))), [state.groups, needle]);
+  const visibleGroups = useMemo(() => state.groups.filter((g) => !g.hidden && (!sectionId || g.section === sectionId) && (!needle || g.name.toLowerCase().includes(needle))), [state.groups, needle, sectionId]);
   const selectGroup = (g: Group) => {
     dispatch({ type: "selectGroup", id: g.id });
     if (g.unread) api(`/api/groups/${g.id}/read`, { method: "POST" }).catch(() => {});
@@ -382,19 +384,13 @@ export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
       >
         <div className="relative z-10 shrink-0">
           <div className={cn("relative flex h-[60px] items-start px-4 pt-3", icons && "justify-center px-0")}>
-            {workspace && <button type="button" aria-label={t("Open menu")} data-testid="open-rail" onClick={() => dispatch({ type: "rail", open: true })} className={cn(PILL, "mr-2 md:hidden")}><Menu size={16} /></button>}
-            {workspace && !icons ? <h2 data-testid="chat-list-title" className="min-w-0 flex-1 truncate pt-1.5 text-[15px] font-semibold text-ink">{t("Chats")}</h2> : <div className="min-w-0 flex-1" />}
+            <button type="button" aria-label={t("Open menu")} data-testid="open-rail" onClick={() => dispatch({ type: "rail", open: true })} className={cn(PILL, "mr-2 md:hidden")}><Menu size={16} /></button>
+            {!icons ? <h2 data-testid="chat-list-title" className="min-w-0 flex-1 truncate pt-1.5 text-[15px] font-semibold text-ink">{sectionId ? <span data-no-i18n="">{state.sections.find((x) => x.id === sectionId)?.name}</span> : t("Chats")}</h2> : <div className="min-w-0 flex-1" />}
             <div className={cn("relative flex shrink-0 items-center gap-2", icons && "flex-col")}>
               <button type="button" title="Search bots and messages" aria-expanded={searching} onClick={() => setSearching((v) => !v)} className={PILL}>
                 <Search size={16} />
               </button>
-              {!workspace && (
-              <button type="button" title="Notifications" aria-label="Notifications" aria-pressed={state.notifOpen} onClick={() => dispatch({ type: "notifPanel", open: !state.notifOpen })} className={cn(PILL, "relative")}>
-                <Bell size={16} />
-                {state.notifications.some((n) => !n.read) && <span data-testid="notif-dot" className="absolute right-1.5 top-1.5 size-2 rounded-full bg-accent ring-2 ring-composer" />}
-              </button>
-              )}
-              {workspace && !icons && (
+              {!icons && (
                 <button type="button" title="Select bots" aria-label="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })} className={cn(PILL, state.selecting && "bg-accent text-[var(--color-accent-ink)]")}>
                   <ListChecks size={16} />
                 </button>
@@ -416,41 +412,18 @@ export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
               />
             </div>
           )}
-          {!workspace && (
-          <div className={cn("relative px-3 pb-1", icons && "mt-10 px-0")}>
-            <button
-              type="button"
-              title="Inbox"
-              data-testid="inbox-button"
-              onClick={() => dispatch({ type: "inboxPanel", open: !state.inboxOpen })}
-              className={cn("flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none hover:bg-raised/60", icons && "justify-center", state.inboxOpen && "bg-raised")}
-            >
-              <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-raised text-ink-secondary">
-                <Inbox size={16} />
-                {state.inbox.length > 0 && icons && <span className="absolute right-0 top-0 size-3 rounded-full bg-warning ring-2 ring-panel" />}
-              </span>
-              {!icons && <span className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-ink">{t("Inbox")}</span>}
-              {!icons && state.inbox.length > 0 && <span data-testid="inbox-count" className="mr-9 rounded-full bg-warning px-1.5 text-[11.5px] font-semibold leading-5 text-[var(--color-danger-ink)]">{state.inbox.length}</span>}
-            </button>
-            {!icons && (
-              <button type="button" title="Select bots" aria-label="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })}
-                className={cn("absolute right-5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink", state.selecting && "bg-accent text-[var(--color-accent-ink)] hover:bg-accent")}>
-                <ListChecks size={15} />
-              </button>
-            )}
-          </div>
-          )}
         </div>
         <div className="relative min-h-0 flex-1">
           <nav aria-label="Bots" className={cn("h-full overflow-y-auto px-3 pt-2", icons && "px-1")}
             onDragOver={(e) => { if (dragging) e.preventDefault(); }}
             onDrop={(e) => { e.preventDefault(); if (dragging) drag.drop(dragging, null, null); }}>
             <div className="flex flex-col gap-0.5 pb-2">
-              {visibleGroups.filter((g) => g.pinned).map(groupRow)}
-              {pinned.map(row)}
-              {visibleGroups.filter((g) => !g.pinned && (!g.section || !sectionIds.has(g.section))).map(groupRow)}
-              {loose.map(row)}
-              {!icons && state.sections.map((s) => {
+              {sectionId && <>{visibleGroups.map(groupRow)}{visible.map(row)}</>}
+              {!sectionId && visibleGroups.filter((g) => g.pinned).map(groupRow)}
+              {!sectionId && pinned.map(row)}
+              {!sectionId && visibleGroups.filter((g) => !g.pinned && (!g.section || !sectionIds.has(g.section))).map(groupRow)}
+              {!sectionId && loose.map(row)}
+              {!icons && !sectionId && state.sections.map((s) => {
                 const inSection = unpinned.filter((b) => b.section === s.id);
                 const groupsIn = visibleGroups.filter((g) => !g.pinned && g.section === s.id);
                 if (needle && !inSection.length && !groupsIn.length) return null;
@@ -462,7 +435,7 @@ export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
                 );
               })}
               {needle && !visible.length && !visibleGroups.length && hits.length === 0 && <div className="px-2 py-6 text-center text-[13px] text-ink-tertiary">{`No bots match “${q.trim()}”.`}</div>}
-              {!icons && !needle && (
+              {!icons && !needle && !sectionId && (
                 <button type="button" onClick={addSection} className="mt-2 self-start rounded-md px-2 py-1 text-[12px] text-ink-tertiary hover:bg-raised/60 hover:text-ink">{t("+ New section")}</button>
               )}
               {!icons && hits.length > 0 && (
@@ -500,39 +473,6 @@ export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
           </nav>
         </div>
         <BulkSelectBar />
-        {!workspace && (
-        <div className="relative z-10 shrink-0">
-          <div className={cn("px-4 pb-4 pt-2", icons && "px-0")}>
-            <div className={cn("flex items-center gap-2", icons && "flex-col")}>
-              <ProfileMenu icons={icons} />
-              {!icons && (
-                <button
-                  type="button"
-                  data-testid="connect-apps"
-                  title={t("Connect apps")}
-                  aria-label={t("Connect apps")}
-                  onClick={() => dispatch({ type: "apps", open: true })}
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary ring-1 ring-inset ring-ink/[0.04] transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-raised),var(--color-ink)_7%)] hover:text-ink"
-                >
-                  <Plug size={16} />
-                </button>
-              )}
-              {!icons && (
-                <button
-                  type="button"
-                  data-testid="pair-phone"
-                  title={t("Pair a browser")}
-                  aria-label={t("Pair a browser")}
-                  onClick={() => dispatch({ type: "pair", open: true })}
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary ring-1 ring-inset ring-ink/[0.04] transition-colors duration-[120ms] hover:bg-ink/10 hover:text-ink"
-                >
-                  <Smartphone size={16} />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        )}
         <div
           role="separator"
           aria-orientation="vertical"

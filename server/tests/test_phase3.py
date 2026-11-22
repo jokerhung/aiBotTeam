@@ -494,13 +494,3 @@ async def test_codex_approval_goes_to_the_broker(tmp_path):
     await b.resolve(opened[0][1]["id"], "deny")
     await t
     assert json.loads(Proc.stdin.written[-1])["result"] == {"decision": "decline"}
-
-
-async def test_layout_setting_defaults_to_workspace_and_can_be_changed(ctx):
-    c, _ = ctx
-    s = (await c.get("/api/config")).json()["settings"]
-    assert s["layout"] == "workspace"
-    s = (await c.put("/api/config", json={"layout": "classic"})).json()["settings"]
-    assert s["layout"] == "classic"
-    assert (await c.put("/api/config", json={"layout": "sideways"})).status_code == 422  # only the two layouts exist
-    assert (await c.get("/api/config")).json()["settings"]["layout"] == "classic"

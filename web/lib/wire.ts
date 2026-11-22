@@ -66,8 +66,6 @@ export interface AppSettings {
   skin: string;
   font: string;
   chatWidth: "narrow" | "default" | "wide";
-  /** "workspace": the left navigation with pages (agenticos style); "classic": the bot list alone. */
-  layout?: "workspace" | "classic";
   reduceMotion: boolean;
   language: string;
 }

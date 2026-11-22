@@ -1,6 +1,13 @@
 /** Vietnamese for every fixed string in the interface. English is the key (see lib/i18n.ts). */
 export const vi: Record<string, string> = {
   // workspace layout
+  "Groups of bots": "Nhóm bot",
+  "New room": "Phòng mới",
+  "Your groups of bots, and the rooms where several bots work together.": "Các nhóm bot của bạn và các phòng nơi nhiều bot làm việc chung.",
+  "The bots of this project.": "Các bot của dự án này.",
+  "No bots in this project yet.": "Dự án này chưa có bot nào.",
+  "No projects yet. Group your bots in the chat list, or make a room where several bots work together.": "Chưa có dự án. Hãy gom bot thành nhóm trong danh sách chat, hoặc tạo phòng để nhiều bot làm việc chung.",
+  "Go to a page": "Đi tới một trang",
   "Workspace": "Không gian làm việc",
   "Classic": "Cổ điển",
   "Workspace has the menu with pages on the left; Classic is the bot list alone.": "Không gian làm việc có menu các trang bên trái; Cổ điển chỉ có danh sách bot.",

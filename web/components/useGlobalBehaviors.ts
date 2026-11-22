@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { GO_KEYS } from "@/lib/nav";
 import { applyLook } from "@/lib/skins";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
@@ -19,6 +20,7 @@ export function useGlobalBehaviors() {
     if (loaded) applyLook(s); // before the server answers, s is only the defaults: leave the page and its saved skin alone
   }, [loaded, s.skin, s.chatWidth, s.font, s.reduceMotion, s.language]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const goPending = useRef(0);
   useEffect(() => {
     const typing = (t: EventTarget | null) => {
       const el = t as HTMLElement | null;
@@ -41,6 +43,13 @@ export function useGlobalBehaviors() {
         const bot = visible[Number(e.key) - 1];
         if (bot) { e.preventDefault(); dispatch({ type: "select", id: bot.id }); }
         return;
+      }
+      if (!mod && !e.altKey && !typing(e.target)) {
+        if (goPending.current && Date.now() - goPending.current < 1500) {
+          goPending.current = 0;
+          const view = GO_KEYS[k];
+          if (view) { e.preventDefault(); dispatch({ type: "view", view }); return; }
+        } else if (k === "g") { goPending.current = Date.now(); return; }
       }
       if (e.key === "?" && !mod && !typing(e.target)) { e.preventDefault(); dispatch({ type: "shortcuts", open: true }); }
     };

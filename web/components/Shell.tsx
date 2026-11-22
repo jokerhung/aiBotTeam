@@ -7,13 +7,11 @@ import { ChatView } from "./ChatView";
 import { AutomationsPage } from "./AutomationsPage";
 import { TeamMapPage } from "./TeamMapPage";
 import { GroupPanelHost, GroupView } from "./GroupView";
-import { InboxPanel, NotificationsPanel } from "./NotificationsPanel";
+import { NotificationsPanel } from "./NotificationsPanel";
 import { NewGroupDialog } from "./NewGroupDialog";
-import { ConnectedApps } from "./ConnectedApps";
 import { ImportBotDialog } from "./BotFile";
 import { PairBrowser } from "./PairBrowser";
 import { GuidedTour, WelcomeGate, WhatsNew } from "./Welcome";
-import { UsagePage } from "./Observe";
 import { ImportTeamDialog, ShareTeamDialog } from "./TeamShare";
 import { BotPanel } from "./BotPanel";
 import { AdminPanel } from "./AdminPanel";
@@ -23,7 +21,7 @@ import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { NewBotDialog } from "./NewBotDialog";
 import { SettingsModal } from "./SettingsModal";
 import { Toaster } from "./Toaster";
-import { useLocalizer } from "@/lib/i18n";
+import { useLocalizer, useT } from "@/lib/i18n";
 import { useGlobalBehaviors } from "./useGlobalBehaviors";
 import { useTeamBehaviors } from "./useTeamBehaviors";
 import { useDialogA11y } from "./useDialogA11y";
@@ -63,6 +61,17 @@ function Fallback() {
   );
 }
 
+/** A project with no bots yet. */
+function EmptyProject() {
+  const t = useT();
+  return (
+    <main data-testid="page-section" className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-2 bg-app px-6 text-center text-ink-secondary">
+      <div className="text-[15px] font-semibold text-ink">{t("Nothing here yet")}</div>
+      <div className="text-[13px]">{t("No bots in this project yet.")}</div>
+    </main>
+  );
+}
+
 /** The chat of one bot with its side panels. */
 function BotArea({ bot }: { bot: Bot }) {
   const { state } = useStore();
@@ -81,6 +90,7 @@ function WorkspaceContent({ view, bot, group }: { view: View; bot: Bot | undefin
   switch (view) {
     case "chat": return bot ? <BotArea bot={bot} /> : <Fallback />;
     case "project": return group ? <><GroupView key={group.id} group={group} /><GroupPanelHost group={group} /></> : <ProjectsPage />;
+    case "section": return bot ? <BotArea bot={bot} /> : <EmptyProject />;
     case "dashboard": return <DashboardPage />;
     case "inbox": return <InboxPage />;
     case "projects": return <ProjectsPage />;
@@ -103,9 +113,11 @@ export function Shell() {
   useTeamBehaviors();
   useDialogA11y();
   useLocalizer();
-  const workspace = state.config.settings.layout !== "classic";
-  useHashRoute(workspace);
-  const bot = state.bots.find((b) => b.id === state.selectedId);
+  useHashRoute(true);
+  const projectBots = state.view === "section" ? state.bots.filter((b) => !b.hidden && b.section === state.selectedSectionId) : [];
+  const bot = state.view === "section"
+    ? (projectBots.find((b) => b.id === state.selectedId) ?? projectBots[0])
+    : state.bots.find((b) => b.id === state.selectedId);
   const group = state.groups.find((g) => g.id === state.selectedGroupId);
   const noRealEngine = !state.instances.some((i) => i.driver !== "echo" && i.snapshot.state === "available" && i.snapshot.signedIn !== false);
   return (
@@ -121,32 +133,9 @@ export function Shell() {
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">
-        {workspace ? (
-          <>
-            <AppRail />
-            {hasChatList(state.view) && <Sidebar workspace />}
-            <WorkspaceContent view={state.view} bot={bot} group={group} />
-          </>
-        ) : (
-          <>
-            <Sidebar />
-            {state.teamMapOpen ? (
-              <TeamMapPage />
-            ) : state.automationsOpen ? (
-              <AutomationsPage />
-            ) : group ? (
-              <>
-                <GroupView key={group.id} group={group} />
-                <GroupPanelHost group={group} />
-              </>
-            ) : bot ? (
-              <BotArea bot={bot} />
-            ) : (
-              <Fallback />
-            )}
-          </>
-        )}
-        <InboxPanel />
+        <AppRail />
+        {hasChatList(state.view) && <Sidebar key={state.view === "section" ? state.selectedSectionId : "all"} sectionId={state.view === "section" ? state.selectedSectionId : undefined} />}
+        <WorkspaceContent view={state.view} bot={bot} group={group} />
         <NotificationsPanel />
       </div>
       <TranscriptAnnouncer />
@@ -154,9 +143,7 @@ export function Shell() {
       <GuidedTour />
       <WhatsNew />
       <NewGroupDialog />
-      <ConnectedApps />
       <PairBrowser />
-      <UsagePage />
       <ShareTeamDialog />
       <ImportTeamDialog />
       <ImportBotDialog />
