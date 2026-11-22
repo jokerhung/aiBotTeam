@@ -3,6 +3,7 @@ import { Bell, BellRing, Inbox as InboxIcon, Maximize2, Minimize2, Pin, PinOff, 
 import { useState } from "react";
 import { desktopAlertsOn, enableDesktopAlerts, DESKTOP_ALERTS_KEY } from "./useTeamBehaviors";
 import { useT } from "@/lib/i18n";
+import { useWorkspace } from "./layout/useWorkspace";
 import { cn } from "@/lib/utils";
 import type { Bot, InboxItem, Message, Notification, RequestInfo } from "@/lib/wire";
 import { ApprovalDock, QuestionCard } from "./RequestCard";
@@ -155,23 +156,26 @@ function ActiveThreads() {
 }
 
 /** Every card waiting on the person, across all bots and rooms, answered in place: a right-hand panel like the reference's, which can be widened. */
-export function InboxPanel() {
+export function InboxPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const { state, dispatch } = useStore();
   const t = useT();
+  const workspace = useWorkspace();
   const [wide, setWide] = useState(false);
-  if (!state.inboxOpen) return null;
+  if (!embedded && (!state.inboxOpen || workspace)) return null;
   return (
     <aside aria-label={t("Inbox")} data-testid="inbox-panel"
-      className={cn("flex h-full shrink-0 flex-col border-l-[0.5px] border-edge bg-panel max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:shadow-xl", wide ? "w-[560px]" : "w-[320px]")}>
+      className={embedded ? "mx-auto flex h-full w-full max-w-[760px] min-w-0 flex-1 flex-col" : cn("flex h-full shrink-0 flex-col border-l-[0.5px] border-edge bg-panel max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:shadow-xl", wide ? "w-[560px]" : "w-[320px]")}>
       <div className="flex h-[60px] shrink-0 items-center gap-2 px-5">
         <InboxIcon size={15} className="text-ink-secondary" />
         <h2 className="flex-1 text-[14px] font-medium text-ink">{t("Inbox")}</h2>
+        {!embedded && <>
         <button type="button" title={t(wide ? "Narrow" : "Expand")} aria-label={t(wide ? "Narrow" : "Expand")} aria-pressed={wide} onClick={() => setWide((v) => !v)}
           className="flex size-8 items-center justify-center rounded-full bg-composer text-ink-secondary ring-1 ring-ink/10 hover:text-ink">{wide ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
         <button type="button" aria-label="Close" onClick={() => dispatch({ type: "inboxPanel", open: false })}
           className="flex size-8 items-center justify-center rounded-full bg-composer text-ink-secondary ring-1 ring-ink/10 hover:text-ink"><X size={14} /></button>
+        </>}
       </div>
-      <div className="max-h-[62%] min-h-0 shrink-0 overflow-y-auto px-4 pb-6">
+      <div className={cn("min-h-0 shrink-0 overflow-y-auto px-4 pb-6", !embedded && "max-h-[62%]")}>
         {state.inbox.length === 0 && (
           <div className="flex flex-col items-center gap-1.5 px-6 pt-8 text-center">
             <InboxIcon size={20} className="mb-1 text-ink-tertiary" />

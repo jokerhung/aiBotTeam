@@ -43,6 +43,19 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 3. Bot tự chào và hỏi bạn muốn được giúp gì. Gõ vào ô chat để trò chuyện.
 4. Mức duyệt của bot (Ask / Edits / Auto / Full) quyết định lúc nào bot phải xin phép trước khi chạy lệnh hoặc sửa file.
 
+### Menu chính
+
+Thanh bên trái (bố cục **Không gian làm việc**, mặc định) gom mọi thứ vào một menu; địa chỉ trang đổi theo (`#/agents`, `#/chat/<bot>`…), nên nút Back và việc tải lại trang đều giữ đúng chỗ.
+
+- **Dashboard:** chi phí và token theo ngày, bot hoặc model; số bot đang làm việc và số việc đang chờ bạn.
+- **Chat:** danh sách bot ở cột giữa, khung chat bên phải. **Inbox:** mọi thẻ đang chờ bạn trả lời.
+- **Projects:** các phòng nhiều bot làm việc chung; **All projects** liệt kê và tạo mới.
+- **Build:** **Agents** (bảng các bot, mở hồ sơ, tạo hoặc nhập bot), **Workflows** (chưa có, trang trống), **Routines** (lịch và webhook).
+- **Knowledge:** **Knowledge bases** và **Documents** (chưa có, trang trống), **Skills** (thư viện kỹ năng).
+- **Connect:** **Apps** (Composio và MCP riêng), **Input** (Telegram, Zalo).
+
+Nút thu gọn ở đầu menu chỉ để lại biểu tượng (trình duyệt nhớ lựa chọn). Trên màn hình hẹp menu mở bằng nút ☰. Muốn quay lại danh sách bot như trước: Settings → Appearance → Layout → **Classic**.
+
 ## 3. Cấu hình engine
 
 - **Claude Code / Codex CLI:** cài CLI chính thức và đăng nhập (`claude login`, `codex login`). BotTeam tự dò.

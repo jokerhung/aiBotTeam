@@ -2,6 +2,7 @@
 import { Download, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { locale, useT } from "@/lib/i18n";
+import { useWorkspace } from "./layout/useWorkspace";
 import { cn } from "@/lib/utils";
 import type { Bot } from "@/lib/wire";
 import { api } from "@/state/api";
@@ -117,32 +118,33 @@ interface UsageRow { key: string; input: number; output: number; cost: number; t
 interface UsageData { rows: UsageRow[]; total: { input: number; output: number; cost: number; turns: number }; limits: Record<string, { resetsAt: number; limit?: string }> }
 
 /** Tokens and cost by day, bot or model, with the total, and when a usage limit resets. */
-export function UsagePage() {
+export function UsagePage({ embedded = false }: { embedded?: boolean } = {}) {
   const { state, dispatch } = useStore();
+  const workspace = useWorkspace();
   const t = useT();
   const [by, setBy] = useState<"day" | "bot" | "model">("day");
   const [days, setDays] = useState(30);
   const [data, setData] = useState<UsageData | null>(null);
   useEffect(() => {
-    if (!state.usageOpen) return;
+    if (!state.usageOpen && !embedded) return;
     const since = days ? Date.now() - days * 86_400_000 : 0;
     api<UsageData>(`/api/usage?by=${by}&since=${since}`).then(setData).catch(() => {});
-  }, [state.usageOpen, by, days]);
-  if (!state.usageOpen) return null;
+  }, [state.usageOpen, embedded, by, days]);
+  if (!embedded && (!state.usageOpen || workspace)) return null;
   const max = Math.max(1, ...(data?.rows.map((r) => r.input + r.output) ?? [1]));
   const close = () => dispatch({ type: "usage", open: false });
   const seg = (on: boolean) => cn("px-3 py-1 text-[13px]", on ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink");
   const fmt = (n: number) => n.toLocaleString([locale()]);
   return (
-    <div role="dialog" aria-modal="true" aria-label="Usage" data-testid="usage-page" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
-      <div className="flex max-h-[88vh] w-full max-w-[640px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10">
+    <div role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : true} aria-label="Usage" data-testid="usage-page" className={embedded ? "flex min-h-0 flex-col" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className={embedded ? "flex w-full max-w-[900px] flex-col" : "flex max-h-[88vh] w-full max-w-[640px] flex-col overflow-hidden rounded-[20px] bg-panel text-ink shadow-xl ring-1 ring-ink/10"}>
         <div className="flex h-[60px] shrink-0 items-center gap-3 px-5">
           <h2 className="flex-1 text-[17px] font-semibold">{t("Usage")}</h2>
           <div role="group" aria-label={t("Group by")} className="flex overflow-hidden rounded-lg ring-1 ring-ink/10">
             {(["day", "bot", "model"] as const).map((k) => <button key={k} type="button" aria-pressed={by === k} onClick={() => setBy(k)} className={seg(by === k)}>{t(k === "day" ? "By day" : k === "bot" ? "By bot" : "By model")}</button>)}
           </div>
           <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label={t("Period")} className="h-8 rounded-lg bg-raised px-2 text-[13px]"><option value={7}>{t("7 days")}</option><option value={30}>{t("30 days")}</option><option value={0}>{t("All time")}</option></select>
-          <button type="button" aria-label="Close" onClick={close} className="rounded-full p-1.5 hover:bg-ink/10"><X size={16} /></button>
+          {!embedded && <button type="button" aria-label="Close" onClick={close} className="rounded-full p-1.5 hover:bg-ink/10"><X size={16} /></button>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           {data && (

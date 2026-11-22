@@ -45,6 +45,7 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
 - 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files and runs by itself after 30 quiet seconds (or when someone presses *Check*). How a bot receives messages is written in an `intake.md` in its working folder, which you can edit in Bot settings: progress messages while photos arrive, saving them into folders such as `<machine>/<date>/Truoc|Sau` read from the caption (identical files are not saved twice), and a short reply with or without running a bot. Each batch of photos gets its own conversation in the app that also shows everything sent to the chat, and `run.command` can run a script of the working folder afterwards (for example to download PDFs), retrying until it succeeds.
+- 🧭 **Workspace layout** — one left menu: Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Knowledge bases, Documents, Skills) and Connect (Apps, Input), in the style of [agenticos](https://github.com/vstorm-co/agenticos). Pages that do not exist yet are empty pages; Settings → Appearance → Layout → Classic brings the old bot list back.
 - 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
 - ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
 - 🧠 **Memory, skills and sharing** — notes that last between tasks, `SKILL.md` skills, and one-file export and import of a bot or a team.
@@ -83,6 +84,7 @@ flowchart LR
 |---|---|
 | `web/` | Next.js (App Router) app, React, Tailwind v4: sidebar, chat, composer, panels, Connected apps |
 | `web/state/` | The single reducer and the SSE client |
+| `web/components/layout/` | The workspace layout: `AppRail` (left menu), `PageFrame`, empty pages and the pages of the menu (`pages.tsx`); the menu itself is the table in `web/lib/nav.ts` |
 | `web/lib/` | Types shared with the server (`wire.ts`), skins, Vietnamese dictionary (`i18n-vi.ts`) |
 | `server/botteam/` | FastAPI server: `main.py` (routes), `turns.py`, `registry.py`, `broker.py`, `store.py`, `routines.py`, `memory.py` |
 | `server/botteam/drivers/` | One driver per engine: `claude.py`, `codex.py`, `antigravity.py`, `openai_compat.py` |
@@ -160,6 +162,7 @@ To use BotTeam from another computer on your LAN or Tailscale, set `WEB_HOST=0.0
 pnpm test              # server (pytest), web (Vitest) and the Zalo service (node:test)
 pnpm typecheck         # TypeScript
 pnpm test:ui           # reference and visual comparison (needs the reference app running)
+pnpm test:workspace      # the workspace menu, address and narrow-screen drawer (needs the app running)
 pnpm build:static      # static web app served by the Python server
 ```
 

@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Plug, Smartphone, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Menu, Archive, BarChart3, Bell, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Inbox, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Plug, Smartphone, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -224,7 +224,7 @@ function SectionHeader({ section, count, drag }: { section: Section; count: numb
   );
 }
 
-function ProfileMenu({ icons }: { icons: boolean }) {
+export function ProfileMenu({ icons }: { icons: boolean }) {
   const { state, dispatch } = useStore();
   const [open, setOpen] = useState(false);
   const name = state.config.settings.displayName || "You";
@@ -280,7 +280,7 @@ function BulkSelectBar() {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ workspace = false }: { workspace?: boolean } = {}) {
   const { state, dispatch } = useStore();
   const t = useT();
   const [q, setQ] = useState("");
@@ -382,15 +382,23 @@ export function Sidebar() {
       >
         <div className="relative z-10 shrink-0">
           <div className={cn("relative flex h-[60px] items-start px-4 pt-3", icons && "justify-center px-0")}>
-            <div className="min-w-0 flex-1" />
+            {workspace && <button type="button" aria-label={t("Open menu")} data-testid="open-rail" onClick={() => dispatch({ type: "rail", open: true })} className={cn(PILL, "mr-2 md:hidden")}><Menu size={16} /></button>}
+            {workspace && !icons ? <h2 data-testid="chat-list-title" className="min-w-0 flex-1 truncate pt-1.5 text-[15px] font-semibold text-ink">{t("Chats")}</h2> : <div className="min-w-0 flex-1" />}
             <div className={cn("relative flex shrink-0 items-center gap-2", icons && "flex-col")}>
               <button type="button" title="Search bots and messages" aria-expanded={searching} onClick={() => setSearching((v) => !v)} className={PILL}>
                 <Search size={16} />
               </button>
+              {!workspace && (
               <button type="button" title="Notifications" aria-label="Notifications" aria-pressed={state.notifOpen} onClick={() => dispatch({ type: "notifPanel", open: !state.notifOpen })} className={cn(PILL, "relative")}>
                 <Bell size={16} />
                 {state.notifications.some((n) => !n.read) && <span data-testid="notif-dot" className="absolute right-1.5 top-1.5 size-2 rounded-full bg-accent ring-2 ring-composer" />}
               </button>
+              )}
+              {workspace && !icons && (
+                <button type="button" title="Select bots" aria-label="Select bots" aria-pressed={state.selecting} onClick={() => dispatch({ type: "selecting", on: !state.selecting })} className={cn(PILL, state.selecting && "bg-accent text-[var(--color-accent-ink)]")}>
+                  <ListChecks size={16} />
+                </button>
+              )}
               <NewMenu icons={icons} />
             </div>
           </div>
@@ -408,6 +416,7 @@ export function Sidebar() {
               />
             </div>
           )}
+          {!workspace && (
           <div className={cn("relative px-3 pb-1", icons && "mt-10 px-0")}>
             <button
               type="button"
@@ -430,6 +439,7 @@ export function Sidebar() {
               </button>
             )}
           </div>
+          )}
         </div>
         <div className="relative min-h-0 flex-1">
           <nav aria-label="Bots" className={cn("h-full overflow-y-auto px-3 pt-2", icons && "px-1")}
@@ -490,6 +500,7 @@ export function Sidebar() {
           </nav>
         </div>
         <BulkSelectBar />
+        {!workspace && (
         <div className="relative z-10 shrink-0">
           <div className={cn("px-4 pb-4 pt-2", icons && "px-0")}>
             <div className={cn("flex items-center gap-2", icons && "flex-col")}>
@@ -521,6 +532,7 @@ export function Sidebar() {
             </div>
           </div>
         </div>
+        )}
         <div
           role="separator"
           aria-orientation="vertical"

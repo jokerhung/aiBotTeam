@@ -1,6 +1,8 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
 import { Keyboard, MessageSquarePlus, Palette, Search, Settings, UserPlus } from "lucide-react";
+import { NAV, PROJECTS_ITEM } from "@/lib/nav";
+import { tr } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/state/api";
@@ -39,14 +41,17 @@ export function CommandPalette() {
       { id: "appearance", label: "Change skin", icon: Palette, run: go(() => dispatch({ type: "settings", open: true, page: "appearance" })) },
       { id: "keys", label: "Keyboard shortcuts", hint: "?", icon: Keyboard, run: go(() => dispatch({ type: "shortcuts", open: true })) },
     ];
+    const pages: Item[] = state.config.settings.layout === "classic" ? [] : [...NAV.flatMap((g) => g.items), PROJECTS_ITEM].map((n) => ({
+      id: `page-${n.view}`, label: `${tr("Go to")} ${tr(n.label)}`, icon: n.icon, run: go(() => dispatch({ type: "view", view: n.view })),
+    }));
     const bots: Item[] = state.bots.filter((b) => !b.hidden).map((b) => ({
       id: `bot-${b.id}`, label: b.name, hint: b.title || undefined, face: <Mascot color={b.color} size={24} />,
       run: go(() => dispatch({ type: "select", id: b.id })),
     }));
     const needle = q.trim().toLowerCase();
-    return [...bots, ...commands].filter((i) => !needle || i.label.toLowerCase().includes(needle));
+    return [...bots, ...pages, ...commands].filter((i) => !needle || i.label.toLowerCase().includes(needle));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.bots, state.selectedId, q]);
+  }, [state.bots, state.selectedId, state.config.settings.layout, q]);
 
   useEffect(() => { setCursor(0); }, [q, open]);
   useEffect(() => { if (open) setQ(""); }, [open]);

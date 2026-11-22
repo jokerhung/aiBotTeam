@@ -2,14 +2,19 @@
 import { onComputerFrame } from "../lib/screens";
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from "react";
 import { api } from "./api";
+import type { View } from "../lib/nav";
 import type { AppConfig, AppSettings, Bot, Group, InboxItem, InstanceInfo, Message, Notification, Routine, RoutineRun, Section, ServerFrame, Webhook, WebhookAttempt } from "@/lib/wire";
 
 export type SettingsPage = "general" | "connections" | "engines" | "appearance";
 export const DEFAULT_SETTINGS: AppSettings = {
-  displayName: "", uiMode: "simple", skin: "daylight", font: "skin", chatWidth: "default", reduceMotion: false, language: "en",
+  displayName: "", uiMode: "simple", skin: "daylight", font: "skin", chatWidth: "default", layout: "workspace", reduceMotion: false, language: "en",
 };
 
 export interface AppState {
+  /** The page on screen in the workspace layout (the classic layout keeps using the flags below). */
+  view: View;
+  /** The navigation rail as a drawer on a narrow screen. */
+  railOpen: boolean;
   bots: Bot[];
   /** Transcripts by conversation (thread) id: the active branch, oldest first. */
   messages: Record<string, Message[]>;
@@ -77,6 +82,8 @@ export interface AppState {
 }
 
 export type Action =
+  | { type: "view"; view: View }
+  | { type: "rail"; open: boolean }
   | { type: "hydrate"; bots: Bot[]; instances: InstanceInfo[] }
   | { type: "instances"; instances: InstanceInfo[] }
   | { type: "connected"; connected: boolean }
@@ -122,7 +129,7 @@ export const initialState: AppState = {
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
   groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, pairOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, importBotOpen: false, mcpTick: 0, channelTick: 0,
-  routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [],
+  routines: [], runs: [], webhooks: [], attempts: {}, notifications: [], inbox: [], view: "chat", railOpen: false,
   settingsPage: "general", config: { settings: DEFAULT_SETTINGS, keys: {}, keyCatalog: [] }, configLoaded: false, sections: [], panelBotId: null, computerBotId: null, adminBot: null, adminOpen: false,
   paletteOpen: false, shortcutsOpen: false, findOpen: false, focusMessage: null, selecting: false, picked: [],
 };
@@ -156,20 +163,24 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, connected: action.connected };
     case "select": {
       const bot = state.bots.find((b) => b.id === action.id);
-      return { ...state, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
+      return { ...state, view: "chat", railOpen: false, selectedId: action.id, selectedGroupId: "", automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, panelBotId: state.panelBotId === action.id ? state.panelBotId : null,
         dividerAt: { ...state.dividerAt, [action.id]: bot?.readAt ?? 0 } };
     }
     case "selectGroup":
-      return { ...state, selectedGroupId: action.id, automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, groupPanelId: state.groupPanelId === action.id ? action.id : null,
+      return { ...state, view: "project", railOpen: false, selectedGroupId: action.id, automationsOpen: false, teamMapOpen: false, drawerOpen: false, findOpen: false, groupPanelId: state.groupPanelId === action.id ? action.id : null,
         dividerAt: { ...state.dividerAt, [action.id]: state.groups.find((g) => g.id === action.id)?.readAt ?? 0 } };
     case "groupPanel":
       return { ...state, groupPanelId: action.id };
     case "newGroup":
       return { ...state, newGroupOpen: action.open };
+    case "view":
+      return { ...state, view: action.view, railOpen: false, drawerOpen: false, automationsOpen: false, teamMapOpen: false, usageOpen: false, appsOpen: false, inboxOpen: false };
+    case "rail":
+      return { ...state, railOpen: action.open };
     case "automations":
-      return { ...state, automationsOpen: action.open, teamMapOpen: false, drawerOpen: false };
+      return { ...state, automationsOpen: action.open, teamMapOpen: false, drawerOpen: false, view: action.open ? "routines" : state.view === "routines" ? "chat" : state.view };
     case "teamMap":
-      return { ...state, teamMapOpen: action.open, automationsOpen: false, drawerOpen: false };
+      return { ...state, teamMapOpen: action.open, automationsOpen: false, drawerOpen: false, view: action.open ? "team-map" : state.view === "team-map" ? "chat" : state.view };
     case "notifPanel":
       return { ...state, notifOpen: action.open ?? state.notifOpen, notifPinned: action.pinned ?? state.notifPinned };
     case "shareTeam":
@@ -179,15 +190,16 @@ export function reducer(state: AppState, action: Action): AppState {
     case "importTeam":
       return { ...state, importOpen: action.open };
     case "usage":
-      return { ...state, usageOpen: action.open };
+      return { ...state, usageOpen: action.open, view: action.open ? "dashboard" : state.view === "dashboard" ? "chat" : state.view };
     case "whatsNew":
       return { ...state, whatsNewOpen: action.open };
     case "pair":
       return { ...state, pairOpen: action.open };
     case "apps":
-      return { ...state, appsOpen: action.open, appsTab: action.open ? action.tab ?? "apps" : "apps" };
+      return { ...state, appsOpen: action.open, appsTab: action.open ? action.tab ?? "apps" : "apps",
+        view: action.open ? (action.tab === "input" ? "input" : "apps") : state.view === "apps" || state.view === "input" ? "chat" : state.view };
     case "inboxPanel":
-      return { ...state, inboxOpen: action.open };
+      return { ...state, inboxOpen: action.open, view: action.open ? "inbox" : state.view === "inbox" ? "chat" : state.view };
     case "teamData":
       return { ...state, groups: action.groups ?? state.groups, routines: action.routines ?? state.routines, runs: action.runs ?? state.runs,
         webhooks: action.webhooks ?? state.webhooks, notifications: action.notifications ?? state.notifications, inbox: action.inbox ?? state.inbox };

@@ -54,7 +54,7 @@ from .wire import (
 
 FILE_MAX_BYTES = 100 * 1024 * 1024
 DEFAULT_SETTINGS = {
-    "displayName": "", "uiMode": "simple", "skin": "daylight", "font": "skin", "chatWidth": "default",
+    "displayName": "", "uiMode": "simple", "skin": "daylight", "font": "skin", "chatWidth": "default", "layout": "classic" if os.environ.get("BOTTEAM_LAYOUT") == "classic" else "workspace",
     "reduceMotion": False, "language": "en",
 }
 

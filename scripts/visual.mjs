@@ -27,7 +27,7 @@ mkdirSync(BASE, { recursive: true });
 mkdirSync(OUT, { recursive: true });
 
 const dataDir = mkdtempSync(join(tmpdir(), "botteam-visual-"));
-const env = { ...process.env, BOTTEAM_DATA_DIR: dataDir, SERVER_PORT: String(API_PORT), WEB_PORT: String(WEB_PORT) };
+const env = { ...process.env, BOTTEAM_DATA_DIR: dataDir, BOTTEAM_LAYOUT: "classic", SERVER_PORT: String(API_PORT), WEB_PORT: String(WEB_PORT) };
 const children = [];
 const run = (args) => {
   const c = spawn("node", ["scripts/run.mjs", ...args], { cwd: root, env, stdio: "ignore", shell: false });

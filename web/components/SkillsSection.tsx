@@ -9,7 +9,7 @@ import { api } from "@/state/api";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 
-function SkillEditor({ skill, onClose }: { skill: Skill | null; onClose: () => void }) {
+export function SkillEditor({ skill, onClose }: { skill: Skill | null; onClose: () => void }) {
   const t = useT();
   const [name, setName] = useState(skill?.name ?? "");
   const [description, setDescription] = useState(skill?.description ?? "");

@@ -2,7 +2,7 @@
 
 **Mục tiêu:** đổi khung giao diện của BotTeam sang bố cục của [agenticos](https://github.com/vstorm-co/agenticos): một **thanh điều hướng chính** bên trái gồm Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Bases, Documents, Skills), Connect (Apps, Input); mục nào BotTeam chưa có thì **để trang trống** (trạng thái rỗng), không làm tính năng. Các tính năng đang có (chat, thẻ duyệt, lịch, kết nối, kênh Telegram/Zalo, kỹ năng, báo cáo chi phí) giữ nguyên và chỉ đổi chỗ đặt.
 
-**Trạng thái:** kế hoạch, chưa có mã.
+**Trạng thái:** đã triển khai trên nhánh `newgui` (mục 8 ghi chỗ khác kế hoạch và việc còn lại).
 
 **Tham chiếu**
 
@@ -59,42 +59,42 @@ Từ ngữ trên giao diện: giữ tên của agenticos (Agents, Projects, Rout
 ## 4. Các bước
 
 ### 8.0 Chuẩn bị (không đổi mã)
-- [ ] Mở `http://localhost:5199/` và ảnh agenticos, ghi lại kích thước và khoảng cách (rộng AppRail, cao mục nav, cỡ chữ, bo góc, màu nền/viền) vào `docs/verification/layout-tokens.md`.
-- [ ] Chụp ảnh "trước" của các màn hình sẽ đổi (chat, nhóm, lịch, apps, input, usage, hộp thư) để so sánh sau.
-- [ ] Chốt từ ngữ Việt của các mục menu với người dùng.
+- [x] Ghi lại kích thước và khoảng cách của ảnh agenticos (rộng menu, cao mục, cỡ chữ, màu) vào `docs/verification/layout-tokens.md`. (Không dùng `http://localhost:5199/` nữa theo `AGENTS.md`.)
+- [ ] Chụp ảnh "trước" của các màn hình sẽ đổi (chat, nhóm, lịch, apps, input, usage, hộp thư) để so sánh sau. **Chưa làm.**
+- [x] Chốt từ ngữ Việt của các mục menu với người dùng. (dùng bản đề xuất ở mục 2; sửa ở `web/lib/nav.ts` và `i18n-vi.ts`)
 
 ### 8.1 Khung và điều hướng
-- [ ] Biến `view` trong `store.tsx`, ánh xạ các action cũ, test reducer (Vitest) cho mọi chuyển đổi, gồm việc chọn bot đưa về `chat`.
-- [ ] Định tuyến hash hai chiều (đọc khi tải, ghi khi đổi `view`, xử lý `popstate`), test.
-- [ ] `AppRail` với mọi mục menu ở mục 2, huy hiệu số ở Inbox, nhóm Projects liệt kê vài nhóm gần dùng và "All projects".
-- [ ] Tách `Sidebar.tsx` thành `ChatList` (cột 2), giữ nguyên hành vi: ghim, chọn nhiều, section, tìm kiếm tin nhắn, kéo đổi bề rộng.
-- [ ] `PageFrame` và `EmptyPage`; `Shell.tsx` chọn nội dung theo `view`.
+- [x] Biến `view` trong `store.tsx`, ánh xạ các action cũ, test reducer (Vitest) cho mọi chuyển đổi, gồm việc chọn bot đưa về `chat`.
+- [x] Định tuyến hash hai chiều (đọc khi tải, ghi khi đổi `view`, xử lý `popstate`), test.
+- [x] `AppRail` với mọi mục menu ở mục 2, huy hiệu số ở Inbox, nhóm Projects liệt kê vài nhóm gần dùng và "All projects".
+- [x] Tách `Sidebar.tsx` thành `ChatList` (cột 2), giữ nguyên hành vi: ghim, chọn nhiều, section, tìm kiếm tin nhắn, kéo đổi bề rộng.
+- [x] `PageFrame` và `EmptyPage`; `Shell.tsx` chọn nội dung theo `view`.
 - **Tiêu chí:** bấm từng mục menu đổi đúng trang, Back/Forward hoạt động, tải lại giữ nguyên trang, chat và nhóm hoạt động như trước.
 
 ### 8.2 Đưa các trang có sẵn vào khung
-- [ ] Dashboard: tổng chi phí/token (chọn khoảng ngày), bảng theo ngày, bot, model; số lượt đang chạy và số thẻ cần duyệt; dùng `/api/usage` hiện có.
-- [ ] Inbox, Routines, Apps, Input, Skills: dùng lại thành phần hiện có trong `PageFrame`, các hộp thoại cũ vẫn mở được từ nơi khác (nút "Connect apps" trong chat…).
-- [ ] Agents: bảng bot (tên, engine/model, mức duyệt, thư mục làm việc, đầu vào, lần chạy cuối), nút tạo/nhập/xuất, mở `BotPanel`.
-- [ ] Projects và All projects: danh sách nhóm bot, tạo nhóm, mở `GroupView`.
+- [x] Dashboard: tổng chi phí/token (chọn khoảng ngày), bảng theo ngày, bot, model; số lượt đang chạy và số thẻ cần duyệt; dùng `/api/usage` hiện có.
+- [x] Inbox, Routines, Apps, Input, Skills: dùng lại thành phần hiện có trong `PageFrame`, các hộp thoại cũ vẫn mở được từ nơi khác (nút "Connect apps" trong chat…).
+- [x] Agents: bảng bot (tên, engine/model, mức duyệt, thư mục làm việc, đầu vào, lần chạy cuối), nút tạo/nhập/xuất, mở `BotPanel`.
+- [x] Projects và All projects: danh sách nhóm bot, tạo nhóm, mở `GroupView`.
 - **Tiêu chí:** mọi việc trước đây làm được qua hộp thoại/panel vẫn làm được qua trang; không mất dữ liệu hay hành vi nào.
 
 ### 8.3 Trang trống
-- [ ] Workflows, Bases, Documents dùng `EmptyPage` (không nút, không dữ liệu giả); khai báo `placeholder: true` trong `nav.ts` và có chú thích nhỏ "sắp có".
+- [x] Workflows, Bases, Documents dùng `EmptyPage` (không nút, không dữ liệu giả); khai báo `placeholder: true` trong `nav.ts` và có chú thích nhỏ "sắp có".
 - **Tiêu chí:** mở được, không lỗi, không gọi API nào.
 
 ### 8.4 Hoàn thiện
-- [ ] Thu gọn AppRail, phản hồi theo bề ngang, ngăn kéo trên màn hình hẹp.
-- [ ] Phím tắt: `⌘K` tìm kiếm (dùng `CommandPalette`), thêm lệnh nhảy tới từng trang; cập nhật `KeyboardShortcutsModal`.
-- [ ] Trợ năng: vùng `nav` có nhãn, `aria-current="page"` ở mục đang chọn, thứ tự Tab hợp lý, thông báo khi đổi trang cho trình đọc màn hình.
-- [ ] i18n: chuỗi mới vào `lib/i18n-vi.ts`, chạy `i18n.test.ts`; cập nhật danh sách cho phép trong `e2e/vi.mjs`.
-- [ ] Kiểm 13 skin (`scripts/check-skin-contrast.mjs`) với các thành phần mới.
-- [ ] Cờ `settings.layout` và mục chọn trong Settings.
+- [x] Thu gọn AppRail, phản hồi theo bề ngang, ngăn kéo trên màn hình hẹp.
+- [x] Phím tắt: `⌘K` tìm kiếm (dùng `CommandPalette`), thêm lệnh nhảy tới từng trang; cập nhật `KeyboardShortcutsModal`. Đã có lệnh "Go to …" cho từng trang trong bảng lệnh `⌘K`; chưa thêm phím tắt chữ riêng cho từng trang.
+- [x] Trợ năng: vùng `nav` có nhãn, `aria-current="page"` ở mục đang chọn, thứ tự Tab hợp lý, thông báo khi đổi trang cho trình đọc màn hình.
+- [x] i18n: chuỗi mới vào `lib/i18n-vi.ts`, chạy `i18n.test.ts`; cập nhật danh sách cho phép trong `e2e/vi.mjs`.
+- [x] Kiểm 13 skin (`scripts/check-skin-contrast.mjs`) với các thành phần mới. Đã chạy, 13 skin đạt.
+- [x] Cờ `settings.layout` và mục chọn trong Settings.
 
 ### 8.5 Kiểm thử và tài liệu
-- [ ] Vitest: reducer `view`, định tuyến hash, `nav.ts` (mọi mục có nhãn Việt, mục trống không gọi API).
-- [ ] `pnpm test:ui`: các kịch bản so sánh với bản tham chiếu (`reference*.mjs`, `visual.mjs`) giả định bố cục cũ. Cập nhật hoặc tách: giữ chúng chạy với `layout = classic`, thêm bộ ảnh nền mới cho `workspace`.
-- [ ] Kịch bản e2e: đi qua toàn bộ menu, gửi một tin chat, mở và đóng Apps/Input.
-- [ ] `README.md` (ảnh chụp, mô tả giao diện), `docs/user-guide.md` (hướng dẫn menu), `docs/README.md`; rà `install.ps1` / `install.sh` (không cần đổi) theo `AGENTS.md` số 3.
+- [x] Vitest: reducer `view`, định tuyến hash, `nav.ts` (mọi mục có nhãn Việt, mục trống không gọi API).
+- [ ] `pnpm test:ui`: các kịch bản so sánh với bản tham chiếu (`reference*.mjs`, `visual.mjs`) giả định bố cục cũ. Cập nhật hoặc tách: giữ chúng chạy với `layout = classic`, thêm bộ ảnh nền mới cho `workspace`. **Một phần:** `scripts/visual.mjs` và `web/e2e/restart.mjs` chạy server với `BOTTEAM_LAYOUT=classic` để giữ bố cục cũ; các kịch bản `reference*.mjs` (so với bản OpenMausBot) chưa chạy lại và không còn là tham chiếu theo `AGENTS.md`.
+- [x] Kịch bản e2e: đi qua toàn bộ menu, gửi một tin chat, mở và đóng Apps/Input. Đã có `web/e2e/workspace.mjs` (mọi mục menu, trang trống, Back/Forward, tải lại, thu gọn, ngăn kéo trên điện thoại); chưa có bước gửi tin chat.
+- [x] `README.md` (ảnh chụp, mô tả giao diện), `docs/user-guide.md` (hướng dẫn menu), `docs/README.md`; rà `install.ps1` / `install.sh` (không cần đổi) theo `AGENTS.md` số 3.
 - **Tiêu chí xong cả phase:** mọi mục menu mở được; trang có sẵn đủ chức năng; trang trống đúng là trống; test web và server xanh; ảnh chụp mới khớp ảnh agenticos về bố cục.
 
 ## 5. Rủi ro
@@ -120,3 +120,13 @@ Từ ngữ trên giao diện: giữ tên của agenticos (Agents, Projects, Rout
 2. Mục "Agents" dùng tên **Agents** hay vẫn gọi là **Bot** trên giao diện tiếng Việt?
 3. Có giữ cờ `classic` một thời gian để quay lại, hay thay hẳn bố cục cũ?
 4. Có muốn thêm Tables, Context, Activity vào menu (ở dạng trang trống) cho giống agenticos, hay đúng như danh sách bạn đưa?
+
+## 8. Kết quả triển khai và chỗ khác kế hoạch
+
+Đã làm: biến `view` và hành động `view`/`rail` trong `store.tsx` (các hành động cũ quy về `view`), `web/lib/nav.ts` (bảng menu, địa chỉ hash), `web/components/layout/` (`AppRail`, `PageFrame`, `EmptyPage`, `pages.tsx`, `useHashRoute`, `useWorkspace`), `Shell.tsx` chọn bố cục, `Sidebar` nhận `workspace` để làm cột "Chats", `Observe`/`ConnectedApps`/`NotificationsPanel` nhận `embedded` để dùng làm trang, cài đặt `layout` (server và Settings), lệnh "Go to …" trong `⌘K`, i18n, test Vitest (`lib/nav.test.ts`), test server (`test_phase3.py`) và `web/e2e/workspace.mjs`.
+
+Quyết định mặc định cho bốn câu hỏi ở mục 7 (đổi được sau): (1) Projects là nhóm bot hiện có; (2) nhãn "Agents", bản Việt là "Bot"; (3) giữ `classic`; (4) không thêm Tables, Context, Activity.
+
+Khác kế hoạch: địa chỉ là `#/<trang>[/<id>]` (ví dụ `#/agents`, `#/chat/<bot>`) chứ không có tiền tố `build/`; các hộp thoại cũ (Usage, Apps, Inbox) trả về `null` trong bố cục workspace và các thành phần đó chạy ở chế độ `embedded` làm trang, nên không viết hai lần; `BOTTEAM_LAYOUT=classic` đặt bố cục mặc định cho môi trường kiểm thử; Routines vẫn dùng `AutomationsPage` nguyên bản (tiêu đề "Automations", có nút quay lại).
+
+Chưa làm: ảnh "trước" của các màn hình, chạy lại các kịch bản `reference*.mjs`, phím tắt chữ riêng cho từng trang, bước gửi tin chat trong `workspace.mjs`, ảnh chụp mới trong README.

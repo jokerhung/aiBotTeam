@@ -13,7 +13,7 @@ const j = async (path, method = "GET", body) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const start = () => spawn("uv", ["run", "--project", "server", "python", "-m", "uvicorn", "botteam.main:app", "--app-dir", "server", "--host", "127.0.0.1", "--port", String(PORT), "--loop", "botteam.loop:loop_factory"],
-  { env: { ...process.env, BOTTEAM_DATA_DIR: dir, WEBHOOK_PORT: String(HOOK) }, stdio: "ignore", shell: true });
+  { env: { ...process.env, BOTTEAM_DATA_DIR: dir, BOTTEAM_LAYOUT: "classic", WEBHOOK_PORT: String(HOOK) }, stdio: "ignore", shell: true });
 const stop = (child) => { try { execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore" }); } catch { /* already gone */ } };
 const until = async (fn, ms = 40000, label = "") => { const t = Date.now(); while (Date.now() - t < ms) { const v = await fn().catch(() => null); if (v) return v; await sleep(250); } throw new Error("timeout " + label); };
 
