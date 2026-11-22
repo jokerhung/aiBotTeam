@@ -36,7 +36,7 @@ export function AppRail() {
   const waiting = state.inbox.length;
 
   const item = (n: NavItem) => {
-    const active = state.view === n.view;
+      const active = state.view === n.view || (n.view === "agents" && state.view === "agent");
     const Icon = n.icon;
     return (
       <button key={n.view} type="button" data-testid={n.testid} title={t(n.label)} aria-current={active ? "page" : undefined}

@@ -23,7 +23,7 @@ botteam = "botteam.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["botteam"]
-artifacts = ["botteam/webui/**"]
+artifacts = ["botteam/webui/**", "botteam/templates/**"]
 
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio", "asgi-lifespan"]

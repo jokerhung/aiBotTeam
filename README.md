@@ -2,7 +2,7 @@
 
 BotTeam is a local chat app where every contact in the sidebar is a real AI agent: the Claude Code, Codex or Antigravity CLI (or any OpenAI-compatible endpoint) running on your computer, with its own name, instructions, model, memory and connected apps. Bots work together in channels, hand tasks to each other, run on a schedule, and answer people who write to them on Telegram or Zalo. Everything is kept on your machine.
 
-It is built with a Next.js web app and a Python (FastAPI) server, and is inspired by [OpenMausBot](https://github.com/milind-soni/OpenMausBot).
+It is built with a Next.js web app and a Python (FastAPI) server, and was originally inspired by [OpenMausBot](https://github.com/milind-soni/OpenMausBot). The workspace and Agents screens follow [agenticos](https://github.com/vstorm-co/agenticos).
 
 **English** | [Tiếng Việt](docs/user-guide.md)
 
@@ -13,7 +13,7 @@ It is built with a Next.js web app and a Python (FastAPI) server, and is inspire
 <table>
   <tr>
     <td width="33%"><img src="docs/screenshots/workspace-input.png" alt="Input page: Telegram and Zalo bots start a bot when a message arrives"></td>
-    <td width="33%"><img src="docs/screenshots/workspace-agents.png" alt="Agents page: every bot with its model, approval level and working folder"></td>
+    <td width="33%"><img src="docs/screenshots/workspace-agents.png" alt="Agents: searchable cards, status and section filters"></td>
     <td width="33%"><img src="docs/screenshots/workspace-dashboard.png" alt="Dashboard: what the bots did and what they cost"></td>
   </tr>
 </table>
@@ -40,11 +40,13 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 
 ## ✨ 8 Superpowers
 
+- **Agents workspace** — searchable cards, eight editor tabs with Save/Discard and unsaved-change protection, plus 28 offline agenticos templates across seven industries and BotTeam roles. Template integrations are suggestions; connect services and assign skills yourself.
+- **Toolbox gallery** — illustrated capability shelves with search, horizontal navigation and a right-side settings panel, following agenticos. Memory, Skills and Connected apps use BotTeam's existing controls; capabilities awaiting integration are marked Soon.
 - 🤖 **Real agents, not a chat wrapper** — each bot is a Claude Code, Codex or Antigravity CLI session (or an OpenAI-compatible endpoint) with its own model, working folder and approval level.
 - 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
-- 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files and runs by itself after 30 quiet seconds (or when someone presses *Check*). How a bot receives messages is written in an `intake.md` in its working folder, which you can edit in Bot settings: progress messages while photos arrive, saving them into folders such as `<machine>/<date>/Truoc|Sau` read from the caption (identical files are not saved twice), and a short reply with or without running a bot. Each batch of photos gets its own conversation in the app that also shows everything sent to the chat, and `run.command` can run a script of the working folder afterwards (for example to download PDFs), retrying until it succeeds.
+- 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files and runs by itself after 30 quiet seconds (or when someone presses *Check*). How a bot receives messages is written in an `intake.md` in its working folder, which you can edit in Agents ? Availability: progress messages while photos arrive, saving them into folders such as `<machine>/<date>/Truoc|Sau` read from the caption (identical files are not saved twice), and a short reply with or without running a bot. Each batch of photos gets its own conversation in the app that also shows everything sent to the chat, and `run.command` can run a script of the working folder afterwards (for example to download PDFs), retrying until it succeeds.
 - 🧭 **Workspace layout** — one left menu: Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Knowledge bases, Documents, Skills) and Connect (Apps, Input), in the style of [agenticos](https://github.com/vstorm-co/agenticos). Pages that do not exist yet are empty pages.
 - 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
 - ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
@@ -137,6 +139,8 @@ pnpm dev
 ```
 
 `pnpm dev` starts the server and the web app together. Open a new terminal if `uv` or `pnpm` is not recognized after the install.
+
+The server launcher uses the installed `server/.venv` Python directly and runs the current checkout. It does not synchronize dependencies on every start, so another running instance cannot lock an executable that startup tries to replace on Windows. After dependency changes, stop running BotTeam instances and run `pnpm setup:server` before starting again. A checkout without a Python environment still bootstraps through uv. The installer scripts already synchronize dependencies and need no changes.
 
 #### Linux
 

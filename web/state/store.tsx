@@ -1,8 +1,9 @@
 "use client";
+import { allowAgentNavigation } from "../lib/agent-form";
 import { onComputerFrame } from "../lib/screens";
-import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import { api } from "./api";
-import type { View } from "../lib/nav";
+import type { View, AgentTab } from "../lib/nav";
 import type { AppConfig, AppSettings, Bot, Group, InboxItem, InstanceInfo, Message, Notification, Routine, RoutineRun, Section, ServerFrame, Webhook, WebhookAttempt } from "@/lib/wire";
 
 export type SettingsPage = "general" | "connections" | "engines" | "appearance";
@@ -11,6 +12,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export interface AppState {
+  selectedAgentId: string;
+  agentTab: AgentTab;
   /** The page on screen in the workspace layout (the classic layout keeps using the flags below). */
   view: View;
   /** The project (a section of bots) on the Project page. */
@@ -84,6 +87,7 @@ export interface AppState {
 }
 
 export type Action =
+  | { type: "openAgent"; id: string; tab?: AgentTab }
   | { type: "view"; view: View }
   | { type: "openSection"; id: string }
   | { type: "rail"; open: boolean }
@@ -128,6 +132,7 @@ export type Action =
   | { type: "frame"; frame: ServerFrame };
 
 export const initialState: AppState = {
+  selectedAgentId: "", agentTab: "build",
   panelView: "overview", panelVersion: 0,
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
@@ -155,6 +160,8 @@ const threadsOf = (bot: Bot) => [...new Set([bot.threadId, bot.mainThreadId, ...
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case "openAgent":
+      return { ...state, view: "agent", selectedAgentId: action.id, agentTab: action.tab ?? "build", panelBotId: null, railOpen: false, drawerOpen: false, newBotOpen: false };
     case "hydrate": {
       const selectedId = action.bots.some((b) => b.id === state.selectedId) ? state.selectedId : (action.bots[0]?.id ?? "");
       return { ...state, bots: action.bots, instances: action.instances, hydrated: true, selectedId,
@@ -339,10 +346,15 @@ export function reducer(state: AppState, action: Action): AppState {
   }
 }
 
-const Ctx = createContext<{ state: AppState; dispatch: Dispatch<Action> } | null>(null);
+const Ctx = createContext<{ state: AppState; dispatch: (action: Action) => boolean } | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, rawDispatch] = useReducer(reducer, initialState);
+  const dispatch = useCallback((action: Action) => {
+    if (!allowAgentNavigation(action)) return false;
+    rawDispatch(action);
+    return true;
+  }, []);
 
   useEffect(() => {
     let es: EventSource | null = null;
@@ -405,7 +417,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearTimeout(retry);
       es?.close();
     };
-  }, []);
+  }, [dispatch]);
 
   // Fetch the transcript of the conversation on screen, again after a reconnect or a branch switch.
   const bot = state.bots.find((b) => b.id === state.selectedId);
@@ -419,7 +431,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .then((r) => !cancelled && dispatch({ type: "history", threadId, messages: r.messages, hasMore: r.hasMore, generation }))
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [threadId, botId, generation, state.connected]);
+  }, [threadId, botId, generation, state.connected, dispatch]);
 
   // The Administrator's conversation, fetched when its panel opens.
   const adminId = state.adminOpen ? state.adminBot?.id : undefined;
@@ -432,7 +444,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .then((r) => !cancelled && dispatch({ type: "history", threadId: adminThread, messages: r.messages, hasMore: r.hasMore, generation: adminGeneration }))
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [adminId, adminThread, adminGeneration, state.connected]);
+  }, [adminId, adminThread, adminGeneration, state.connected, dispatch]);
 
   const group = state.groups.find((g) => g.id === state.selectedGroupId);
   const gThread = group?.threadId ?? "";
@@ -445,9 +457,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .then((r) => !cancelled && dispatch({ type: "history", threadId: gThread, messages: r.messages, hasMore: r.hasMore, generation: gGeneration }))
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [gThread, gId, gGeneration, state.connected]);
+  }, [gThread, gId, gGeneration, state.connected, dispatch]);
 
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  const value = useMemo(() => ({ state, dispatch }), [state, dispatch]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

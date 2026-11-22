@@ -1,0 +1,21 @@
+"use client";
+import { Building2, Code, Factory, HeartPulse, Landmark, Scale, ShoppingBag, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { filterTemplates } from "@/lib/agent-form";
+import { api } from "@/state/api";
+import { useStore } from "@/state/store";
+import { useT } from "@/lib/i18n";
+import type { Bot } from "@/lib/wire";
+import { BUTTON, INPUT, PRIMARY, trapDialog } from "./shared";
+
+const INDUSTRY_ICONS = { ecommerce: ShoppingBag, finance: Landmark, healthcare: HeartPulse, legal: Scale, manufacturing: Factory, "public-sector": Building2, software: Code, general: Sparkles };
+interface Template { id: string; name: string; description: string; industry: string; instructions: string }
+export function TemplateLibrary({ onClose }: { onClose: () => void }) {
+  const { dispatch } = useStore(); const t = useT();
+  const [templates, setTemplates] = useState<Template[]>([]); const [search, setSearch] = useState(""); const [industry, setIndustry] = useState(""); const [preview, setPreview] = useState<Template | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  useEffect(() => { api<{ templates: Template[] }>("/api/templates").then((r) => setTemplates(r.templates)).catch((e) => setError(String(e))); }, []);
+  const install = async (template: Template) => { setBusy(true); setError(""); try { const bot = await api<Bot>(`/api/templates/${template.id}/install`, { method: "POST" }); dispatch({ type: "frame", frame: { kind: "bot", bot } }); dispatch({ type: "openAgent", id: bot.id }); onClose(); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
+  return <div role="dialog" aria-modal="true" aria-label={t("Agent templates")} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onKeyDown={(e) => trapDialog(e, onClose)}><div className="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-2xl bg-composer p-6 shadow-xl"><header className="mb-5 flex items-center justify-between"><h2 className="text-xl font-medium">{t("Agent templates")}</h2><button className={BUTTON} onClick={onClose}>{t("Close")}</button></header><div className="mb-5 flex flex-wrap gap-3"><input autoFocus className={`${INPUT} flex-1`} placeholder={t("Search templates")} aria-label={t("Search templates")} value={search} onChange={(e) => setSearch(e.target.value)} /><select aria-label={t("Industry")} className={`${INPUT.replace("w-full", "w-auto")}`} value={industry} onChange={(e) => setIndustry(e.target.value)}><option value="">{t("All industries")}</option>{[...new Set(templates.map((x) => x.industry))].sort().map((x) => <option key={x}>{x}</option>)}</select></div>{error && <p role="alert" className="text-danger">{error}</p>}
+    <div className="min-h-0 overflow-y-auto">{!preview && <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">{Object.entries(INDUSTRY_ICONS).map(([id, Icon]) => <button key={id} className={`flex items-center gap-3 rounded-xl border p-4 text-left text-sm ${industry === id ? "border-ink bg-raised" : "border-edge"}`} onClick={() => setIndustry(industry === id ? "" : id)}><Icon size={20} /><span className="capitalize">{id.replace("-", " ")}</span></button>)}</div>}{preview ? <><button className={BUTTON} onClick={() => setPreview(null)}>{t("Back")}</button><h3 className="my-4 text-lg" data-no-i18n>{preview.name}</h3><p data-no-i18n className="mb-4 text-sm text-ink-secondary">{preview.description}</p><pre data-no-i18n className="mb-5 whitespace-pre-wrap text-sm">{preview.instructions}</pre><button disabled={busy} className={PRIMARY} onClick={() => void install(preview)}>{t("Use template")}</button></> : <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{filterTemplates(templates, search, industry).map((x) => <article key={x.id} className="rounded-xl border border-edge p-4"><span className="text-xs text-ink-tertiary">{x.industry}</span><h3 data-no-i18n className="my-2 font-medium">{x.name}</h3><p data-no-i18n className="mb-4 line-clamp-3 text-sm text-ink-secondary">{x.description}</p><div className="flex gap-2"><button className={BUTTON} onClick={() => setPreview(x)}>{t("Preview")}</button><button disabled={busy} className={PRIMARY} onClick={() => void install(x)}>{t("Use template")}</button></div></article>)}</div>}</div>
+  </div></div>;
+}

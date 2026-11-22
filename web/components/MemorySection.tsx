@@ -10,7 +10,7 @@ import { api } from "@/state/api";
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 
 /** The bot's notes: a switch, a gauge of how much loads each turn, every note with a delete, and the files to read and edit. */
-export function MemorySection({ bot }: { bot: Bot }) {
+export function MemorySection({ bot, onChange, embedded = false }: { bot: Bot; onChange?: (value: boolean) => void; embedded?: boolean }) {
   const t = useT();
   const [view, setView] = useState<MemoryView | null>(null);
   const [file, setFile] = useState<string | null>(null);
@@ -28,10 +28,10 @@ export function MemorySection({ bot }: { bot: Bot }) {
   const pct = g ? Math.min(100, Math.round(Math.max(g.lines / g.lineBudget, g.bytes / g.byteBudget) * 100)) : 0;
   return (
     <div data-testid="memory-section" className="px-5 py-2.5">
-      <div className="mb-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Memory")}</div>
+      {!embedded && <><div className="mb-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Memory")}</div>
       <label className="flex items-center gap-2 text-[14px] text-ink">
-        <input type="checkbox" checked={bot.memory !== false} onChange={(e) => void queuePatch(bot.id, { memory: e.target.checked })} aria-label={t("Let this bot use memory")} /> {t("Let this bot use memory")}
-      </label>
+        <input type="checkbox" checked={bot.memory !== false} onChange={(e) => onChange ? onChange(e.target.checked) : void queuePatch(bot.id, { memory: e.target.checked })} aria-label={t("Let this bot use memory")} /> {t("Let this bot use memory")}
+      </label></>}
       <div className="mt-1 text-[12px] text-ink-tertiary">{t("Notes stay between tasks, as plain files on this computer. Only the first 200 lines load each turn.")}</div>
       {g && (
         <div className="mt-2.5" data-testid="memory-gauge" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={t("Memory used")}>

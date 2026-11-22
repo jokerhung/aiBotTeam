@@ -1,5 +1,5 @@
 "use client";
-import { Bot as BotIcon, FileUp, Folders, Hash, Inbox as InboxIcon, LayoutDashboard, Pencil, Plug, Plus, RadioTower, Sparkles, Trash2 } from "lucide-react";
+import { Folders, Hash, Inbox as InboxIcon, LayoutDashboard, Pencil, Plug, Plus, RadioTower, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -8,14 +8,12 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ConnectedApps } from "../ConnectedApps";
 import { InputChannels } from "../InputChannels";
-import { Mascot } from "../Mascot";
 import { InboxPanel } from "../NotificationsPanel";
 import { UsagePage } from "../Observe";
 import { SkillEditor } from "../SkillsSection";
 import { PageFrame } from "./PageFrame";
 
 const PRIMARY = "flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[13.5px] font-medium text-[var(--color-accent-ink)]";
-const SECOND = "flex h-9 items-center gap-1.5 rounded-full bg-raised px-3.5 text-[13.5px] font-medium text-ink hover:bg-raised-hover";
 
 export function DashboardPage() {
   const { state } = useStore();
@@ -43,39 +41,6 @@ export function InboxPage() {
   return (
     <PageFrame title="Inbox" icon={InboxIcon} description="Everything waiting for your answer, from all bots and rooms." testid="page-inbox">
       <div className="flex min-h-[60vh] flex-col"><InboxPanel /></div>
-    </PageFrame>
-  );
-}
-
-const MODES: Record<string, string> = { ask: "Ask", edits: "Edits", auto: "Auto", full: "Full" };
-
-export function AgentsPage() {
-  const { state, dispatch } = useStore();
-  const t = useT();
-  const bots = state.bots.filter((b) => !b.hidden);
-  const open = (id: string, profile: boolean) => { dispatch({ type: "select", id }); if (profile) dispatch({ type: "panel", botId: id, profile: true }); };
-  return (
-    <PageFrame title="Agents" icon={BotIcon} description="Every bot: its model, approval level and working folder." wide testid="page-agents"
-      actions={<>
-        <button type="button" data-testid="agents-import" onClick={() => dispatch({ type: "importBot", open: true })} className={SECOND}><FileUp size={14} /> {t("Import bot")}</button>
-        <button type="button" data-testid="agents-new" onClick={() => dispatch({ type: "newBot", open: true })} className={PRIMARY}><Plus size={14} /> {t("New bot")}</button>
-      </>}>
-      {bots.length === 0 && <div className="py-16 text-center text-[13.5px] text-ink-tertiary">{t("No bots yet.")}</div>}
-      <div className="overflow-hidden rounded-xl ring-1 ring-ink/10" data-testid="agents-table">
-        {bots.map((b) => (
-          <div key={b.id} data-testid="agent-row" className="flex items-center gap-3 border-b-[0.5px] border-edge px-4 py-3 last:border-0 hover:bg-raised/40">
-            <Mascot color={b.color} size={34} busy={b.busy} />
-            <button type="button" onClick={() => open(b.id, false)} className="min-w-0 flex-1 text-left">
-              <div data-no-i18n="" className="truncate text-[14.5px] font-medium text-ink">{b.name}</div>
-              <div data-no-i18n="" className="truncate text-[12.5px] text-ink-tertiary">{b.title || b.description || "—"}</div>
-            </button>
-            <span data-no-i18n="" className="hidden w-[180px] truncate text-[12.5px] text-ink-secondary lg:block" title={b.modelSelection.model}>{b.modelSelection.instanceId} · {b.modelSelection.model}</span>
-            <span className="w-[56px] text-[12.5px] text-ink-secondary">{t(MODES[b.approvalMode] ?? b.approvalMode)}</span>
-            <span data-no-i18n="" className="hidden w-[200px] truncate text-[12px] text-ink-tertiary xl:block" title={b.cwd ?? ""}>{b.cwd ?? ""}</span>
-            <button type="button" title={t("Edit Profile")} aria-label={`${t("Edit Profile")}: ${b.name}`} onClick={() => open(b.id, true)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Pencil size={14} /></button>
-          </div>
-        ))}
-      </div>
     </PageFrame>
   );
 }

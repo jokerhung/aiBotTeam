@@ -53,6 +53,8 @@ class Attachment(BaseModel):
 
 
 class WireBot(BaseModel):
+    createdAt: Optional[int] = None
+    updatedAt: Optional[int] = None
     id: str
     threadId: str  # the conversation on screen (a task, or the main thread)
     mainThreadId: str = ""

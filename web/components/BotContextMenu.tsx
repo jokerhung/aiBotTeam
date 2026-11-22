@@ -33,8 +33,8 @@ export function deleteBotWithUndo(bot: Bot, hide: (id: string, hidden: boolean) 
   toast(`Deleted ${bot.name}`, {
     undoLabel: "Undo",
     ms: 6000,
-    onUndo: () => hide(bot.id, false),
-    onExpire: () => { void api(`/api/bots/${bot.id}`, { method: "DELETE" }).catch(() => hide(bot.id, false)); },
+    onUndo: () => hide(bot.id, bot.hidden),
+    onExpire: () => { void api(`/api/bots/${bot.id}`, { method: "DELETE" }).catch(() => hide(bot.id, bot.hidden)); },
   });
 }
 
@@ -63,7 +63,7 @@ export function useBotMenu(bot: Bot) {
     ...(bot.section ? [{ key: "unsection", label: "Remove from section", icon: FolderPlus, run: () => void api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: null }) }) } as Entry] : []),
     { key: "unread", label: t(bot.unread ? "Mark as Read" : "Mark as Unread"), icon: BellDot, run: () => void patch(bot.id, { unread: !bot.unread }) },
     "sep",
-    { key: "edit", label: t("Edit Profile"), icon: Pencil, run: () => { dispatch({ type: "select", id: bot.id }); dispatch({ type: "panel", botId: bot.id, profile: true }); } },
+    { key: "edit", label: t("Edit Profile"), icon: Pencil, run: () => { dispatch({ type: "openAgent", id: bot.id }); } },
     { key: "dup", label: t("Duplicate"), icon: CopyPlus, run: () => void api<{ id: string }>(`/api/bots/${bot.id}/duplicate`, { method: "POST" }).then((b) => dispatch({ type: "select", id: b.id })) },
     { key: "export", label: t("Export bot"), icon: Download, run: () => void exportBotFile(bot) },
     "sep",

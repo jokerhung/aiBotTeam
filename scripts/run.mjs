@@ -2,6 +2,8 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { delimiter, join } from "node:path";
+import { pythonRuntime } from "./python-runtime.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const envFile = fileURLToPath(new URL("../.env", import.meta.url));
@@ -16,6 +18,8 @@ const webHost = process.env.WEB_HOST || "127.0.0.1";
 const loopback = (host) => ["127.0.0.1", "localhost", "::1"].includes(host);
 const env = {
   ...process.env,
+  // Always run this checkout, including after an interrupted editable reinstall.
+  PYTHONPATH: [join(root, "server"), process.env.PYTHONPATH].filter(Boolean).join(delimiter),
   SERVER_PORT: serverPort,
   WEB_PORT: webPort,
   WEBHOOK_PORT: hookPort,
@@ -26,21 +30,23 @@ const env = {
   BOTTEAM_REMOTE: loopback(serverHost) && loopback(webHost) ? "0" : "1",
   BOTTEAM_API: process.env.BOTTEAM_API || `http://127.0.0.1:${serverPort}`,
 };
+const [python, pythonArgs] = pythonRuntime(root);
 
 const targets = {
   // Windows Proactor needs fresh sockets after reload, and is also required by engine CLIs.
   server: process.platform === "win32"
-    ? ["uv", ["run", "--project", "server", "python", "-m", "botteam.dev", "--host", serverHost, "--port", serverPort]]
-    : ["uv", ["run", "--project", "server", "python", "-m", "uvicorn", "botteam.main:app", "--app-dir", "server",
+    ? [python, [...pythonArgs, "-m", "botteam.dev", "--host", serverHost, "--port", serverPort]]
+    : [python, [...pythonArgs, "-m", "uvicorn", "botteam.main:app", "--app-dir", "server",
       "--host", serverHost, "--port", serverPort, "--no-proxy-headers", "--reload", "--loop", "botteam.loop:loop_factory"]],
   web: ["pnpm", ["--filter", "web", "exec", "next", "dev", "-p", webPort, "-H", webHost]],
   // The Node.js Zalo service (zca-js); the web app reaches it through the /zalo-api proxy in web/next.config.mjs
   zalo: ["node", ["zalo-service/src/server.mjs"]],
-  one: ["uv", ["run", "--project", "server", "botteam", "serve", "--no-open", "--host", serverHost, "--port", serverPort]],
+  one: [python, [...pythonArgs, "-m", "botteam", "serve", "--no-open", "--host", serverHost, "--port", serverPort]],
   "web-start": ["pnpm", ["--filter", "web", "exec", "next", "start", "-p", webPort, "-H", webHost]],
 };
 const t = targets[process.argv[2]];
 if (!t) { console.error(`usage: run.mjs <${Object.keys(targets).join("|")}>`); process.exit(2); }
 
-const child = spawn(t[0], t[1], { cwd: root, env, stdio: "inherit", shell: process.platform === "win32" });
+// Only command shims need cmd.exe; execute Python directly (including paths with spaces).
+const child = spawn(t[0], t[1], { cwd: root, env, stdio: "inherit", shell: process.platform === "win32" && ["pnpm", "uv"].includes(t[0]) });
 child.on("exit", (code) => process.exit(code ?? 1));

@@ -122,7 +122,7 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
         </div>
         {!icons && !state.selecting && (
           <button type="button" title={tr("Edit Profile")} aria-label={`${tr("Edit Profile")}: ${bot.name}`} data-testid="edit-bot-profile"
-            onClick={() => { dispatch({ type: "select", id: bot.id }); dispatch({ type: "panel", botId: bot.id, profile: true }); }}
+            onClick={() => { dispatch({ type: "openAgent", id: bot.id }); }}
             className="absolute right-9 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-panel/80 text-ink-secondary opacity-0 backdrop-blur hover:bg-ink/10 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 touch:opacity-100">
             <Pencil size={14} />
           </button>

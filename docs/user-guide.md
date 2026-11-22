@@ -39,7 +39,7 @@ Trình duyệt tích hợp (Computer) dùng Microsoft Edge hoặc Chrome có s�
 ## 2. Bot đầu tiên
 
 1. Lần đầu mở, màn chào kiểm tra engine AI. Nếu chưa có, làm theo hướng dẫn cài và đăng nhập ngay trên màn đó, rồi bấm **Check again**.
-2. Bấm **+** → **New bot**, đặt tên, chọn màu, bấm **Create**. Có thể chọn một bot mẫu (preset).
+2. Vào **Agents → New agent**, nhập tên và chọn Starting role, rồi bấm **Create agent**. More options mở các thiết lập bổ sung; tạo xong sẽ mở trang sửa. Nút thêm trong Chat và `Ctrl/⌘ N` cũng dùng hộp thoại này.
 3. Bot tự chào và hỏi bạn muốn được giúp gì. Gõ vào ô chat để trò chuyện.
 4. Mức duyệt của bot (Ask / Edits / Auto / Full) quyết định lúc nào bot phải xin phép trước khi chạy lệnh hoặc sửa file.
 
@@ -55,6 +55,24 @@ Thanh bên trái (bố cục **Không gian làm việc**, mặc định) gom m�
 - **Connect:** **Apps** (Composio và MCP riêng), **Input** (Telegram, Zalo).
 
 Nút thu gọn ở đầu menu chỉ để lại biểu tượng (trình duyệt nhớ lựa chọn). Trên màn hình hẹp menu mở bằng nút ☰.
+
+### Quản lý Agent
+
+Vào **Agents** hoặc nhấn `G` rồi `A`. Tìm theo tên, vai trò hoặc mô tả; lọc All / Active / Archived và nhóm. Nhấn `N` khi không gõ trong ô nhập để tạo Agent. Bấm thẻ hoặc biểu tượng bút để mở trang sửa.
+
+Trang sửa có tám tab: **Build** (chỉ dẫn, engine/model, model dự phòng và thông tin cơ bản), **Toolbox** (bộ nhớ, kỹ năng và ứng dụng), **MCP**, **Limits** (quyền Ask/Edits/Auto/Full, thư mục, thông báo và quản lý đội), **Availability** (kênh đầu vào, intake và lịch chạy), **Evals**, **Knowledge gaps**, **History**. Hai tab Evals và Knowledge gaps hiện là trang trống.
+
+Các trường của Agent chỉ lưu khi bấm **Save** hoặc `Ctrl/⌘ S`; đổi tab vẫn giữ bản nháp. **Discard** bỏ thay đổi. Khi rời trang chưa lưu, ứng dụng hỏi xác nhận; khi Agent thay đổi từ nơi khác, chọn **Reload** để tải lại hoặc **Keep mine** để giữ bản nháp. Ghi chú, tệp bộ nhớ/intake, kết nối kênh, lịch chạy và nội dung kỹ năng có nút lưu riêng.
+
+![Trang sửa Agent](screenshots/workspace-agent-editor.png)
+
+**Toolbox** có bảy nhóm thẻ cuộn ngang, ảnh minh họa và ô Search capabilities như agenticos. Dùng nút mũi tên hoặc vuốt để xem các thẻ trong nhóm; bấm thẻ để mở panel cấu hình bên phải. Memory, Skills và Connected apps dùng các chức năng BotTeam hiện có và vẫn lưu thay đổi của Agent qua Save. Công tắc Skills/Connected apps khi chưa có tài nguyên sẽ mở panel để chọn tài nguyên. Các khả năng chưa tích hợp hiện **Soon**, không thể bật. Panel Memory có tab Settings và Notes; ghi chú và tệp bộ nhớ vẫn lưu bằng nút riêng.
+
+![Thư viện khả năng trong Toolbox](screenshots/workspace-agent-toolbox.png)
+
+**Agent templates** mở thư viện 28 mẫu theo bảy lĩnh vực và các vai mẫu BotTeam trong General. Chọn lĩnh vực, tìm, Preview rồi **Use template**. Mẫu được đọc từ máy, không gọi dịch vụ bên ngoài; Agent tạo ra bắt đầu ở mức **Ask**. Những kỹ năng và MCP được nhắc trong mô tả chỉ là gợi ý, chưa được tự kết nối hay cấp quyền.
+
+Menu `…` trên thẻ và trang sửa có Duplicate, Export, Archive/Restore và Delete permanently. Xóa cần gõ đúng tên, sau đó vẫn có 6 giây để Undo. Archive tương ứng với ẩn bot khỏi Chat; lọc Archived để khôi phục. Settings/Edit Profile trong Chat mở trang sửa này; panel chat giữ Overview, Activity và Inspector. Thư viện ghi chú nằm trong Toolbox → Memory; Computer vẫn mở từ biểu tượng màn hình ở đầu chat. Chỉnh intake tại **Agents → chọn Agent → Availability**.
 
 ## 3. Cấu hình engine
 

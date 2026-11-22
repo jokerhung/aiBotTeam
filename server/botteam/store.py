@@ -169,6 +169,7 @@ class Store:
         n = len(await self.list_bots())
         tid = new_id("th")
         bot = WireBot(
+            createdAt=now_ms(), updatedAt=now_ms(),
             id=new_id("bot"), threadId=tid, mainThreadId=tid, name=name, title=title, description=description,
             color=color or MAUS_COLORS[n % 8],  # type: ignore[arg-type]
             modelSelection=selection,  # type: ignore[arg-type]

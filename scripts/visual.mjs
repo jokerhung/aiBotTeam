@@ -79,7 +79,7 @@ try {
     await page.evaluate(() => { // times and dates move with the clock: pin them
       const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       for (let n = w.nextNode(); n; n = w.nextNode()) {
-        n.nodeValue = n.nodeValue.replace(/\b\d{1,2}:\d{2}\s?[AP]M\b/g, "9:41 AM").replace(/\b\d+s\b(?=\s*$)/g, "1s");
+        n.nodeValue = n.nodeValue.replace(/\b\d{1,2}:\d{2}\s?[AP]M\b/g, "9:41 AM").replace(/Edited \d{1,2}\/\d{1,2}\/\d{4}/g, "Edited 1/1/2026").replace(/\b\d+s\b(?=\s*$)/g, "1s");
       }
     });
     await page.waitForTimeout(250);
@@ -123,6 +123,31 @@ try {
   await page.getByRole("button", { name: "Appearance" }).click();
   await shot("settings-skins");
   await page.keyboard.press("Escape");
+
+  console.log("agents list, creation, templates and editor tabs");
+  await page.evaluate(() => { location.hash = "#/agents"; });
+  await page.getByTestId("page-agents").waitFor(); await shot("agents-grid");
+  await page.getByRole("button", { name: "New agent", exact: true }).click();
+  await page.getByRole("dialog", { name: "New agent", exact: true }).waitFor(); await shot("agent-create");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Agent templates", exact: true }).click();
+  await page.getByRole("button", { name: "Use template", exact: true }).first().waitFor(); await shot("agent-templates");
+  await page.getByRole("dialog", { name: "Agent templates", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  for (const tab of ["build", "toolbox", "mcp", "limits", "availability", "evals", "knowledge-gaps", "history"]) {
+    await page.evaluate(({ id, tab }) => { location.hash = `#/agents/${id}/${tab}`; }, { id: bot.id, tab });
+    await page.getByTestId("agent-editor").waitFor();
+    if (tab === "toolbox") await page.addStyleTag({ content: ".toolbox-gallery .cap-art * { animation: none !important; transition: none !important; }" });
+    await shot(`agent-${tab}`);
+    if (tab === "toolbox") {
+      await page.getByLabel("Search capabilities", { exact: true }).fill("Memory"); await shot("agent-toolbox-search");
+      await page.getByRole("button", { name: "Memory settings", exact: true }).click();
+      await page.getByRole("dialog", { name: "Memory settings", exact: true }).waitFor(); await shot("agent-toolbox-memory");
+      await page.getByRole("button", { name: "Close capability settings", exact: true }).click();
+      await page.getByLabel("Search capabilities", { exact: true }).fill("");
+    }
+  }
+  await page.evaluate((id) => { location.hash = `#/chat/${id}`; }, bot.id);
+  await page.getByLabel("Message Maple").waitFor();
 
   console.log("main screen in every skin");
   for (const id of ["midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "meadow", "pop", "halloween", "diwali", "aurora"]) {

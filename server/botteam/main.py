@@ -356,6 +356,27 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         return inst.public()
 
     # ---- bots ---------------------------------------------------------------------
+    from .templates import load_templates
+    agent_templates = load_templates()
+
+    @app.get("/api/templates")
+    async def templates():
+        return {"templates": agent_templates, "industries": sorted({t["industry"] for t in agent_templates})}
+
+    @app.post("/api/templates/{template_id}/install", status_code=201)
+    async def install_template(template_id: str):
+        template = next((t for t in agent_templates if t["id"] == template_id), None)
+        if not template:
+            raise HTTPException(404, "template not found")
+        defaults = config.data.get("botDefaults", {})
+        bot = await store.create_bot(template["name"][:60], template.get("title", ""), template["description"], template.get("color"),
+                                     defaults.get("modelSelection") or registry.default_selection())
+        bot.approvalMode, bot.soul = "ask", template["instructions"]
+        store.assign_workspace(bot)
+        await store.save_bot(bot)
+        await turns.publish_bot(bot)
+        return await turns.bot_dict(bot)
+
     @app.get("/api/bots")
     async def list_bots():
         return {"bots": [await turns.bot_dict(b) for b in await store.list_bots()]}
@@ -380,6 +401,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     @app.patch("/api/bots/{bot_id}")
     async def patch_bot(bot_id: str, body: PatchBot):
         bot = await need(bot_id)
+        bot.updatedAt = now_ms()
         fields = body.model_dump(exclude_unset=True)
         if fields.get("approvalMode") is not None and not is_mode(fields["approvalMode"]):
             raise HTTPException(400, "unknown approval mode")

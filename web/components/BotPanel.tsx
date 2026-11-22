@@ -1,46 +1,17 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Bug, CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, Monitor, Play, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
+import { Bug, CalendarClock, CalendarPlus, ChevronRight, ListChecks, Play, Plus, RotateCcw, Search, Settings, Share2, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { queuePatch } from "@/lib/patch-queue";
 import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Bot, MausColor, McpServer, ModelSelection } from "@/lib/wire";
+import type { Bot, McpServer, ModelSelection } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
-import { ApprovalModeSelector } from "./ApprovalModeSelector";
-import { BotInputs } from "./InputChannels";
-import { IntakeSection } from "./IntakeEditor";
 import { Mascot } from "./Mascot";
 import { ActivityPanel, ExportButtons, InspectorPanel } from "./Observe";
-import { MemorySection } from "./MemorySection";
-import { SkillsSection } from "./SkillsSection";
 import { toast } from "./Toaster";
 
-const COLORS: MausColor[] = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "silver", "chrome"];
-type Tab = "details" | "computer" | "library";
-
-/** A text field that saves what you typed shortly after you stop, through the per-bot patch queue. */
-function useSaved(bot: Bot, field: "name" | "title" | "description" | "soul" | "cwd", initial: string) {
-  const [value, setValue] = useState(initial);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const latest = useRef(initial);
-  useEffect(() => { setValue(initial); latest.current = initial; }, [bot.id, initial]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const change = (v: string) => {
-    setValue(v);
-    latest.current = v;
-    clearTimeout(timer.current);
-    if (field === "name" && !v.trim()) return; // a bot always has a name
-    timer.current = setTimeout(() => void queuePatch(bot.id, { [field]: field === "cwd" ? (v.trim() || null) : v }), 400);
-  };
-  const flush = () => {
-    clearTimeout(timer.current);
-    if (field === "name" && !latest.current.trim()) { setValue(initial); return; }
-    if (latest.current !== initial) void queuePatch(bot.id, { [field]: field === "cwd" ? (latest.current.trim() || null) : latest.current });
-  };
-  return { value, change, flush };
-}
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -54,28 +25,41 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 
-function ModelPicker({ value, onChange, allowNone }: { value: ModelSelection | null; onChange: (s: ModelSelection | null) => void; allowNone?: boolean }) {
+export function ModelPicker({ value, onChange, allowNone }: { value: ModelSelection | null; onChange: (s: ModelSelection | null) => void; allowNone?: boolean }) {
   const { state } = useStore();
   const engines = state.instances.filter((i) => !i.hidden && i.enabled && i.snapshot.state === "available");
   const v = value ? `${value.instanceId}::${value.model}` : "";
-  return (
-    <select value={v} onChange={(e) => {
-      if (!e.target.value) return onChange(null);
-      const [instanceId, ...m] = e.target.value.split("::");
-      onChange({ instanceId, model: m.join("::") });
+  const engine = engines.find((e) => e.id === value?.instanceId);
+  return <div className="grid gap-3 sm:grid-cols-2">
+    <select aria-label={allowNone ? "Backup engine" : "Engine"} className={cn(INPUT, "h-10")} value={value?.instanceId ?? ""} onChange={(event) => {
+      const selected = engines.find((e) => e.id === event.target.value);
+      onChange(selected ? { instanceId: selected.id, model: selected.models[0]?.id ?? "" } : null);
+    }}>
+      <option value="">{allowNone ? "None" : "Choose an engine"}</option>
+      {value && !engine && <option value={value.instanceId}>{value.instanceId}</option>}
+      {engines.map((e) => <option key={e.id} value={e.id}>{e.displayName}</option>)}
+    </select>
+    <select value={v} disabled={!value} onChange={(event) => {
+      if (!event.target.value) return onChange(null);
+      const [instanceId, ...model] = event.target.value.split("::");
+      onChange({ instanceId, model: model.join("::") });
     }} className={cn(INPUT, "h-10")} aria-label={allowNone ? "Backup model" : "Model"}>
       {allowNone && <option value="">None</option>}
-      {engines.map((e) => (
-        <optgroup key={e.id} label={e.displayName}>
-          {e.models.map((m) => <option key={m.id} value={`${e.id}::${m.id}`}>{m.label}</option>)}
-        </optgroup>
-      ))}
+      {value && !engine?.models.some((m) => m.id === value.model) && <option value={v}>{value.model}</option>}
+      {engine?.models.map((m) => <option key={m.id} value={`${engine.id}::${m.id}`}>{m.label}</option>)}
     </select>
-  );
+  </div>;
+
 }
 
 /** Which custom MCP servers and connected apps this bot may use, read or write, and whether sending out asks first. */
 /** How long a bot that only reads reuses what it read (a sheet, a file) before it reads again; 0 reads every time. */
+function ToolAllowlist({ name, value, onChange }: { name: string; value: string[]; onChange: (tools: string[]) => void }) {
+  const [text, setText] = useState(value.join(", ")); const editing = useRef(false);
+  useEffect(() => { if (!editing.current) setText(value.join(", ")); }, [value]);
+  return <label className="mt-2 block text-xs text-ink-secondary">Allowed tools (comma separated; empty allows all)<input aria-label={`${name} allowed tools`} className={`${INPUT} mt-1 h-9`} value={text} onFocus={() => { editing.current = true; }} onBlur={() => { editing.current = false; setText(value.join(", ")); }} onChange={(event) => { setText(event.target.value); onChange(event.target.value.split(",").map((tool) => tool.trim()).filter(Boolean)); }} /></label>;
+}
+
 function CacheMinutes({ name, value, onChange }: { name: string; value: number; onChange: (n: number) => void }) {
   const t = useT();
   const [text, setText] = useState(String(value));
@@ -91,26 +75,27 @@ function CacheMinutes({ name, value, onChange }: { name: string; value: number; 
   );
 }
 
-function AppsField({ bot }: { bot: Bot }) {
+export function AppsField({ bot, onChange }: { bot: Bot; onChange?: (patch: Partial<Bot>) => void }) {
+  const applyPatch = (body: Partial<Bot>) => onChange ? onChange(body) : void queuePatch(bot.id, body);
   const { state } = useStore();
   const [servers, setServers] = useState<McpServer[]>([]);
   useEffect(() => { api<{ servers: McpServer[] }>("/api/mcp/servers").then((r) => setServers(r.servers)).catch(() => {}); }, [state.mcpTick]);
   const used = bot.mcpServers ?? [];
   const access = bot.mcpAccess ?? {};
-  const setUsed = (id: string, on: boolean) => void queuePatch(bot.id, { mcpServers: on ? [...used, id] : used.filter((x) => x !== id) });
-  const setAccess = (id: string, patch: Partial<{ scope: "read" | "write"; outbound: "ask" | "allow"; cacheMinutes: number }>) =>
-    void queuePatch(bot.id, { mcpAccess: { ...access, [id]: { ...(access[id] ?? { scope: "read" as const, outbound: "ask" as const }), ...patch } } });
+  const setUsed = (id: string, on: boolean) => applyPatch({ mcpServers: on ? [...used, id] : used.filter((x) => x !== id) });
+  const setAccess = (id: string, patch: Partial<{ scope: "read" | "write"; outbound: "ask" | "allow"; cacheMinutes: number; allowTools: string[] }>) =>
+    applyPatch({ mcpAccess: { ...access, [id]: { ...(access[id] ?? { scope: "read" as const, outbound: "ask" as const }), ...patch } } });
   return (
     <Field label="Apps and servers" hint="What this bot may use. Read lets it look; Write lets it change things, and Ask makes it check with you before it sends anything out.">
       {servers.length === 0 && <div className="text-[13px] text-ink-tertiary">No apps are connected yet. Use “Connect apps” at the bottom of the sidebar.</div>}
-      <div className="flex flex-col gap-1.5" data-testid="bot-apps">
+      <div className="grid gap-3 md:grid-cols-2" data-testid="bot-apps">
         {servers.map((s) => {
           const on = used.includes(s.id);
           const acc = access[s.id] ?? { scope: "read", outbound: "ask" };
           return (
             <div key={s.id} className="rounded-lg bg-inset px-3 py-2 ring-1 ring-inset ring-ink/[0.07]">
               <label className="flex items-center gap-2 text-[14px] text-ink">
-                <input type="checkbox" checked={on} onChange={(e) => setUsed(s.id, e.target.checked)} aria-label={`Use ${s.name}`} />
+                <input type="checkbox" checked={on} onChange={(e) => setUsed(s.id, e.target.checked)} role="switch" aria-checked={on} aria-label={`Use ${s.name}`} />
                 <span data-no-i18n="" className="min-w-0 flex-1 truncate">{s.name}</span>
               </label>
               {on && (
@@ -125,7 +110,8 @@ function AppsField({ bot }: { bot: Bot }) {
                   )}
                 </div>
               )}
-              {on && (acc.allowTools?.length ?? 0) > 0 && <CacheMinutes name={s.name} value={acc.cacheMinutes ?? 0} onChange={(n) => setAccess(s.id, { cacheMinutes: n })} />}
+              {on && <ToolAllowlist name={s.name} value={acc.allowTools ?? []} onChange={(allowTools) => setAccess(s.id, { allowTools })} />}
+              {on && <CacheMinutes name={s.name} value={acc.cacheMinutes ?? 0} onChange={(n) => setAccess(s.id, { cacheMinutes: n })} />}
             </div>
           );
         })}
@@ -134,78 +120,7 @@ function AppsField({ bot }: { bot: Bot }) {
   );
 }
 
-function SettingsForm({ bot }: { bot: Bot }) {
-  const { state } = useStore();
-  const name = useSaved(bot, "name", bot.name);
-  const title = useSaved(bot, "title", bot.title);
-  const desc = useSaved(bot, "description", bot.description);
-  const soul = useSaved(bot, "soul", bot.soul);
-  const cwd = useSaved(bot, "cwd", bot.cwd ?? "");
-  const [notifBlocked, setNotifBlocked] = useState(false);
-  useEffect(() => { setNotifBlocked(typeof Notification !== "undefined" && Notification.permission === "denied"); }, []);
-  return (
-    <div className="pb-8">
-      <div className="flex flex-col items-center gap-3 px-5 pb-3 pt-4">
-        <Mascot color={bot.color} size={88} busy={bot.busy} />
-        <div role="radiogroup" aria-label="Mascot color" className="flex flex-wrap justify-center gap-1.5">
-          {COLORS.map((c) => (
-            <button key={c} type="button" role="radio" aria-checked={c === bot.color} aria-label={c} title={c} onClick={() => void queuePatch(bot.id, { color: c })}
-              className={cn("size-6 rounded-full ring-offset-2 ring-offset-panel", c === bot.color && "ring-2 ring-ink")} style={{ background: `var(--identity-${c})` }} />
-          ))}
-        </div>
-      </div>
-      <Field label="Name"><input value={name.value} onChange={(e) => name.change(e.target.value)} onBlur={name.flush} maxLength={60} aria-label="Name" className={cn(INPUT, "h-10")} /></Field>
-      <Field label="Title"><input value={title.value} onChange={(e) => title.change(e.target.value)} onBlur={title.flush} placeholder="e.g. Researcher" aria-label="Title" className={cn(INPUT, "h-10")} /></Field>
-      <Field label="Description"><textarea value={desc.value} onChange={(e) => desc.change(e.target.value)} onBlur={desc.flush} rows={2} aria-label="Description" className={cn(INPUT, "resize-none py-2")} /></Field>
-      <Field label="Instructions" hint="Always part of what the bot knows about its role. Sent with every turn.">
-        <textarea value={soul.value} onChange={(e) => soul.change(e.target.value)} onBlur={soul.flush} rows={5} placeholder="How should this bot behave?" aria-label="Instructions" className={cn(INPUT, "resize-y py-2")} />
-      </Field>
-      <Field label="Model"><ModelPicker value={bot.modelSelection} onChange={(s) => s && void queuePatch(bot.id, { modelSelection: s })} /></Field>
-      <Field label="Backup model" hint="Used when the main model is unavailable."><ModelPicker allowNone value={bot.fallbackSelection} onChange={(s) => void queuePatch(bot.id, { fallbackSelection: s })} /></Field>
-      <Field label="Access" hint="What the bot may do without asking you first."><ApprovalModeSelector compact value={bot.approvalMode} onChange={(m) => void queuePatch(bot.id, { approvalMode: m })} /></Field>
-      <Field label="Working folder" hint="Where the bot runs commands. Empty uses the server folder.">
-        <input value={cwd.value} onChange={(e) => cwd.change(e.target.value)} onBlur={cwd.flush} placeholder="Absolute path" aria-label="Working folder" className={cn(INPUT, "h-10 font-mono text-[13px]")} />
-      </Field>
-      <Field label="Notifications" hint={notifBlocked ? "Notifications are blocked in this browser." : "Get a browser notification when this bot needs you while the tab is hidden."}>
-        <label className="flex items-center gap-2 text-[14px] text-ink">
-          <input type="checkbox" checked={bot.notifications} onChange={(e) => {
-            void queuePatch(bot.id, { notifications: e.target.checked });
-            if (e.target.checked && typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
-          }} /> Notify me
-        </label>
-      </Field>
-      <Field label="Reports to" hint="Who this bot answers to. A Chief of Staff can hand work to the bots that report to it.">
-        <select value={bot.reportsTo ?? ""} onChange={(e) => void queuePatch(bot.id, { reportsTo: e.target.value || null })} aria-label="Reports to" className={cn(INPUT, "h-10")}>
-          <option value="">None</option>
-          {state.bots.filter((b) => b.id !== bot.id && !b.hidden).map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
-        </select>
-      </Field>
-      <AppsField bot={bot} />
-      <BotInputs botId={bot.id} />
-      <IntakeSection bot={bot} />
-      <SkillsSection bot={bot} />
-      <MemorySection bot={bot} />
-      <Field label="Chief of Staff" hint="The Chief answers for you where it may and hands work to the team. Only one bot is Chief; with sections ticked it works only inside them.">
-        <label className="flex items-center gap-2 text-[14px] text-ink">
-          <input type="checkbox" checked={bot.chief} onChange={(e) => void queuePatch(bot.id, { chief: e.target.checked })} /> Chief of Staff
-        </label>
-        {bot.chief && state.sections.length > 0 && (
-          <div className="mt-2 flex flex-col gap-1" role="group" aria-label="Sections it manages">
-            {state.sections.map((sec) => (
-              <label key={sec.id} className="flex items-center gap-2 text-[13.5px] text-ink-secondary">
-                <input type="checkbox" checked={bot.managedSections?.includes(sec.id) ?? false}
-                  onChange={(e) => void queuePatch(bot.id, { managedSections: e.target.checked ? [...(bot.managedSections ?? []), sec.id] : (bot.managedSections ?? []).filter((x) => x !== sec.id) })} />
-                <span data-no-i18n="">{sec.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </Field>
-    </div>
-  );
-}
-
-type View = "overview" | "settings" | "activity" | "inspector" | "routines";
+type View = "overview" | "activity" | "inspector";
 
 function Row({ icon: Icon, label, right, onClick, chevron }: { icon: typeof Search; label: string; right?: React.ReactNode; onClick?: () => void; chevron?: boolean }) {
   return (
@@ -235,7 +150,7 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
   };
   return (
     <div className="px-[30px] pb-6" data-testid="panel-overview">
-      <Row icon={Sparkles} label="Model" right={<span className="max-w-[140px] truncate text-[14px] text-ink-secondary">{modelLabel}</span>} chevron onClick={() => go("settings")} />
+      <Row icon={Sparkles} label="Model" right={<span className="max-w-[140px] truncate text-[14px] text-ink-secondary">{modelLabel}</span>} chevron onClick={() => dispatch({ type: "openAgent", id: bot.id })} />
       <div className="mt-4 text-[14px] font-medium text-ink-secondary">{t("Conversations")}</div>
       <Row icon={SquarePen} label={t("New conversation")} onClick={newTask} />
       <div className="mt-4 text-[14px] font-medium text-ink-secondary">{t("This conversation")}</div>
@@ -246,9 +161,9 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
       <div className="mt-2 px-1"><div className="mb-1.5 text-[12.5px] text-ink-tertiary">{t("Export transcript")}</div><ExportButtons bot={bot} /></div>
       <div className="mt-4 flex items-center justify-between text-[14px] font-medium text-ink-secondary">
         <span>{t("Routines")}</span>
-        <button type="button" onClick={() => go("routines")} className="text-[13px] font-normal text-ink-tertiary hover:text-ink">{t("Manage")}</button>
+        <button type="button" onClick={() => dispatch({ type: "openAgent", id: bot.id, tab: "availability" })} className="text-[13px] font-normal text-ink-tertiary hover:text-ink">{t("Manage")}</button>
       </div>
-      <Row icon={CalendarPlus} label={t("Add a routine")} onClick={() => go("routines")} />
+      <Row icon={CalendarPlus} label={t("Add a routine")} onClick={() => dispatch({ type: "openAgent", id: bot.id, tab: "availability" })} />
       <Row icon={CalendarClock} label={t("Automations")} chevron onClick={() => dispatch({ type: "automations", open: true })} />
     </div>
   );
@@ -256,57 +171,16 @@ function Overview({ bot, go }: { bot: Bot; go: (v: View) => void }) {
 
 
 
-export function BotPanel({ bot, initialView = "overview" }: { bot: Bot; initialView?: "overview" | "settings" }) {
-  const { dispatch } = useStore();
-  const t = useT();
-  const [tab, setTab] = useState<Tab>("details");
-  const [view, setView] = useState<View>(initialView);
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "details", label: "Details" },
-    { id: "library", label: "Library" },
-    { id: "computer", label: "Computer" },
-  ];
-  const sub = tab === "details" && view !== "overview";
-  const circle = "flex size-9 items-center justify-center rounded-full bg-card text-ink-secondary shadow-(--shadow-float) ring-[0.5px] ring-ink/10 hover:text-ink";
-  return (
-    <aside aria-label={`${bot.name} details`} data-testid="bot-panel" className="relative z-20 flex h-full w-[320px] shrink-0 animate-panel-in flex-col border-l-[0.5px] border-edge bg-app max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:w-full">
-      <div className="flex h-[58px] shrink-0 items-center justify-end gap-2.5 px-3.5">
-        <button type="button" title="Copy a link to this bot" aria-label="Share" onClick={() => { void navigator.clipboard?.writeText(`${location.origin}/?bot=${bot.id}`); toast("Link copied"); }} className={circle}><Share2 size={15} /></button>
-        <button type="button" title="Close" aria-label="Close panel" onClick={() => dispatch({ type: "panel", botId: null })} className={circle}><X size={16} /></button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
-        <div className="flex flex-col items-center px-6 pb-3 pt-[10px] text-center">
-          <Mascot color={bot.color} size={52} busy={bot.busy} />
-          <div className="mt-[15px] flex max-w-full items-center justify-center gap-1.5">
-            <div data-no-i18n="" className="min-w-0 truncate text-[18px] font-semibold leading-6 text-ink">{bot.name}</div>
-            <button type="button" title="Bot settings" aria-label="Bot settings" aria-pressed={view === "settings"} onClick={() => { setTab("details"); setView(view === "settings" ? "overview" : "settings"); }}
-              className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink", view === "settings" && "bg-ink/10 text-ink")}><Settings size={15} /></button>
-          </div>
-          {(bot.title || bot.description) && <div data-no-i18n="" className="max-w-full truncate text-[14px] text-ink-secondary">{bot.title || bot.description}</div>}
-          <div role="tablist" className="mt-[22px] flex h-8 items-center rounded-full bg-raised p-[3px]" data-testid="panel-tabs">
-            {tabs.map((x) => (
-              <button key={x.id} type="button" role="tab" aria-selected={tab === x.id} onClick={() => { setTab(x.id); setView("overview"); }}
-                className={cn("h-[26px] rounded-full px-[10.5px] text-[13.5px] font-medium", tab === x.id ? "bg-composer text-ink shadow-sm ring-[0.5px] ring-ink/10" : "text-ink-secondary hover:text-ink")}>
-                {t(x.label)}
-              </button>
-            ))}
-          </div>
-        </div>
-        {sub && (
-          <div className="px-6 pb-2">
-            <button type="button" onClick={() => setView("overview")} className="flex items-center gap-1 rounded-full px-2 py-1 text-[13px] text-ink-secondary hover:bg-ink/10 hover:text-ink"><ChevronLeft size={14} /> Back</button>
-          </div>
-        )}
-        {tab === "details" && view === "overview" && <Overview bot={bot} go={setView} />}
-        {tab === "details" && view === "settings" && <SettingsForm bot={bot} />}
-        {tab === "details" && view === "activity" && <ActivityPanel bot={bot} />}
-        {tab === "details" && view === "inspector" && <InspectorPanel bot={bot} />}
-        {tab === "details" && view === "routines" && <Routines bot={bot} />}
-        {tab === "computer" && <Computer bot={bot} />}
-        {tab === "library" && <LibraryTab bot={bot} />}
-      </div>
-    </aside>
-  );
+export function BotPanel({ bot }: { bot: Bot; initialView?: "overview" | "settings" }) {
+  const { dispatch } = useStore(); const t = useT();
+  const [view, setView] = useState<View>("overview");
+  return <aside aria-label={`${bot.name} details`} data-testid="bot-panel" className="relative z-20 flex h-full w-[320px] shrink-0 flex-col border-l border-edge bg-app max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:w-full">
+    <header className="flex justify-end gap-2 p-3"><button aria-label="Share" className="rounded-full p-2 hover:bg-raised" onClick={() => { void navigator.clipboard?.writeText(`${location.origin}/#/chat/${bot.id}`); toast("Link copied"); }}><Share2 size={16} /></button><button aria-label="Close panel" className="rounded-full p-2 hover:bg-raised" onClick={() => dispatch({ type: "panel", botId: null })}><X size={16} /></button></header>
+    <div className="min-h-0 flex-1 overflow-y-auto"><div className="flex flex-col items-center px-5 py-3"><Mascot color={bot.color} size={52} /><div className="mt-3 flex items-center gap-2"><h2 data-no-i18n className="text-lg font-medium">{bot.name}</h2><button aria-label="Bot settings" title="Edit agent" className="rounded p-2 hover:bg-raised" onClick={() => dispatch({ type: "openAgent", id: bot.id })}><Settings size={15} /></button></div><p data-no-i18n className="text-sm text-ink-secondary">{bot.title || bot.description}</p></div>
+      <div role="tablist" className="mb-4 flex justify-center gap-1 px-3" data-testid="panel-tabs">{(["overview", "activity", "inspector"] as const).map((id) => <button key={id} role="tab" aria-selected={view === id} className={`rounded-full px-3 py-2 text-sm ${view === id ? "bg-raised" : "text-ink-secondary"}`} onClick={() => setView(id)}>{t(id[0].toUpperCase() + id.slice(1))}</button>)}</div>
+      {view === "overview" && <Overview bot={bot} go={setView} />}{view === "activity" && <ActivityPanel bot={bot} />}{view === "inspector" && <InspectorPanel bot={bot} />}
+    </div>
+  </aside>;
 }
 
 interface Routine { id: string; title: string; text: string; kind: "interval" | "daily"; everyMin: number | null; at: string | null; enabled: boolean; lastRun: number | null; nextRun: number }
@@ -383,51 +257,9 @@ export function Routines({ bot }: { bot: Bot }) {
   );
 }
 
-interface Entry { name: string; dir: boolean; size: number; at: number }
-const bytes = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
-
-/** The bot's working folder, read-only: where it runs commands and what it left there. */
-function Computer({ bot }: { bot: Bot }) {
-  const [path, setPath] = useState("");
-  const [data, setData] = useState<{ root: string; entries: Entry[] } | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-    api<{ root: string; entries: Entry[] }>(`/api/bots/${bot.id}/files?path=${encodeURIComponent(path)}`)
-      .then((r) => { if (!cancelled) { setData(r); setError(""); } })
-      .catch((e: Error) => { if (!cancelled) setError(e.message); });
-    return () => { cancelled = true; };
-  }, [bot.id, bot.cwd, path]);
-  const parts = path ? path.split("/") : [];
-  return (
-    <div className="px-5 py-4" data-testid="computer-tab">
-      <div className="mb-2 flex items-center gap-1 text-[12.5px] text-ink-secondary">
-        <Monitor size={13} />
-        <button type="button" onClick={() => setPath("")} className="truncate font-mono hover:text-ink" title={data?.root}>{data?.root ?? "Working folder"}</button>
-        {parts.map((seg, i) => (
-          <span key={i} className="flex items-center gap-1"><ChevronRight size={12} />
-            <button type="button" onClick={() => setPath(parts.slice(0, i + 1).join("/"))} className="font-mono hover:text-ink">{seg}</button></span>
-        ))}
-      </div>
-      {error && <div role="alert" className="text-[13px] text-danger">{error}</div>}
-      {data && data.entries.length === 0 && <div className="py-8 text-center text-[13px] text-ink-tertiary">This folder is empty.</div>}
-      {path && <button type="button" onClick={() => setPath(parts.slice(0, -1).join("/"))} className="mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13.5px] text-ink-secondary hover:bg-ink/[0.06]"><Folder size={14} /> ..</button>}
-      {data?.entries.map((e) => (
-        <button key={e.name} type="button" disabled={!e.dir} onClick={() => setPath(path ? `${path}/${e.name}` : e.name)}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13.5px] text-ink enabled:hover:bg-ink/[0.06]">
-          {e.dir ? <Folder size={14} className="shrink-0 text-accent" /> : <FileText size={14} className="shrink-0 text-ink-tertiary" />}
-          <span className="min-w-0 flex-1 truncate">{e.name}</span>
-          {!e.dir && <span className="shrink-0 text-[11.5px] text-ink-tertiary">{bytes(e.size)}</span>}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 interface Note { id: string; title: string; text: string }
 
-/** Notes the bot keeps: they are part of what it is told on every turn. */
-function LibraryTab({ bot }: { bot: Bot }) {
+export function LibraryTab({ bot }: { bot: Bot }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const load = () => api<{ notes: Note[] }>(`/api/bots/${bot.id}/library`).then((r) => setNotes(r.notes)).catch(() => {});
   useEffect(() => { void load(); }, [bot.id]); // eslint-disable-line react-hooks/exhaustive-deps

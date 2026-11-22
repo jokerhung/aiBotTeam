@@ -3,11 +3,11 @@ import { BookOpen, Bot, CalendarClock, FileText, Folders, Inbox, LayoutDashboard
 /** Every page of the workspace layout. `chat` and `project` keep the chat list beside them; the others use the whole width. */
 export type View =
   | "chat" | "dashboard" | "inbox" | "project" | "section" | "projects"
-  | "agents" | "workflows" | "routines"
+  | "agents" | "agent" | "workflows" | "routines"
   | "bases" | "documents" | "skills"
   | "apps" | "input" | "team-map";
 
-export const VIEWS: readonly View[] = ["chat", "dashboard", "inbox", "project", "section", "projects", "agents", "workflows", "routines", "bases", "documents", "skills", "apps", "input", "team-map"];
+export const VIEWS: readonly View[] = ["chat", "dashboard", "inbox", "project", "section", "projects", "agents", "agent", "workflows", "routines", "bases", "documents", "skills", "apps", "input", "team-map"];
 export const isView = (v: unknown): v is View => typeof v === "string" && (VIEWS as readonly string[]).includes(v);
 /** The views that show the chat list as a second column (a project shows the same list, only with its own bots). */
 export const hasChatList = (v: View) => v === "chat" || v === "project" || v === "section";
@@ -58,11 +58,19 @@ export const PROJECTS_ITEM: NavItem = { view: "projects", label: "All projects",
 export const itemOf = (view: View): NavItem | undefined => [...NAV.flatMap((g) => g.items), PROJECTS_ITEM].find((i) => i.view === view);
 
 /** `#/chat/<bot id>`, `#/project/<room id>`, `#/section/<section id>`, `#/agents` … The app is one static page, so the route lives in the hash. */
-export function toHash(view: View, id?: string): string {
+export const AGENT_TABS = ["build", "toolbox", "mcp", "limits", "availability", "evals", "knowledge-gaps", "history"] as const;
+export type AgentTab = typeof AGENT_TABS[number];
+export function toHash(view: View, id?: string, tab: AgentTab = "build"): string {
+  if (view === "agent" && id) return `#/agents/${encodeURIComponent(id ?? "")}/${tab}`;
   return `#/${view}${id && (view === "chat" || view === "project" || view === "section") ? `/${encodeURIComponent(id)}` : ""}`;
 }
 
-export function parseHash(hash: string): { view: View; id?: string } | null {
+export function parseHash(hash: string): { view: View; id?: string; tab?: AgentTab } | null {
+  const agent = /^#\/agents\/([^/?#]+)(?:\/([^/?#]+))?\/?$/.exec(hash);
+  if (agent) {
+    try { return { view: "agent", id: decodeURIComponent(agent[1]), tab: AGENT_TABS.includes(agent[2] as AgentTab) ? agent[2] as AgentTab : "build" }; }
+    catch { return { view: "agents" }; }
+  }
   const m = /^#\/([a-z-]+)(?:\/([^/?#]+))?\/?$/.exec(hash);
   if (!m || !isView(m[1])) return null;
   let id: string | undefined;

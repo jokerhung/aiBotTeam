@@ -2,6 +2,7 @@
 // the rail collapses and remembers it, and a narrow screen opens the menu as a drawer.
 //   node web/e2e/workspace.mjs            against the running app (BASE, default http://127.0.0.1:5299)
 // It clicks through the menu and, for the chat check, makes one throw-away Echo bot and deletes it again.
+import { checkAgents } from "./agents.mjs";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 } })
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
+await page.addInitScript(() => { localStorage.setItem("botteam-welcomed", "1"); localStorage.setItem("botteam-tour-done", "1"); localStorage.setItem("botteam-seen-release", "x"); });
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForSelector('[data-testid="app-rail"]');
 
@@ -78,6 +80,8 @@ await page.keyboard.press("w");
 ok(await page.locator('[data-testid="page-workflows"]').count() === 1, "G then W opens Workflows");
 await page.keyboard.press("a");
 ok(await page.locator('[data-testid="page-workflows"]').count() === 1, "a letter alone does nothing");
+
+await checkAgents(page, ok);
 
 // a chat message to a throw-away Echo bot (the demo engine: no model is called), removed afterwards
 const made = await page.evaluate(async () => {

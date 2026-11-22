@@ -51,6 +51,7 @@ export function useGlobalBehaviors() {
           if (view) { e.preventDefault(); dispatch({ type: "view", view }); return; }
         } else if (k === "g") { goPending.current = Date.now(); return; }
       }
+      if (!mod && !e.altKey && k === "n" && st.view === "agents" && !typing(e.target)) { e.preventDefault(); dispatch({ type: "newBot", open: true }); }
       if (e.key === "?" && !mod && !typing(e.target)) { e.preventDefault(); dispatch({ type: "shortcuts", open: true }); }
     };
     window.addEventListener("keydown", onKey);

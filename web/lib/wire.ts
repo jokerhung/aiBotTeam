@@ -97,6 +97,8 @@ export interface Task {
 }
 
 export interface Bot {
+  createdAt?: number | null;
+  updatedAt?: number | null;
   id: string;
   threadId: string;
   mainThreadId: string;

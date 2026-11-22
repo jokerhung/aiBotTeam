@@ -18,6 +18,8 @@ Kế hoạch chia **5 phase**, mỗi phase kết thúc bằng một bản chạy
 | 6 | [phase-6-telegram-channel.md](phase-6-telegram-channel.md) | Kênh Telegram và Zalo Bot trong Connected apps, gom lô theo thư mục, bot kiểm kê máy bán hàng (thêm ngoài bản gốc) |
 | 7 | [phase-7-antigravity-engine.md](phase-7-antigravity-engine.md) | Engine Antigravity (`agy`, giao thức ACP) hỗ trợ giống Claude Code và Codex: dò và đăng nhập, chat, duyệt quyền, công cụ đội, tiếp tục, ảnh, chạy ổn định trên Windows (kế hoạch) |
 | 8 | [phase-8-workspace-layout.md](phase-8-workspace-layout.md) | Giao diện workspace theo agenticos: thanh điều hướng Dashboard, Chat, Inbox, Projects, Build, Knowledge, Connect; mục chưa có để trang trống (kế hoạch) |
+| 9 | [phase-9-agents-page.md](phase-9-agents-page.md) | Trang Agents theo agenticos: thẻ, tạo Agent, tám tab với Save/Discard và thư viện 28 mẫu offline (đã triển khai) |
+| 10 | [phase-10-toolbox-capabilities.md](phase-10-toolbox-capabilities.md) | Toolbox của Agent: Subagents (cấu hình giao việc), Web use (Playwright MCP, Take over) và Computer use (E2B / OpenSandbox), chuyển từ aiSocialTeam (kế hoạch) |
 
 ## 1. Bản gốc là gì
 

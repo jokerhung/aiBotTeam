@@ -17,24 +17,33 @@ export function useHashRoute(enabled: boolean) {
       const route = parseHash(window.location.hash);
       if (!route) return;
       const s = live.current;
+      const navigate = (action: Parameters<typeof dispatch>[0]) => {
+        if (dispatch(action)) return;
+        pending.current = null;
+        const id = s.view === "agent" ? s.selectedAgentId : s.view === "chat" ? s.selectedId : s.view === "project" ? s.selectedGroupId : s.selectedSectionId;
+        window.history.replaceState(null, "", toHash(s.view, id, s.agentTab));
+      };
       // the address names the page to open; the writer below waits until the state shows exactly that page (a chat without an id has no fixed target)
-      pending.current = route.view === "chat" && !route.id ? null : toHash(route.view, route.id);
-      if (route.view === "chat" && route.id) {
-        if (s.bots.some((b) => b.id === route.id)) dispatch({ type: "select", id: route.id });
-        else { pending.current = null; dispatch({ type: "view", view: "chat" }); }
+      pending.current = route.view === "chat" && !route.id ? null : toHash(route.view, route.id, route.tab);
+      if (route.view === "agent") {
+        if (s.bots.some((b) => b.id === route.id)) navigate({ type: "openAgent", id: route.id!, tab: route.tab });
+        else { pending.current = null; navigate({ type: "view", view: "agents" }); }
+      } else if (route.view === "chat" && route.id) {
+        if (s.bots.some((b) => b.id === route.id)) navigate({ type: "select", id: route.id });
+        else { pending.current = null; navigate({ type: "view", view: "chat" }); }
       } else if (route.view === "project" && route.id) {
-        if (s.groups.some((g) => g.id === route.id)) dispatch({ type: "selectGroup", id: route.id });
-        else { pending.current = null; dispatch({ type: "view", view: "projects" }); }
+        if (s.groups.some((g) => g.id === route.id)) navigate({ type: "selectGroup", id: route.id });
+        else { pending.current = null; navigate({ type: "view", view: "projects" }); }
       } else if (route.view === "section" && route.id) {
-        if (s.sections.some((x) => x.id === route.id)) dispatch({ type: "openSection", id: route.id });
-        else { pending.current = null; dispatch({ type: "view", view: "projects" }); }
+        if (s.sections.some((x) => x.id === route.id)) navigate({ type: "openSection", id: route.id });
+        else { pending.current = null; navigate({ type: "view", view: "projects" }); }
       } else if (route.view === "section") {
         pending.current = null;
-        dispatch({ type: "view", view: "projects" });
+        navigate({ type: "view", view: "projects" });
       } else if (route.view === "project") {
         pending.current = null;
-        dispatch({ type: "view", view: "projects" });
-      } else dispatch({ type: "view", view: route.view });
+        navigate({ type: "view", view: "projects" });
+      } else navigate({ type: "view", view: route.view });
     };
     apply();
     window.addEventListener("hashchange", apply);
@@ -43,12 +52,12 @@ export function useHashRoute(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled || !ready) return;
-    const id = state.view === "chat" ? state.selectedId : state.view === "project" ? state.selectedGroupId : state.view === "section" ? state.selectedSectionId : undefined;
-    const want = toHash(state.view, id);
+    const id = state.view === "agent" ? state.selectedAgentId : state.view === "chat" ? state.selectedId : state.view === "project" ? state.selectedGroupId : state.view === "section" ? state.selectedSectionId : undefined;
+    const want = toHash(state.view, id, state.agentTab);
     if (pending.current) {
       if (want !== pending.current) return; // the page named in the address is still being opened
       pending.current = null;
     }
     if (window.location.hash !== want) window.history.pushState(null, "", want);
-  }, [enabled, ready, state.view, state.selectedId, state.selectedGroupId, state.selectedSectionId]);
+  }, [enabled, ready, state.view, state.selectedId, state.selectedGroupId, state.selectedSectionId, state.selectedAgentId, state.agentTab]);
 }

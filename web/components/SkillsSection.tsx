@@ -6,6 +6,7 @@ import { queuePatch } from "@/lib/patch-queue";
 import { cn } from "@/lib/utils";
 import type { Bot, Skill } from "@/lib/wire";
 import { api } from "@/state/api";
+import { trapDialog } from "./agents/shared";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
 
@@ -22,7 +23,7 @@ export function SkillEditor({ skill, onClose }: { skill: Skill | null; onClose: 
     } catch (e) { setError((e as Error).message); }
   };
   return (
-    <div role="dialog" aria-modal="true" aria-label="Skill" data-testid="skill-editor" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div role="dialog" aria-modal="true" aria-label="Skill" data-testid="skill-editor" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onKeyDown={(event) => { if (event.key === "Escape" || event.key === "Tab") { event.stopPropagation(); trapDialog(event, onClose); } }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-panel text-ink shadow-xl ring-1 ring-ink/10">
         <div className="flex h-14 items-center px-5"><h2 className="flex-1 text-[16px] font-semibold">{skill ? t("Edit skill") : t("New skill")}</h2>
           <button type="button" aria-label="Close" onClick={onClose} className="rounded-full p-1.5 hover:bg-ink/10"><X size={15} /></button></div>
@@ -42,7 +43,7 @@ export function SkillEditor({ skill, onClose }: { skill: Skill | null; onClose: 
 }
 
 /** The skill library and which of its skills this bot has: a SKILL.md each, switched on or off. */
-export function SkillsSection({ bot }: { bot: Bot }) {
+export function SkillsSection({ bot, onChange }: { bot: Bot; onChange?: (value: string[]) => void }) {
   const t = useT();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [editing, setEditing] = useState<Skill | "new" | null>(null);
@@ -60,7 +61,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
         {skills.map((s) => (
           <div key={s.id} data-testid="skill-row" className="rounded-lg bg-inset px-3 py-2 ring-1 ring-inset ring-ink/[0.07]">
             <div className="flex items-center gap-2">
-              <input type="checkbox" checked={have.includes(s.id)} aria-label={`Give ${s.name}`} onChange={(e) => void queuePatch(bot.id, { skills: e.target.checked ? [...have, s.id] : have.filter((x) => x !== s.id) })} />
+              <input type="checkbox" checked={have.includes(s.id)} aria-label={`Give ${s.name}`} onChange={(e) => onChange ? onChange(e.target.checked ? [...have, s.id] : have.filter((x) => x !== s.id)) : void queuePatch(bot.id, { skills: e.target.checked ? [...have, s.id] : have.filter((x) => x !== s.id) })} />
               <span data-no-i18n="" className={cn("min-w-0 flex-1 truncate text-[14px]", !s.enabled && "opacity-50")}>{s.name}</span>
               <button type="button" role="switch" aria-checked={s.enabled} aria-label={`${s.name} ${s.enabled ? "on" : "off"}`} onClick={async () => { await api(`/api/skills/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }).catch(() => {}); await load(); }}
                 className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", s.enabled ? "bg-accent" : "bg-ink/20")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-all", s.enabled ? "left-[18px]" : "left-0.5")} /></button>

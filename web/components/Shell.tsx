@@ -18,7 +18,9 @@ import { AdminPanel } from "./AdminPanel";
 import { ComputerPanel } from "./ComputerPanel";
 import { CommandPalette } from "./CommandPalette";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
-import { NewBotDialog } from "./NewBotDialog";
+import { AgentFormDialog } from "./agents/AgentFormDialog";
+import { AgentsPage } from "./agents/AgentsPage";
+import { AgentEditorPage } from "./agents/AgentEditor";
 import { SettingsModal } from "./SettingsModal";
 import { Toaster } from "./Toaster";
 import { useLocalizer, useT } from "@/lib/i18n";
@@ -29,7 +31,7 @@ import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { Sidebar } from "./Sidebar";
 import { AppRail } from "./layout/AppRail";
 import { EmptyPage } from "./layout/PageFrame";
-import { AgentsPage, AppsPage, DashboardPage, InboxPage, InputPage, ProjectsPage, SkillsPage } from "./layout/pages";
+import { AppsPage, DashboardPage, InboxPage, InputPage, ProjectsPage, SkillsPage } from "./layout/pages";
 import { useHashRoute } from "./layout/useHashRoute";
 
 /** What the main area shows when no bot or room is chosen: loading, or an invitation to make the first bot. */
@@ -95,6 +97,7 @@ function WorkspaceContent({ view, bot, group }: { view: View; bot: Bot | undefin
     case "inbox": return <InboxPage />;
     case "projects": return <ProjectsPage />;
     case "agents": return <AgentsPage />;
+    case "agent": return <AgentEditorPage />;
     case "routines": return <AutomationsPage />;
     case "skills": return <SkillsPage />;
     case "apps": return <AppsPage />;
@@ -147,7 +150,7 @@ export function Shell() {
       <ShareTeamDialog />
       <ImportTeamDialog />
       <ImportBotDialog />
-      <NewBotDialog />
+      <AgentFormDialog />
       <SettingsModal />
       <CommandPalette />
       <KeyboardShortcutsModal />
