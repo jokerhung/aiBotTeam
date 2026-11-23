@@ -29,6 +29,22 @@ def tz_of(name: Optional[str]) -> ZoneInfo | timezone:
         return timezone.utc
 
 
+def parse_when(value: Any, tz: Optional[str]) -> Optional[int]:
+    """A one-time routine's moment as epoch milliseconds: from epoch ms or seconds, or from "2026-11-23T17:00:00+07:00", "2026-11-23 17:00" (read in `tz`)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit()):
+        n = int(float(value))
+        return n * 1000 if n < 10**11 else n  # seconds or milliseconds
+    try:
+        d = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00").replace(" ", "T", 1))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=tz_of(tz))
+    return int(d.timestamp() * 1000)
+
+
 def valid_tz(name: Optional[str]) -> bool:
     if not name:
         return True
@@ -320,7 +336,7 @@ class RoutineService:
     async def tool_info(self, thread_id: str) -> dict:
         run = self.turns.runs.get(thread_id)
         mine = [self.public(r) for r in await self.store.list_routines() if run and r["targetKind"] == "bot" and r["targetId"] == run.bot_id]
-        return {"ok": True, "kinds": ["once", "weekly", "interval"], "interval_minutes": [MIN_INTERVAL, MAX_INTERVAL], "days": "0=Monday .. 6=Sunday", "timezone": "IANA name, e.g. Europe/Paris",
+        return {"ok": True, "kinds": ["once", "weekly", "interval"], "interval_minutes": [MIN_INTERVAL, MAX_INTERVAL], "days": "0=Monday .. 6=Sunday", "timezone": "IANA name, e.g. Europe/Paris", "once": "kind=once with at=2026-11-23T17:00:00+07:00 (or run_at in epoch milliseconds)",
                 "yours": [{"id": r["id"], "name": r["name"], "schedule": r["schedule"], "enabled": r["enabled"]} for r in mine]}
 
     async def tool_trigger(self, thread_id: str, args: dict) -> dict:
@@ -340,6 +356,10 @@ class RoutineService:
                 # the secret is kept aside for the person to reveal once; this result, and so the bot, never carries it
                 return {"ok": True, "id": w["id"], "note": "Created. The person copies the link and secret from the card; you cannot see the secret."}
             if action == "create":
+                if str(args.get("kind")) == "once" and not args.get("run_at"):
+                    args = {**args, "run_at": parse_when(args.get("at"), args.get("timezone")), "at": None}
+                elif args.get("run_at") is not None:
+                    args = {**args, "run_at": parse_when(args.get("run_at"), args.get("timezone"))}
                 r = await self.create(target_kind="bot", target_id=run.bot_id, name=str(args.get("name") or ""), prompt=str(args.get("prompt") or ""),
                                       kind=str(args.get("kind") or "interval"), every_min=args.get("every_min"), at=args.get("at"), days=args.get("days"),
                                       run_at=args.get("run_at"), tz=args.get("timezone"), created_by="bot", enabled=args.get("enabled") is not False)
@@ -357,8 +377,9 @@ class RoutineService:
                 out = await self.start_run(cur)
                 return {"ok": True, "run": out["status"] if out else "unknown"}
             elif action == "update":
-                f = {k: v for k, v in {"name": args.get("name"), "prompt": args.get("prompt"), "kind": args.get("kind"), "everyMin": args.get("every_min"), "at": args.get("at"),
-                                        "days": args.get("days"), "tz": args.get("timezone")}.items() if v is not None}
+                moment = parse_when(args.get("run_at") if args.get("run_at") is not None else (args.get("at") if cur["kind"] == "once" or args.get("kind") == "once" else None), args.get("timezone") or cur.get("tz"))
+                f = {k: v for k, v in {"name": args.get("name"), "prompt": args.get("prompt"), "kind": args.get("kind"), "everyMin": args.get("every_min"),
+                                        "at": None if moment else args.get("at"), "runAt": moment, "days": args.get("days"), "tz": args.get("timezone")}.items() if v is not None}
                 await self.update(rid, **f)
             else:
                 return {"ok": False, "reason": "unknown_action", "detail": "action is create, update, pause, resume or run"}

@@ -17,7 +17,7 @@ import { MentionEditor } from "./MentionEditor";
 import { Mascot } from "./Mascot";
 import { ApprovalDock, RequestCard } from "./RequestCard";
 import { RoomPanel } from "./RoomPanel";
-import { ThreadRefCard, RoutineCard } from "./TeamCards";
+import { DelegatedRun, ThreadRefCard, RoutineCard } from "./TeamCards";
 import { ToolChip } from "./ToolChip";
 
 
@@ -56,7 +56,7 @@ function RoomMessage({ group, list, i }: { group: Group; list: Message[]; i: num
     return author ? <RequestCard m={m} thread={group.threadId} active={lastOpen?.id === m.id} bot={author} /> : null;
   }
   if (m.kind === "routine" && m.routine) return <RoutineCard m={m} />;
-  if (m.threadRef) return <ThreadRefCard m={m} />;
+  if (m.threadRef) return <><ThreadRefCard m={m} /><DelegatedRun m={m} /></>;
   if (m.kind === "stopped" || m.kind === "notice") return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;
   if (m.kind === "error") return <div role="alert" className="rounded-xl bg-danger/10 px-3 py-2 text-[13.5px] text-danger">{m.text}</div>;
   const prev = list[i - 1];

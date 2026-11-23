@@ -21,6 +21,7 @@ import type { Bot, Group, Section } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { exportBotFile } from "./BotFile";
+import { askMoveToSection } from "./MoveSectionDialog";
 import { toast } from "./Toaster";
 
 const patch = (id: string, body: object) => api(`/api/bots/${id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -56,10 +57,7 @@ export function useBotMenu(bot: Bot) {
     { key: "pin", label: t(bot.pinned ? "Unpin" : "Pin"), icon: bot.pinned ? PinOff : Pin, run: () => void patch(bot.id, { pinned: !bot.pinned }) },
     { key: "chief", label: bot.chief ? "Remove as Chief of Staff" : t("Make Chief of Staff"), icon: Crown, run: () => void patch(bot.id, { chief: !bot.chief }) },
     { key: "section", label: t("Move to new section"), icon: FolderPlus, run: () => void newSection() },
-    ...sections.filter((s) => s.id !== bot.section).map((s): Entry => ({
-      key: `to-${s.id}`, label: `Move to ${s.name}`, icon: FolderPlus,
-      run: () => void api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: s.id }) }),
-    })),
+    ...(sections.some((s) => s.id !== bot.section) ? [{ key: "to-section", label: t("Move to existing section"), icon: FolderPlus, run: () => askMoveToSection({ kind: "bot", id: bot.id, name: bot.name, section: bot.section ?? null }) } as Entry] : []),
     ...(bot.section ? [{ key: "unsection", label: "Remove from section", icon: FolderPlus, run: () => void api(`/api/bots/${bot.id}/move`, { method: "POST", body: JSON.stringify({ section: null }) }) } as Entry] : []),
     { key: "unread", label: t(bot.unread ? "Mark as Read" : "Mark as Unread"), icon: BellDot, run: () => void patch(bot.id, { unread: !bot.unread }) },
     "sep",
@@ -134,7 +132,7 @@ export function useGroupMenu(group: Group): Entry[] {
   const patchGroup = (body: object) => void api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(body) });
   return [
     { key: "pin", label: t(group.pinned ? "Unpin" : "Pin"), icon: group.pinned ? PinOff : Pin, run: () => patchGroup({ pinned: !group.pinned }) },
-    ...state.sections.filter((x) => x.id !== group.section).map((x): Entry => ({ key: `to-${x.id}`, label: `Move to ${x.name}`, icon: FolderPlus, run: () => patchGroup({ section: x.id }) })),
+    ...(state.sections.some((x) => x.id !== group.section) ? [{ key: "to-section", label: t("Move to existing section"), icon: FolderPlus, run: () => askMoveToSection({ kind: "group", id: group.id, name: group.name, section: group.section ?? null }) } as Entry] : []),
     ...(group.section ? [{ key: "unsection", label: "Remove from section", icon: FolderPlus, run: () => patchGroup({ section: null }) } as Entry] : []),
     { key: "unread", label: t(group.unread ? "Mark as Read" : "Mark as Unread"), icon: BellDot, run: () => patchGroup({ unread: !group.unread }) },
     "sep",

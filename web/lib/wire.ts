@@ -114,7 +114,7 @@ export interface ToolboxSettings {
   computer: { enabled: boolean; resolution: [number, number]; idleSeconds: number; allowCommands: boolean };
 }
 export const DEFAULT_TOOLBOX: ToolboxSettings = {
-  subagents: { enabled: false, allowAnyAgent: false, delegates: [], inline: [], allowDynamic: false, mode: "async", allowQuestions: false, maxDepth: 2, maxFanout: 3, maxResultChars: 4000, maxWaitSeconds: 300, shareWithDelegates: [] },
+  subagents: { enabled: false, allowAnyAgent: false, delegates: [], inline: [], allowDynamic: false, mode: "async", allowQuestions: false, maxDepth: 2, maxFanout: 3, maxResultChars: 10000, maxWaitSeconds: 300, shareWithDelegates: [] },
   web: { enabled: true, headed: false, allowLocal: false, idleSeconds: 900 },
   computer: { enabled: false, resolution: [1280, 800], idleSeconds: 600, allowCommands: false },
 };

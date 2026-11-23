@@ -1,12 +1,15 @@
 "use client";
-import { ArrowUpRight, CalendarClock, Pause, Play, Undo2, Pencil, Users, Webhook as WebhookIcon } from "lucide-react";
-import { useState } from "react";
+import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Play, Undo2, Pencil, Users, Webhook as WebhookIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Bot, Message } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { ChatMarkdown } from "./ChatMarkdown";
 import { Mascot } from "./Mascot";
+import { RequestCard } from "./RequestCard";
+import { ToolChip } from "./ToolChip";
 
 /** Opens the saved conversation for a hand-off or an input-channel batch. */
 export function ThreadRefCard({ m }: { m: Message }) {
@@ -31,6 +34,56 @@ export function ThreadRefCard({ m }: { m: Message }) {
         <ArrowUpRight size={13} className="shrink-0 text-ink-tertiary" />
       </button>
       {ref.ephemeral && !target && <button className="mx-auto block rounded-lg border border-edge px-3 py-1 text-xs" onClick={async () => { const bot = await api<Bot>(`/api/bots/${ref.botId}/promote`, { method: "POST" }); dispatch({ type: "frame", frame: { kind: "bot", bot } }); }}>{t("Promote to agent")}</button>}
+    </div>
+  );
+}
+
+/** The run of a delegated agent shown inside the team conversation: its tools (with input and output), its text as it streams, its questions for the person. */
+export function DelegatedRun({ m }: { m: Message }) {
+  const { state, dispatch } = useStore();
+  const t = useT();
+  const ref = m.threadRef!;
+  const thread = ref.threadId ?? "";
+  const target = state.bots.find((b) => b.id === ref.botId);
+  const list = useMemo(() => (state.messages[thread] ?? []).filter((x) => x.kind !== "notice"), [state.messages, thread]);
+  const live = list.some((x) => x.streaming || (x.kind === "request" && x.request?.status === "open")) || (!!target && target.busy && target.threadId === thread);
+  const [open, setOpen] = useState<boolean | null>(null);
+  const shown = open ?? live;
+  const connected = state.connected;
+  useEffect(() => {
+    if (!thread || !connected) return;
+    let cancelled = false;
+    api<{ messages: Message[]; hasMore: boolean }>(`/api/bots/${ref.botId}/messages?thread=${thread}`)
+      .then((r) => !cancelled && dispatch({ type: "history", threadId: thread, messages: r.messages, hasMore: r.hasMore, generation: 1000 }))
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [thread, ref.botId, connected, dispatch]);
+  if (!thread) return null;
+  const lastOpen = [...list].reverse().find((x) => x.kind === "request" && x.request?.status === "open");
+  return (
+    <div data-testid="delegated-run" className="mx-auto w-full max-w-[560px]">
+      <button type="button" aria-expanded={shown} onClick={() => setOpen(!shown)}
+        className="mb-1 flex items-center gap-1 text-[12px] text-ink-tertiary hover:text-ink-secondary">
+        <ChevronRight size={12} className={cn("transition-transform", shown && "rotate-90")} />
+        {live ? <span className="thinking-shimmer">{`${ref.bot} ${t("is working")}`}</span> : `${ref.bot} · ${list.length}`}
+      </button>
+      {shown && (
+        <div className="space-y-1.5 border-l-2 border-ink/10 pl-3">
+          {list.map((x) => {
+            if (x.kind === "activity" && x.tool) return <ToolChip key={x.id} tool={x.tool} detailed />;
+            if (x.kind === "request") return target ? <RequestCard key={x.id} m={x} thread={thread} active={lastOpen?.id === x.id} bot={target} /> : null;
+            if (x.kind === "error") return <div key={x.id} role="alert" className="text-[13px] text-danger">{x.text}</div>;
+            if (x.kind !== "text") return null;
+            const mine = x.role === "user";
+            return (
+              <div key={x.id} data-no-i18n="" className={cn("text-[14px] leading-[21px]", mine ? "text-ink-tertiary" : "text-ink")}>
+                {mine ? <span className="whitespace-pre-wrap">{x.text}</span> : <ChatMarkdown text={x.text} />}
+                {x.streaming && <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-caret bg-ink" />}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

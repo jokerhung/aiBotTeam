@@ -104,7 +104,7 @@ class RuntimeHost:
     async def result_limit(self, bot_id: str) -> int:
         from .toolbox import settings
         bot = await self.store.get_bot(bot_id)
-        return settings(bot).subagents.maxResultChars if bot else 4000
+        return settings(bot).subagents.maxResultChars if bot else 10000
 
     async def report(self, a: dict) -> None:
         if a["status"] == "failed" and a.get("outcome") not in (None, "stopped") and getattr(self.turns, "notify", None):

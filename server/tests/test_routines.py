@@ -285,3 +285,24 @@ async def test_bot_can_create_disabled_post_draft(ctx):
         assert not await app.state.store.list_runs(routine_id=result["id"])
     finally:
         app.state.turns.runs.pop(thread, None)
+
+
+async def test_bot_can_create_a_one_time_draft_from_a_date_and_time(ctx):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    client, app = ctx
+    bot = await make_bot(client, "Scheduler")
+    thread = bot["threadId"]
+    app.state.turns.runs[thread] = SimpleNamespace(bot_id=bot["id"])
+    year = datetime.now(timezone.utc).year + 1
+    try:
+        for at, tz in ((f"{year}-11-23T17:00:00+07:00", None), (f"{year}-11-23 17:00", "Asia/Bangkok"), (f"{year}-11-23T10:00:00Z", None)):
+            result = await app.state.routines.tool_trigger(thread, {"action": "create", "enabled": False, "name": "[DRAFT] once", "prompt": "p", "kind": "once", "at": at, "timezone": tz})
+            assert result["ok"], (at, result)
+            saved = await app.state.store.get_routine(result["id"])
+            assert saved["kind"] == "once" and saved["enabled"] is False
+            assert saved["runAt"] == int(datetime(year, 11, 23, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+        again = await app.state.routines.tool_trigger(thread, {"action": "create", "name": "x", "prompt": "p", "kind": "once", "at": "not a date"})
+        assert again["ok"] is False and "date and time" in again["detail"]
+    finally:
+        app.state.turns.runs.pop(thread, None)

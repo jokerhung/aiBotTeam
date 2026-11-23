@@ -44,7 +44,7 @@ class Subagents(Settings):
     allowQuestions: bool = False
     maxDepth: int = Field(default=2, ge=1, le=3)
     maxFanout: int = Field(default=3, ge=1, le=10)
-    maxResultChars: int = Field(default=4000, ge=500, le=20000)
+    maxResultChars: int = Field(default=10000, ge=500, le=20000)
     maxWaitSeconds: int = Field(default=300, ge=1, le=1800)
     shareWithDelegates: list[SharedCapability] = Field(default_factory=list, max_length=5)
 

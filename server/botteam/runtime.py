@@ -433,7 +433,7 @@ class Runtime:
         if kind == "resume":
             kids = await self.children(a["id"])
             limit_for = getattr(self.host, "result_limit", None)
-            limit = await limit_for(a["assignee_bot"]) if limit_for else 4000
+            limit = await limit_for(a["assignee_bot"]) if limit_for else 10000
             lines = []
             for k in kids:
                 if k["reply"] == "none":

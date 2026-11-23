@@ -23,6 +23,7 @@ import { AgentFormDialog } from "./agents/AgentFormDialog";
 import { AgentsPage } from "./agents/AgentsPage";
 import { AgentEditorPage } from "./agents/AgentEditor";
 import { SettingsModal } from "./SettingsModal";
+import { MoveSectionDialog } from "./MoveSectionDialog";
 import { Toaster } from "./Toaster";
 import { useLocalizer, useT } from "@/lib/i18n";
 import { useGlobalBehaviors } from "./useGlobalBehaviors";
@@ -155,6 +156,7 @@ export function Shell() {
       <SettingsModal />
       <CommandPalette />
       <KeyboardShortcutsModal />
+      <MoveSectionDialog />
       <Toaster />
     </div>
   );
