@@ -10,6 +10,7 @@
 #   --claude          also install the Claude Code CLI (npm @anthropic-ai/claude-code); you sign in yourself: run `claude` once
 #   --codex           also install the Codex CLI (npm @openai/codex); you sign in yourself: run `codex login`
 #   --antigravity     also install the Antigravity CLI (agy) with Google's own installer; you sign in yourself: run `agy` once
+#   --computer        install optional Computer SDKs (Python 3.11+); provision the host manually
 #   --browser         also download Playwright's Chromium (about 150 MB) for the bots' built-in browser
 #   --skip-build      do not build the static web app (`pnpm dev` does not need it; `botteam serve` does)
 #   --dry-run         print what would be done and change nothing
@@ -22,6 +23,7 @@ set -euo pipefail
 DIR="$HOME/aiBotTeam"
 REPO="https://github.com/jokerhung/aiBotTeam"
 BROWSER=0
+COMPUTER=0
 WANT_CLAUDE=0
 WANT_CODEX=0
 WANT_AGY=0
@@ -35,6 +37,7 @@ while [ $# -gt 0 ]; do
     --dir) DIR="${2:?--dir needs a path}"; shift 2 ;;
     --repo) REPO="${2:?--repo needs a URL}"; shift 2 ;;
     --browser) BROWSER=1; shift ;;
+    --computer) COMPUTER=1; shift ;;
     --claude) WANT_CLAUDE=1; shift ;;
     --codex) WANT_CODEX=1; shift ;;
     --antigravity) WANT_AGY=1; shift ;;
@@ -213,7 +216,11 @@ say "Installing the web dependencies (pnpm install)"
 run "pnpm install --frozen-lockfile" pnpm install --frozen-lockfile
 
 say "Installing the server dependencies (uv sync)"
-run "uv sync --project server" uv sync --project server
+if [ "$COMPUTER" = 1 ]; then
+  run "uv sync --project server --python 3.12 --extra computer" uv sync --project server --python 3.12 --extra computer
+else
+  run "uv sync --project server" uv sync --project server
+fi
 
 if [ "$DRY" = 1 ]; then
   printf '%s    [dry run] create .env from .env.example when there is none%s
@@ -281,6 +288,7 @@ fi
 printf '\n%sBotTeam is installed in %s%s\n' "$C_GREEN" "$ROOT" "$C_OFF"
 echo "  Start it for development (API, web, Zalo service):   cd \"$ROOT\" && pnpm dev"
 echo "  Start it as one program (needs the web build):       cd \"$ROOT\" && pnpm start:one   (API + web build + Zalo service)"
+echo "  Computer use is optional: bash install.sh --computer, then follow docs/e2b-setup.en.md or docs/opensandbox-setup.en.md."
 echo "  Then open http://127.0.0.1:8899 (one program) or http://127.0.0.1:5299 (pnpm dev)."
 if [ "$INSTALLED_UV" = 1 ]; then echo "  uv was just installed: open a new terminal, or run   export PATH=\"\$HOME/.local/bin:\$PATH\"   first."; fi
 [ "$DRY" = 1 ] && printf '%s(dry run: nothing was changed)%s\n' "$C_YELLOW" "$C_OFF"

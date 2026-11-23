@@ -18,6 +18,9 @@ dependencies = [
   "playwright>=1.65.0",
 ]
 
+[project.optional-dependencies]
+computer = ["e2b-desktop==2.7.2 ; python_full_version >= '3.11'", "opensandbox>=1.2.1", "pillow>=11"]
+
 [project.scripts]
 botteam = "botteam.cli:main"
 

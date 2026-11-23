@@ -126,4 +126,6 @@ async def test_a_bot_answering_a_customer_cannot_use_the_team_tools_except_the_l
         assert "customer" not in (await app.state.agents.call(bot["threadId"], "sheet_rows", {"spreadsheet": "x", "match": {"a": "b"}})).get("detail", "")
     finally:
         app.state.turns.runs.pop(bot["threadId"], None)
-    assert (await app.state.agents.call(bot["threadId"], "list_bots", {}))["ok"] is True  # an ordinary turn keeps them
+    # An ordinary turn can use only capabilities explicitly enabled for this bot.
+    await c.patch(f"/api/bots/{bot['id']}", json={"toolbox": {"subagents": {"enabled": True}}})
+    assert (await app.state.agents.call(bot["threadId"], "list_bots", {}))["ok"] is True

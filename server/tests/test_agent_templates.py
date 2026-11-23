@@ -8,7 +8,7 @@ from .test_api import ctx, make_bot  # noqa: F401
 
 def test_offline_catalog():
     rows = load_templates()
-    imported = [r for r in rows if r["industry"] != "general"]
+    imported = [r for r in rows if r["industry"] not in {"general", "teams"}]
     assert len(imported) == 28
     assert len({r["industry"] for r in imported}) == 7
     assert len({r["id"] for r in rows}) == len(rows)
@@ -44,7 +44,7 @@ async def test_install_and_timestamps(ctx):
 async def test_install_one_from_every_industry(ctx):
     c, _ = ctx
     rows = (await c.get("/api/templates")).json()["templates"]
-    for industry in {r["industry"] for r in rows}:
+    for industry in {r["industry"] for r in rows if r.get("kind") != "team"}:
         template = next(r for r in rows if r["industry"] == industry)
         response = await c.post(f"/api/templates/{template['id']}/install")
         assert response.status_code == 201

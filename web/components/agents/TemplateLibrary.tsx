@@ -8,7 +8,7 @@ import { useT } from "@/lib/i18n";
 import type { Bot } from "@/lib/wire";
 import { BUTTON, INPUT, PRIMARY, trapDialog } from "./shared";
 
-const INDUSTRY_ICONS = { ecommerce: ShoppingBag, finance: Landmark, healthcare: HeartPulse, legal: Scale, manufacturing: Factory, "public-sector": Building2, software: Code, general: Sparkles };
+const INDUSTRY_ICONS = { ecommerce: ShoppingBag, finance: Landmark, healthcare: HeartPulse, legal: Scale, manufacturing: Factory, "public-sector": Building2, software: Code, general: Sparkles, teams: Sparkles };
 interface Template { id: string; name: string; description: string; industry: string; instructions: string }
 export function TemplateLibrary({ onClose }: { onClose: () => void }) {
   const { dispatch } = useStore(); const t = useT();

@@ -6,7 +6,7 @@ import { api } from "./api";
 import type { View, AgentTab } from "../lib/nav";
 import type { AppConfig, AppSettings, Bot, Group, InboxItem, InstanceInfo, Message, Notification, Routine, RoutineRun, Section, ServerFrame, Webhook, WebhookAttempt } from "@/lib/wire";
 
-export type SettingsPage = "general" | "connections" | "engines" | "appearance";
+export type SettingsPage = "general" | "connections" | "engines" | "appearance" | "computer";
 export const DEFAULT_SETTINGS: AppSettings = {
   displayName: "", uiMode: "simple", skin: "daylight", font: "skin", chatWidth: "default", reduceMotion: false, language: "en",
 };

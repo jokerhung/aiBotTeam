@@ -9,6 +9,8 @@ export function useHashRoute(enabled: boolean) {
   const live = useRef(state);
   useEffect(() => { live.current = state; });
   const pending = useRef<string | null>(null);
+  // a project or a room named in the address that the server has not sent yet (rooms arrive after the bots): wait for it a few seconds
+  const waiting = useRef<{ view: "project" | "section"; id: string } | null>(null);
   const ready = state.hydrated;
 
   useEffect(() => {
@@ -17,6 +19,7 @@ export function useHashRoute(enabled: boolean) {
       const route = parseHash(window.location.hash);
       if (!route) return;
       const s = live.current;
+      waiting.current = null;
       const navigate = (action: Parameters<typeof dispatch>[0]) => {
         if (dispatch(action)) return;
         pending.current = null;
@@ -33,10 +36,18 @@ export function useHashRoute(enabled: boolean) {
         else { pending.current = null; navigate({ type: "view", view: "chat" }); }
       } else if (route.view === "project" && route.id) {
         if (s.groups.some((g) => g.id === route.id)) navigate({ type: "selectGroup", id: route.id });
-        else { pending.current = null; navigate({ type: "view", view: "projects" }); }
+        else {
+          const wanted = { view: "project" as const, id: route.id };
+          waiting.current = wanted;
+          window.setTimeout(() => { if (waiting.current === wanted) { waiting.current = null; pending.current = null; navigate({ type: "view", view: "projects" }); } }, 3000);
+        }
       } else if (route.view === "section" && route.id) {
         if (s.sections.some((x) => x.id === route.id)) navigate({ type: "openSection", id: route.id });
-        else { pending.current = null; navigate({ type: "view", view: "projects" }); }
+        else {
+          const wanted = { view: "section" as const, id: route.id };
+          waiting.current = wanted;
+          window.setTimeout(() => { if (waiting.current === wanted) { waiting.current = null; pending.current = null; navigate({ type: "view", view: "projects" }); } }, 3000);
+        }
       } else if (route.view === "section") {
         pending.current = null;
         navigate({ type: "view", view: "projects" });
@@ -49,6 +60,13 @@ export function useHashRoute(enabled: boolean) {
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, [enabled, ready, dispatch]);
+
+  useEffect(() => {
+    const route = waiting.current;
+    if (!enabled || !ready || !route) return;
+    if (route.view === "project" && state.groups.some((g) => g.id === route.id)) { waiting.current = null; dispatch({ type: "selectGroup", id: route.id }); }
+    else if (route.view === "section" && state.sections.some((x) => x.id === route.id)) { waiting.current = null; dispatch({ type: "openSection", id: route.id }); }
+  }, [enabled, ready, state.groups, state.sections, dispatch]);
 
   useEffect(() => {
     if (!enabled || !ready) return;

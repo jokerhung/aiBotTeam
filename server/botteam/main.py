@@ -46,7 +46,12 @@ from .store import Store, data_dir, now_ms
 from .turns import Turns
 from pydantic import BaseModel
 
-from .browser import BrowserService, BrowserUnavailable
+from .browser_host import BrowserHost, BrowserUnavailable
+from .browser_mcp import BrowserMcp
+from .computer_host import ComputerHost, ComputerUnavailable
+from .computer_settings import ComputerHostSettings, ComputerSettingsPatch
+from .computer_mcp import ComputerMcp
+from .delegation import Delegation
 from .wire import (
     BotDefaults, ConfigPatch, CreateBot, CreateGroup, GroupMessage, NoteBody, PatchGroup, RoutineBody, CreateInstance, CreateTask, LeafBody, MoveBot, OrderBody, PatchBot,
     PatchInstance, PatchSection, PatchTask, RequestAnswer, SectionBody, SendMessage, MAUS_COLORS,
@@ -132,9 +137,22 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     turns.config = config
     memory, skills = Memory(home), Skills(home)
     turns.memory, turns.skills = memory, skills
-    browser = BrowserService(home, bus, allow_local=bool((config.data.get("browser") or {}).get("allowLocal")) or os.environ.get("BOTTEAM_BROWSER_LOCAL") == "1",
+    browser = BrowserHost(home, bus, allow_local=bool((config.data.get("browser") or {}).get("allowLocal")) or os.environ.get("BOTTEAM_BROWSER_LOCAL") == "1",
                              channel=os.environ.get("BOTTEAM_BROWSER_CHANNEL") or None)
     turns.browser = browser
+    browser.settings = turns.browser_settings
+    browser_mcp = BrowserMcp(browser, store, turns, broker)
+    browser.on_close = browser_mcp.close
+    broker.browser_call = browser_mcp.request
+    computer_settings_store = ComputerHostSettings(config)
+    computer_host = ComputerHost(computer_settings_store, bus)
+    computer_mcp = ComputerMcp(computer_host, store, turns, broker, home / "computer-output")
+    turns.computer = computer_host
+    broker.computer_call = computer_mcp.request
+    delegation = Delegation(store, turns, runtime, host, agents)
+    turns.delegation = delegation
+    host.delegation_policy = delegation.check
+    host.root_finished = delegation.cleanup
     composio = Composio(config, mcp, bus, store)
     agents.composio = composio
     turns.notify, routines.notify = notify, notify
@@ -145,6 +163,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     channels.notify = notify
     turns.channels = channels
     routines.webhooks = webhooks
+    broker.question_gate = turns.question_allowed
     broker.agent_call = agents.call
     registry.agents = agents
     attachments_dir = home / "attachments"
@@ -163,8 +182,16 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await host.refresh()
         await registry.load()
         await runtime.open()
+        from .toolbox import migrate
+        await migrate(store, runtime, config, home)
         groups.decider = config.data.get("decider")
         await runtime.recover()  # a cut turn runs again at most once, and never after it acted outward
+        for bot in await store.list_bots():
+            if bot.ephemeral:
+                root = await runtime.get(bot.ephemeralRoot) if bot.ephemeralRoot else None
+                if not root or root["status"] in {"done", "failed", "cancelled", "interrupted", "expired"}:
+                    await delegation.delete_specialist(bot)
+        recovery = asyncio.create_task(computer_host.recover({b.id for b in await store.list_bots()}))
         runtime.start()
         turns.start()
         if serve_hooks:  # the receiver: its own port, only /health and /hooks/...
@@ -185,11 +212,14 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await channels.stop()
         await composio.stop()
         await routines.stop()
+        recovery.cancel()
+        await asyncio.gather(recovery, return_exceptions=True)
         await browser.shutdown()
-        await runtime.close()
-        await turns.stop()
+        await computer_host.shutdown()
         await broker.stop()
         await registry.stop_all()
+        await turns.stop()
+        await runtime.close()
         await store.close()
 
     app = FastAPI(title="BotTeam", lifespan=lifespan)
@@ -369,6 +399,10 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         if not template:
             raise HTTPException(404, "template not found")
         defaults = config.data.get("botDefaults", {})
+        if template.get("kind") == "team":
+            from .team_templates import install
+            bot = await install(store, turns, skills, defaults.get("modelSelection") or registry.default_selection())
+            return await turns.bot_dict(bot)
         bot = await store.create_bot(template["name"][:60], template.get("title", ""), template["description"], template.get("color"),
                                      defaults.get("modelSelection") or registry.default_selection())
         bot.approvalMode, bot.soul = "ask", template["instructions"]
@@ -379,7 +413,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     @app.get("/api/bots")
     async def list_bots():
-        return {"bots": [await turns.bot_dict(b) for b in await store.list_bots()]}
+        return {"bots": [await turns.bot_dict(b) for b in await store.list_bots() if not b.inline and not b.ephemeral]}
 
     @app.post("/api/bots", status_code=201)
     async def create_bot(body: CreateBot):
@@ -403,6 +437,24 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         bot = await need(bot_id)
         bot.updatedAt = now_ms()
         fields = body.model_dump(exclude_unset=True)
+        if "toolbox" in fields:
+            if body.toolbox is None:
+                raise HTTPException(400, "toolbox cannot be null")
+            fields["toolbox"] = body.toolbox
+        if body.toolbox:
+            for delegate in body.toolbox.subagents.delegates:
+                target = await store.get_bot(delegate.bot)
+                if not target or target.admin or target.id == bot.id or target.ephemeral or (target.inline and target.owner != bot.id):
+                    raise HTTPException(400, "Select an existing delegate other than this agent")
+            for specialist in body.toolbox.subagents.inline:
+                if specialist.botId:
+                    existing = await store.get_bot(specialist.botId)
+                    if existing and existing.owner not in (None, bot.id):
+                        raise HTTPException(400, "This specialist belongs to another agent")
+            if body.toolbox.computer.enabled and not (bot.toolbox and bot.toolbox.computer.enabled):
+                capability = await computer_capability_state(bot.id)
+                if not capability["available"]:
+                    raise HTTPException(400, capability["reason"])
         if fields.get("approvalMode") is not None and not is_mode(fields["approvalMode"]):
             raise HTTPException(400, "unknown approval mode")
         if fields.get("section"):
@@ -452,6 +504,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         if "fallbackSelection" in fields:
             bot.fallbackSelection = body.fallbackSelection
         await store.save_bot(bot)
+        if "toolbox" in fields or (bot.toolbox and bot.toolbox.subagents.inline and any(k in fields for k in ("memory", "skills", "modelSelection", "approvalMode"))):
+            await delegation.sync(bot)
         if fields.get("chief"):  # one Chief of Staff at a time
             for other in await store.list_bots():
                 if other.id != bot.id and other.chief:
@@ -468,6 +522,29 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                     pass
         await turns.publish_bot(bot)
         return await turns.bot_dict(bot)
+
+    @app.get("/api/bots/{bot_id}")
+    async def get_bot(bot_id: str):
+        return await turns.bot_dict(await need(bot_id))
+
+    @app.post("/api/bots/{bot_id}/promote")
+    async def promote_specialist(bot_id: str):
+        child = await need(bot_id)
+        if not child.inline and not child.ephemeral:
+            raise HTTPException(400, "This agent is not a specialist")
+        return await turns.bot_dict(await delegation.promote(child))
+
+    @app.get("/api/toolbox/migration")
+    async def migration_notice():
+        notice = config.data.get("toolboxMigrationNotice") or {}
+        ids = set(notice.get("botIds") or [])
+        return {"dismissed": notice.get("dismissed", False), "bots": [{"id": b.id, "name": b.name} for b in await store.list_bots() if b.id in ids]}
+
+    @app.post("/api/toolbox/migration/dismiss")
+    async def dismiss_migration():
+        config.data.setdefault("toolboxMigrationNotice", {})["dismissed"] = True
+        config.save()
+        return {"ok": True}
 
     # ---- intake.md: how a bot receives what people send it (specs/intake-md.md) ------------------------------------------------
     intake_log = logging.getLogger("botteam.intake")
@@ -655,6 +732,10 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
                 await store.save_bot(other)
                 await turns.publish_bot(other)
         await channels.bot_deleted(bot_id)
+        await delegation.remove_owned(bot_id)
+        await browser.sleep(bot_id)
+        if computer_host.records.get(bot_id):
+            await computer_host.destroy(bot_id)
         await store.delete_bot(bot_id)
         bus.publish({"kind": "bot.deleted", "botId": bot_id})
         return {"ok": True}
@@ -774,7 +855,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         t = await store.get_thread(thread_id)
         if not t:
             raise HTTPException(404, "conversation not found")
-        if not any(r["id"] == request_id for r in broker.open_for(thread_id)):
+        routed = turns.req_dest.get(request_id)
+        if not any(r["id"] == request_id for r in broker.open_for(thread_id)) and not (routed and routed[1] == thread_id):
             raise HTTPException(404, "that request is no longer open")
         ok = await broker.resolve(request_id, body.behavior, body.message, body.always, body.answers)
         if not ok:
@@ -783,11 +865,12 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     # ---- bot management -------------------------------------------------------------------
     @app.post("/api/bots/{bot_id}/duplicate", status_code=201)
-    async def duplicate_bot(bot_id: str):
-        await need(bot_id)
-        bot = await store.duplicate_bot(bot_id)
-        assert bot
-        await turns.publish_bot(bot)
+    async def duplicate_bot(bot_id: str, withDelegates: bool = False):
+        source = await need(bot_id)
+        if source.admin or source.inline or source.ephemeral:
+            raise HTTPException(400, "Promote a specialist before duplicating it")
+        from .team_templates import duplicate
+        bot = await duplicate(store, turns, delegation, source, with_delegates=withDelegates)
         return await turns.bot_dict(bot)
 
     @app.get("/api/sidebar-sections")
@@ -1044,6 +1127,14 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         if f.get("section"):
             if not any(sec["id"] == f["section"] for sec in await store.list_sections()):
                 raise HTTPException(404, "section not found")
+        if f.get("threadId"):
+            mine = {t["id"]: t for t in await store.list_threads(g.id)}
+            if f["threadId"] not in mine:
+                raise HTTPException(404, "conversation not found in this room")
+            if mine[f["threadId"]]["closed"]:
+                raise HTTPException(400, "that conversation is closed")
+        elif "threadId" in f:
+            f.pop("threadId")
         for k, v in f.items():
             setattr(g, k, v)
         await store.save_group(g)
@@ -1101,8 +1192,43 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def group_task(group_id: str, body: CreateTask):
         g = await need_group(group_id)
         t = await store.create_thread(g.id, body.title)
+        g.threadId = t["id"]  # a new conversation opens on screen, as a bot's does
+        await store.save_group(g)
         await groups.publish(g)
         return {"threadId": t["id"]}
+
+    async def group_thread(g, thread_id: str) -> str:
+        if thread_id not in {t["id"] for t in await store.list_threads(g.id)}:
+            raise HTTPException(404, "conversation not found in this room")
+        return thread_id
+
+    @app.patch("/api/groups/{group_id}/tasks/{thread_id}")
+    async def patch_group_task(group_id: str, thread_id: str, body: PatchTask):
+        g = await need_group(group_id)
+        tid = await group_thread(g, thread_id)
+        if tid == g.mainThreadId and body.closed:
+            raise HTTPException(400, "the main conversation cannot be closed")
+        await store.patch_thread(tid, **body.model_dump(exclude_unset=True))
+        if body.closed and g.threadId == tid:
+            g.threadId = g.mainThreadId
+            await store.save_group(g)
+        await groups.publish(g)
+        return {"ok": True}
+
+    @app.delete("/api/groups/{group_id}/tasks/{thread_id}")
+    async def delete_group_task(group_id: str, thread_id: str):
+        g = await need_group(group_id)
+        tid = await group_thread(g, thread_id)
+        if tid == g.mainThreadId:
+            raise HTTPException(400, "the main conversation cannot be deleted")
+        await groups.drop_thread(g, tid)  # its turn stops and its waiting responders go
+        await turns.forget_thread(tid)  # its event log and its attachments
+        await store.delete_thread(tid)
+        if g.threadId == tid:
+            g.threadId = g.mainThreadId
+            await store.save_group(g)
+        await groups.publish(g)
+        return {"ok": True}
 
     @app.get("/api/decider")
     async def get_decider():
@@ -1700,74 +1826,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         lines = path.read_text(encoding="utf8").splitlines()[-limit:]
         return {"events": [json.loads(x) for x in lines if x]}
 
-    # ---- the computer panel: the bot's built-in browser ---------------------------------------------------------------
-    async def computer_state(bot_id: str) -> dict:
-        await need(bot_id)
-        return {**browser.state(bot_id), **(await browser.availability())}
-
-    @app.get("/api/bots/{bot_id}/computer")
-    async def computer_get(bot_id: str):
-        return await computer_state(bot_id)
-
-    @app.post("/api/bots/{bot_id}/computer/wake")
-    async def computer_wake(bot_id: str):
-        await need(bot_id)
-        try:
-            await browser.wake(bot_id)
-        except BrowserUnavailable as e:
-            raise HTTPException(503, str(e))
-        return await computer_state(bot_id)
-
-    @app.post("/api/bots/{bot_id}/computer/sleep")
-    async def computer_sleep(bot_id: str):
-        await need(bot_id)
-        await browser.sleep(bot_id)
-        return await computer_state(bot_id)
-
-    @app.post("/api/bots/{bot_id}/computer/control")
-    async def computer_control(bot_id: str, body: ControlBody):
-        await need(bot_id)
-        if body.holder not in ("person", "bot"):
-            raise HTTPException(400, "holder is person or bot")
-        try:
-            await browser.set_control(bot_id, body.holder)
-        except BrowserUnavailable as e:
-            raise HTTPException(409, str(e))
-        return await computer_state(bot_id)
-
-    @app.post("/api/bots/{bot_id}/computer/input")
-    async def computer_input(bot_id: str, body: InputBody):
-        await need(bot_id)
-        try:
-            ok = await browser.person_input(bot_id, body.model_dump(exclude_none=True))
-        except BrowserUnavailable as e:
-            raise HTTPException(400, str(e))
-        if not ok:
-            raise HTTPException(409, "take control of the browser first")
-        return {"ok": True}
-
-    @app.post("/api/bots/{bot_id}/computer/watch")
-    async def computer_watch(bot_id: str, body: WatchBody):
-        await need(bot_id)
-        return {"ok": await browser.watch(bot_id, body.on)}
-
-    @app.get("/api/bots/{bot_id}/computer/screen")
-    async def computer_screen(bot_id: str):
-        from fastapi.responses import Response
-
-        await need(bot_id)
-        try:
-            data, _url, _title = await browser.screenshot(bot_id)
-        except BrowserUnavailable as e:
-            raise HTTPException(404, str(e))
-        return Response(data, media_type="image/jpeg")
-
-    @app.put("/api/computer/settings")
-    async def computer_settings(body: ComputerSettings):
-        config.data.setdefault("browser", {})["allowLocal"] = body.allowLocal
-        config.save()
-        browser.allow_local = body.allowLocal
-        return {"allowLocal": body.allowLocal}
+    from .surfaces_api import register as register_surfaces
+    computer_capability_state = register_surfaces(app, store=store, turns=turns, broker=broker, browser=browser, computer=computer_host,
+                                                  bus=bus, config=config, pairing=pairing, need=need, home=home)
 
     # ---- live stream ------------------------------------------------------------------
     @app.get("/api/events")
@@ -1834,6 +1895,12 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.web_dir = static
     app.state.pairing = pairing
     app.state.memory, app.state.skills = memory, skills
+    app.state.config = config
+    app.state.delegation = delegation
+    app.state.computer_settings = computer_settings_store
+    app.state.computer_host = computer_host
+    app.state.browser_mcp = browser_mcp
+    app.state.computer_mcp = computer_mcp
     app.state.browser = browser
     app.state.composio = composio
     app.state.channels = channels

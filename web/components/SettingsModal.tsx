@@ -1,5 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
+import { ComputerHostSettings } from "./ComputerHostSettings";
 import { Check, CircleHelp, Cpu, KeyRound, Palette, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { LANGUAGES, useT } from "@/lib/i18n";
@@ -13,6 +14,7 @@ const PAGES: { id: SettingsPage; label: string; icon: typeof Cpu }[] = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "connections", label: "Connections", icon: KeyRound },
   { id: "engines", label: "Engines", icon: Cpu },
+  { id: "computer", label: "Computer host", icon: Cpu },
   { id: "appearance", label: "Appearance", icon: Palette },
 ];
 
@@ -333,6 +335,7 @@ export function SettingsModal() {
           {page === "connections" && <Connections />}
           {page === "engines" && <Engines />}
           {page === "appearance" && <Appearance />}
+          {page === "computer" && <ComputerHostSettings />}
         </div>
       </div>
     </div>

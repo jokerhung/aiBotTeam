@@ -5,6 +5,8 @@ import asyncio
 import json
 import os
 import secrets
+import hashlib
+import hmac
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
@@ -49,11 +51,17 @@ class Broker:
         self._thread_of: dict[str, str] = {}
         self._ctx: dict[str, tuple[Optional[tuple[str, str]], str]] = {}
         self.agent_call: Optional[Callable[[str, str, dict], Awaitable[dict]]] = None  # the team tools (agents.py)
+        self.question_gate = None
+        self.browser_call = None
+        self.computer_call = None
         self.read_dirs: list[str] = []  # folders whose files a bot may read without asking (the attachment store)
+
+    def token_for(self, thread_id: str) -> str:
+        return hmac.new(self.token.encode(), thread_id.encode(), hashlib.sha256).hexdigest()
 
     # ---- lifecycle ---------------------------------------------------------
     async def start(self) -> int:
-        self._server = await asyncio.start_server(self._client, "127.0.0.1", 0)
+        self._server = await asyncio.start_server(self._client, "127.0.0.1", 0, limit=2 * 1024 * 1024)
         self.port = self._server.sockets[0].getsockname()[1]
         return self.port
 
@@ -91,6 +99,8 @@ class Broker:
     # ---- asking ------------------------------------------------------------
     async def ask(self, thread_id: str, req_id: str, kind: str, tool: str, inp: Any) -> dict:
         """Returns {behavior, message, source, always, answers}. A failure is a denial, never an allow."""
+        if kind == "question" and self.question_gate and not await self.question_gate(thread_id):
+            return {"behavior": "deny", "message": "This delegate may not ask the person questions. Continue within the task instructions.", "source": "system"}
         if req_id in self.open:  # a duplicate id is refused; the first stays open
             return {"behavior": "deny", "message": "Duplicate request id.", "source": "system"}
         pol = await self.policy(thread_id) or Policy("ask", None)
@@ -107,6 +117,9 @@ class Broker:
             "canAlways": bool(cmd), "status": "open", "openedAt": now_ms(),
             "choices": [], "questions": [], "behavior": None, "source": None, "answer": None,
         }
+        if tool == "Delegate" and isinstance(inp, dict):
+            req["summary"] = str(inp.get("summary") or "Run a temporary specialist")[:300]
+            req["instructions"] = str(inp.get("description") or "")[:100000]
         if kind == "question" and isinstance(inp, dict):
             req["choices"] = [str(c) for c in (inp.get("choices") or [])][:8]
             qs = inp.get("questions")
@@ -191,9 +204,9 @@ class Broker:
         tasks: set[asyncio.Task] = set()
         try:
             hello = json.loads(await asyncio.wait_for(reader.readline(), 10) or b"{}")
-            if hello.get("t") != "hello" or not secrets.compare_digest(str(hello.get("token", "")), self.token):
-                return
             thread_id = str(hello.get("thread", ""))
+            if hello.get("t") != "hello" or not thread_id or not secrets.compare_digest(str(hello.get("token", "")), self.token_for(thread_id)):
+                return
 
             async def one(msg: dict) -> None:
                 rid = str(msg.get("id") or new_id("req"))
@@ -210,7 +223,8 @@ class Broker:
             async def agent(msg: dict) -> None:
                 rid = str(msg.get("id") or new_id("req"))
                 try:
-                    out = await self.agent_call(thread_id, str(msg.get("tool", "")), msg.get("args") or {}) if self.agent_call else {"ok": False, "reason": "unavailable"}
+                    handler = {"agent": self.agent_call, "browser": self.browser_call, "computer": self.computer_call}.get(msg.get("t"))
+                    out = await handler(thread_id, str(msg.get("tool", "")), msg.get("args") or {}) if handler else {"ok": False, "reason": "unavailable"}
                 except Exception as e:  # a tool failure is an answer, never a crash of the bridge
                     out = {"ok": False, "reason": "internal", "detail": f"{type(e).__name__}: {e}"}
                 try:
@@ -224,7 +238,7 @@ class Broker:
                     msg = json.loads(line)
                 except ValueError:
                     continue
-                if msg.get("t") == "agent":
+                if msg.get("t") in ("agent", "browser", "computer"):
                     t = asyncio.create_task(agent(msg))
                     tasks.add(t)
                     t.add_done_callback(tasks.discard)

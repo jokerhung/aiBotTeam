@@ -12,7 +12,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from . import mcp_client
 from .netguard import BlockedAddress, check_url
@@ -208,6 +208,20 @@ class McpServers:
             key = self.key_of(sid, spec)
             entries[key] = {"command": sys.executable, "args": ["-m", "botteam.mcp_proxy"], "env": {"PYTHONPATH": SERVER_DIR, "BT_MCP_SPEC_FILE": str(path)}}
         return entries
+
+    def browser_entry(self, thread_id: str, broker) -> dict:
+        return self.surface_entry(thread_id, broker, "browser")
+
+    def surface_entry(self, thread_id: str, broker, surface: Literal["browser", "computer"]) -> dict:
+        run = self.dir / "mcp-run" / re.sub(r"[^\w-]", "_", thread_id)
+        run.mkdir(parents=True, exist_ok=True)
+        path = run / ("computer.json" if surface == "computer" else "playwright.json")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf8") as file:
+            json.dump({"port": broker.port, "token": broker.token_for(thread_id), "thread": thread_id, "surface": surface}, file)
+        return {"command": sys.executable, "args": ["-m", "botteam.mcp_proxy"], "env": {
+            "PYTHONPATH": SERVER_DIR, "BT_BROWSER_PROXY": str(path),
+        }}
 
     def cleanup(self, thread_id: str) -> None:
         run = self.dir / "mcp-run" / re.sub(r"[^\w-]", "_", thread_id)

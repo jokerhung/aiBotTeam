@@ -15,6 +15,7 @@ SteerOutcome = Literal["steered", "refused", "indeterminate"]
 class Capabilities:
     sessionModelSwitch: str = "in-session"
     images: bool = False
+    mcpImages: bool = False
     queueing: bool = False
     effortLevels: list[str] = field(default_factory=list)
     strictResume: bool = False
@@ -39,6 +40,10 @@ class SendTurnInput:
     image_attachments: list[str] = field(default_factory=list)
     transcript: list[tuple[str, str]] = field(default_factory=list)  # (role, text) for replay drivers
     custom_mcp: dict = field(default_factory=dict)  # integrations.custom: mcpServers entries for this bot's custom servers (a driver that cannot speak MCP ignores it)
+    allow_questions: bool = True
+    allowed_tools: list[str] | None = None
+    toolbox: dict | None = None
+    max_steps: int | None = None
     mount_agents: bool = False  # a driver that does not give the team tools by itself (Codex) gets them for this turn
     skills_dir: str | None = None  # a directory of skills for this turn (the Claude CLI reads it through --add-dir)
 
@@ -96,3 +101,10 @@ def preview(value: object, limit: int = 400) -> str:
         except (TypeError, ValueError):
             text = str(value)
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def toolbox_signature(inp: SendTurnInput) -> str:
+    import hashlib
+    import json
+    value = {"tools": inp.allowed_tools, "questions": inp.allow_questions, "toolbox": inp.toolbox, "mcp": inp.custom_mcp, "mount": inp.mount_agents}
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()

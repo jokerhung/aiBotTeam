@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import type { Bot } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
-import { Routines } from "./BotPanel";
+import { ComputerScreen } from "./ComputerScreen";
+import { DEFAULT_TOOLBOX } from "@/lib/wire";
 import { toast } from "./Toaster";
 
 interface ComputerState extends ComputerControl { available: boolean; reason?: string | null; browser?: string; url?: string | null; allowLocal?: boolean }
@@ -19,13 +20,16 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   const t = useT();
   const [info, setInfo] = useState<ComputerState | null>(null);
-  const [settings, setSettings] = useState(false);
+  const config = bot.toolbox ?? DEFAULT_TOOLBOX;
+  const [surface, setSurface] = useState<"browser" | "computer">(config.web.enabled ? "browser" : "computer");
+  const settings = false;
+  const setSettings = () => dispatch({ type: "openAgent", id: bot.id });
   const [busy, setBusy] = useState(false);
   const [typed, setTyped] = useState("");
   const [address, setAddress] = useState("");
-  const base = `/api/bots/${bot.id}/computer`;
+  const base = `/api/bots/${bot.id}/${surface}`;
   const screen = useSyncExternalStore(subscribeComputer, () => lastScreen(bot.id), () => undefined);
-  const live = useSyncExternalStore(subscribeComputer, () => lastControl(bot.id), () => undefined);
+  const live = useSyncExternalStore(subscribeComputer, () => lastControl(bot.id, surface), () => undefined);
   const state: ComputerControl = live ?? (info ? { running: info.running, held: info.held, helpReason: info.helpReason } : IDLE);
   const [still, setStill] = useState<string | null>(null);
 
@@ -37,10 +41,10 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
 
   // pictures are sent only while someone watches
   useEffect(() => {
-    if (!state.running) return;
+    if (!state.running || surface !== "browser") return;
     void api(`${base}/watch`, { method: "POST", body: JSON.stringify({ on: true }) }).catch(() => {});
     return () => { void fetch(`${base}/watch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ on: false }), keepalive: true }).catch(() => {}); };
-  }, [base, state.running]);
+  }, [base, state.running, surface]);
 
   // the first picture, before the next frame arrives
   useEffect(() => {
@@ -70,13 +74,15 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
   return (
     <aside aria-label={t("Computer")} data-testid="computer-panel" className="relative z-20 flex h-full w-[360px] shrink-0 animate-panel-in flex-col border-l-[0.5px] border-edge bg-app max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:w-full">
       <div className="flex h-[58px] shrink-0 items-center gap-2.5 px-3.5">
-        <button type="button" title={t("Settings")} aria-label={t("Settings")} aria-pressed={settings} onClick={() => setSettings(!settings)}
+        <button type="button" title={t("Settings")} aria-label={t("Settings")} aria-pressed={settings} onClick={() => setSettings()}
           className={cn("flex size-9 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink", settings && "bg-ink/10 text-ink")}><Settings size={16} /></button>
-        <div className="flex-1 text-center text-[15px] font-semibold text-ink">{t("Computer")}</div>
+        <div className="flex-1 text-center text-[15px] font-semibold text-ink">{t(surface === "browser" ? "Web browser" : "Computer")}</div>
         <button type="button" title={t("Close")} aria-label={t("Close panel")} onClick={() => dispatch({ type: "computer", botId: null })}
           className="flex size-9 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink"><X size={16} /></button>
       </div>
+      <div role="tablist" aria-label={t("Agent screens")} className="mb-3 flex gap-2 border-b border-edge px-4">{config.web.enabled && <button role="tab" aria-selected={surface === "browser"} onClick={() => setSurface("browser")} className="px-3 py-2 text-sm">{t("Browser")}</button>}{config.computer.enabled && <button role="tab" aria-selected={surface === "computer"} onClick={() => setSurface("computer")} className="px-3 py-2 text-sm">{t("Computer")}</button>}</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+        {!config.web.enabled && !config.computer.enabled && <p className="mb-4 text-sm text-ink-secondary">{t("Enable Web browser or Computer use in the agent's Toolbox.")}</p>}
         {settings && (
           <label className="mb-3 flex items-start gap-2.5 rounded-xl bg-card p-3 text-[13px] text-ink ring-[0.5px] ring-ink/10">
             <input type="checkbox" className="mt-0.5" checked={!!info?.allowLocal} onChange={(e) => void act(() => api("/api/computer/settings", { method: "PUT", body: JSON.stringify({ allowLocal: e.target.checked }) }))} />
@@ -91,7 +97,7 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
           </div>
         )}
         <div className="relative aspect-[1280/800] w-full overflow-hidden rounded-xl bg-inset ring-[0.5px] ring-ink/10" data-testid="computer-screen">
-          {src && state.running ? (
+          {surface === "computer" && state.running ? <div className="size-full" onClick={(e) => { if (!state.held) return; const rect = e.currentTarget.getBoundingClientRect(); void send({ type: "click", x: Math.floor((e.clientX - rect.left) / rect.width * config.computer.resolution[0]), y: Math.floor((e.clientY - rect.top) / rect.height * config.computer.resolution[1]) }); }} onWheel={(e) => { if (state.held) void send({ type: "scroll", dy: e.deltaY }); }}><ComputerScreen botId={bot.id} /></div> : src && state.running ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={src} alt={title ? `${t("Screen")}: ${title}` : t("Screen")} onClick={click} draggable={false}
               className={cn("size-full select-none object-contain", state.held ? "cursor-pointer" : "cursor-default")} />
@@ -106,7 +112,7 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
         {state.running && shot?.url && <div className="mt-1.5 truncate text-[12px] text-ink-tertiary" data-no-i18n="" title={shot.url}>{shot.url}</div>}
         {state.running && state.held && (
           <div className="mt-2 flex flex-col gap-2">
-            <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (address.trim()) { void send({ type: "goto", url: address.trim() }); setAddress(""); } }}>
+            <form hidden={surface !== "browser"} className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (address.trim()) { void send({ type: "goto", url: address.trim() }); setAddress(""); } }}>
               <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t("Address")} aria-label={t("Address")} className="h-8 min-w-0 flex-1 rounded-lg bg-inset px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-tertiary" />
               <button type="submit" className="h-8 rounded-lg bg-raised px-2.5 text-[13px] text-ink hover:bg-raised-hover"><Globe size={14} /></button>
             </form>
@@ -131,15 +137,7 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
               className="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-50"><Monitor size={14} />{t("Open desktop")}</button>
           )}
         </div>
-        <div className="mt-5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Runs on")}</div>
-        <div role="radiogroup" aria-label={t("Runs on")} className="mt-1.5 rounded-xl bg-card p-1 ring-[0.5px] ring-ink/10">
-          <div role="radio" aria-checked="true" className="flex items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[13.5px] text-ink">
-            <Globe size={15} className="text-accent" /><span className="flex-1">{t("Built-in browser")}</span>
-            <span className="text-[12px] text-ink-tertiary" data-no-i18n="">{info?.browser ?? ""}</span>
-          </div>
-        </div>
-        <div className="mt-5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Routines")}</div>
-        <div className="-mx-6 mt-1.5"><Routines bot={bot} /></div>
+        <p className="mt-5 text-xs text-ink-tertiary">{t(surface === "browser" ? "Private Playwright browser profile" : "Isolated sandbox desktop")}</p>
       </div>
     </aside>
   );

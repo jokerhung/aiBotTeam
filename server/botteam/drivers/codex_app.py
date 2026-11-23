@@ -10,8 +10,11 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from .codex import mcp_overrides
-from .base import Capabilities, Emitter, SendTurnInput, new_turn_id, preview
+from .base import Capabilities, Emitter, SendTurnInput, new_turn_id, preview, toolbox_signature
 from .proc import kill_tree, spawn
+
+# What Codex can do by itself but has off in the CLI: the Toolbox shows these as built in and always on (web/components/agents/toolbox/native.ts).
+NATIVE_OVERRIDES = ["-c", 'web_search="live"']  # its native web search
 
 # approval level -> (Codex approvalPolicy, sandbox). Requests Codex raises are answered by the broker.
 POLICY = {
@@ -34,6 +37,7 @@ class Session:
     thread_id: Optional[str] = None  # Codex's own thread id (the resume cursor)
     turn_id: Optional[str] = None  # our turn id
     codex_turn: Optional[str] = None
+    toolbox_signature: str = ""
     settled: bool = True
     stop_requested: bool = False
     explained: bool = False
@@ -47,7 +51,7 @@ class Session:
 class CodexAppDriver(Emitter):
     provider = "codex"
     engine_caps = {"edits": False, "nativeReviewer": True, "agentsMcp": False, "resume": True}
-    capabilities = Capabilities(images=True, effortLevels=["low", "medium", "high"], strictResume=True)
+    capabilities = Capabilities(images=True, mcpImages=True, effortLevels=["low", "medium", "high"], strictResume=True)
 
     def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None, broker=None) -> None:
         super().__init__()
@@ -61,7 +65,7 @@ class CodexAppDriver(Emitter):
         turn_id = new_turn_id()
         cwd = inp.cwd or os.getcwd()
         s = self.sessions.get(inp.thread_id)
-        if s and (inp.session_reset or s.proc.returncode is not None or s.mode != inp.approval_mode or s.cwd != cwd):
+        if s and (s.toolbox_signature != toolbox_signature(inp) or inp.session_reset or s.proc.returncode is not None or s.mode != inp.approval_mode or s.cwd != cwd):
             await self._close(inp.thread_id)
             s = None
         self.emit("turn.started", inp.thread_id, turn_id)
@@ -70,7 +74,7 @@ class CodexAppDriver(Emitter):
                 s = await self._start(inp, cwd)
             s.turn_id, s.settled, s.explained, s.stop_requested, s.tools = turn_id, False, False, False, {}
             prompt = inp.text
-            if inp.system and not inp.resume_cursor:
+            if inp.system:
                 prompt = f"{inp.system}\n\n---\n\n{inp.text}"
             others = [p for p in inp.attachments if p not in inp.image_attachments]
             if others:
@@ -137,9 +141,10 @@ class CodexAppDriver(Emitter):
         if inp.mount_agents and self.broker is not None and self.broker.port:  # the team tools, as the Claude driver mounts them
             server_dir = str(__import__("pathlib").Path(__file__).resolve().parents[2])
             entries["bt"] = {"command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
-                             "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_BROKER_PORT": str(self.broker.port), "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id}}
-        proc = await spawn([*self.cmd, "app-server", *mcp_overrides(entries)], cwd=cwd, env=self.env)
+                             "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_ASK_USER": "1" if inp.allow_questions else "0", **({"BT_TOOLS": json.dumps(inp.allowed_tools)} if inp.allowed_tools is not None else {}), "BT_BROKER_PORT": str(self.broker.port), "BT_BROKER_TOKEN": self.broker.token_for(inp.thread_id) if hasattr(self.broker, "token_for") else self.broker.token, "BT_THREAD_ID": inp.thread_id}}
+        proc = await spawn([*self.cmd, "app-server", *NATIVE_OVERRIDES, *mcp_overrides(entries)], cwd=cwd, env=self.env)
         s = Session(proc=proc, cwd=cwd, mode=inp.approval_mode)
+        s.toolbox_signature = toolbox_signature(inp)
         self.sessions[inp.thread_id] = s
         s.tasks = [asyncio.create_task(self._read(inp.thread_id, s)), asyncio.create_task(self._drain_stderr(s))]
         await self._request(s, "initialize", {"clientInfo": {"name": "botteam", "title": "BotTeam", "version": "0.3.0"}})

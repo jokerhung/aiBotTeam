@@ -197,3 +197,20 @@ async def test_post_to_room_tool_and_membership(ctx):
     assert listed["rooms"][0]["name"] == "Team"
     app.state.turns.runs.pop("tx")
     app.state.turns.runs.pop("ty")
+
+
+async def test_handoff_limit_is_saved_and_can_disable_chaining(ctx):
+    c, _ = ctx
+    g, bots = await room(c, names=("Alpha", "Beta"))
+    path = f"/api/groups/{g['id']}"
+    assert g["maxHandoffs"] == 2
+    for bad in (-1, 51, None):
+        assert (await c.patch(path, json={"maxHandoffs": bad})).status_code == 422
+    assert (await c.patch(path, json={"maxHandoffs": 10})).json()["maxHandoffs"] == 10
+    assert (await c.patch(path, json={"maxHandoffs": 0})).json()["maxHandoffs"] == 0
+    from types import SimpleNamespace
+    app = ctx[1]
+    await app.state.groups.turn_done(g["threadId"], SimpleNamespace(group_id=g["id"], bot_id=bots[0]["id"], final_text="Please pass to @Beta"))
+    messages = await room_msgs(c, g)
+    assert not any(m.get("author") == bots[1]["id"] for m in messages)
+    assert any(m["kind"] == "notice" and "conversation limit" in m["text"] for m in messages)

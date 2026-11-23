@@ -27,6 +27,9 @@ class WireTask(BaseModel):
 
 
 class RequestInfo(BaseModel):
+    threadId: Optional[str] = None
+    by: Optional[str] = None
+    instructions: Optional[str] = None
     id: str
     type: Literal["permission", "question"] = "permission"
     tool: str = ""
@@ -52,7 +55,17 @@ class Attachment(BaseModel):
     image: bool = False
 
 
+from .toolbox import Toolbox
+
+
 class WireBot(BaseModel):
+    toolbox: Optional[Toolbox] = None
+    owner: Optional[str] = None
+    inline: bool = False
+    ephemeral: bool = False
+    ephemeralRoot: Optional[str] = None
+    specialistId: Optional[str] = None
+    maxSteps: Optional[int] = None
     createdAt: Optional[int] = None
     updatedAt: Optional[int] = None
     id: str
@@ -145,6 +158,7 @@ class CreateBot(BaseModel):
 
 
 class PatchBot(BaseModel):
+    toolbox: Optional[Toolbox] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     title: Optional[str] = None
     description: Optional[str] = None
@@ -304,6 +318,7 @@ class WireGroup(BaseModel):
     leader: Optional[str] = None
     instructions: str = ""
     cwd: Optional[str] = None
+    maxHandoffs: int = Field(default=2, ge=0, le=50)
     responder: Responder = "leader"
     section: Optional[str] = None
     pinned: bool = False
@@ -328,6 +343,7 @@ class CreateGroup(BaseModel):
 
 
 class PatchGroup(BaseModel):
+    maxHandoffs: int = Field(default=2, ge=0, le=50)
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     members: Optional[list[str]] = None
     leader: Optional[str] = None
@@ -338,6 +354,7 @@ class PatchGroup(BaseModel):
     pinned: Optional[bool] = None
     hidden: Optional[bool] = None
     unread: Optional[bool] = None
+    threadId: Optional[str] = None  # the conversation the room shows: its main one or one of its tasks
 
 
 class GroupMessage(BaseModel):

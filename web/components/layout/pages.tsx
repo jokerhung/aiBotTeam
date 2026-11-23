@@ -8,6 +8,7 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ConnectedApps } from "../ConnectedApps";
 import { InputChannels } from "../InputChannels";
+import { GroupActionsButton } from "../BotContextMenu";
 import { InboxPanel } from "../NotificationsPanel";
 import { UsagePage } from "../Observe";
 import { SkillEditor } from "../SkillsSection";
@@ -78,14 +79,21 @@ export function ProjectsPage() {
           <h2 className="mb-2 text-[12px] font-medium text-ink-tertiary">{t("Rooms")}</h2>
           <div className="grid gap-2 md:grid-cols-2" data-testid="projects-list">
             {groups.map((g) => (
-              <button key={g.id} type="button" data-testid="project-card" onClick={() => dispatch({ type: "selectGroup", id: g.id })} className={card}>
+              <article key={g.id} data-testid="project-card" className="group relative flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 ring-1 ring-ink/[0.06] hover:bg-raised">
+                <button type="button" aria-label={`${t("Open")}: ${g.name}`} onClick={() => dispatch({ type: "selectGroup", id: g.id })} className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-accent" />
                 {badge()}
-                <span className="min-w-0 flex-1">
+                <span className="pointer-events-none min-w-0 flex-1">
                   <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{g.name}</span>
                   <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{g.memberInfo.map((m) => m.name).join(", ") || "—"}</span>
                 </span>
-                {g.unread && <span aria-label={t("Unread")} className="size-2 shrink-0 rounded-full bg-accent" />}
-              </button>
+                {g.unread && <span aria-label={t("Unread")} className="pointer-events-none size-2 shrink-0 rounded-full bg-accent" />}
+                <span className="relative flex shrink-0 items-center gap-1">
+                  <button type="button" data-testid="edit-team" title={t("Edit team")} aria-label={`${t("Edit team")}: ${g.name}`}
+                    onClick={() => { dispatch({ type: "selectGroup", id: g.id }); dispatch({ type: "groupPanel", id: g.id }); }}
+                    className="flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink"><Pencil size={14} /></button>
+                  <GroupActionsButton group={g} />
+                </span>
+              </article>
             ))}
           </div>
         </>

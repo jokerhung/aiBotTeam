@@ -38,6 +38,9 @@ export interface RequestInfo {
   source?: "user" | "auto" | "rule" | "expired" | "unavailable" | "system" | "team" | null;
   answer?: string | null;
   answeredBy?: string | null;
+  by?: string | null;
+  instructions?: string | null;
+  threadId?: string | null;
 }
 
 export interface Attachment {
@@ -96,7 +99,31 @@ export interface Task {
   main: boolean;
 }
 
+export type HandBack = "sync" | "async" | "auto";
+export type SharedCapability = "web" | "computer" | "memory" | "skills" | "apps";
+export interface Specialist {
+  id: string; name: string; description: string; instructions: string; maxSteps: number;
+  modelSelection?: ModelSelection | null; handBack?: HandBack | null;
+  capabilities: SharedCapability[]; knowledge: string[]; skills: string[]; botId?: string | null;
+}
+export interface ToolboxSettings {
+  subagents: { enabled: boolean; allowAnyAgent: boolean; delegates: { bot: string; handBack?: HandBack | null }[];
+    inline: Specialist[]; allowDynamic: boolean; mode: HandBack; allowQuestions: boolean;
+    maxDepth: number; maxFanout: number; maxResultChars: number; maxWaitSeconds: number; shareWithDelegates: SharedCapability[] };
+  web: { enabled: boolean; headed: boolean; allowLocal: boolean; idleSeconds: number };
+  computer: { enabled: boolean; resolution: [number, number]; idleSeconds: number; allowCommands: boolean };
+}
+export const DEFAULT_TOOLBOX: ToolboxSettings = {
+  subagents: { enabled: false, allowAnyAgent: false, delegates: [], inline: [], allowDynamic: false, mode: "async", allowQuestions: false, maxDepth: 2, maxFanout: 3, maxResultChars: 4000, maxWaitSeconds: 300, shareWithDelegates: [] },
+  web: { enabled: true, headed: false, allowLocal: false, idleSeconds: 900 },
+  computer: { enabled: false, resolution: [1280, 800], idleSeconds: 600, allowCommands: false },
+};
+
 export interface Bot {
+  toolbox?: ToolboxSettings | null;
+  inline?: boolean;
+  ephemeral?: boolean;
+  owner?: string | null;
   createdAt?: number | null;
   updatedAt?: number | null;
   id: string;
@@ -151,6 +178,7 @@ export interface Group {
   leader: string | null;
   instructions: string;
   cwd: string | null;
+  maxHandoffs?: number;
   responder: Responder;
   section: string | null;
   pinned: boolean;
@@ -323,7 +351,7 @@ export interface Message {
   sender?: string | null;
   author?: string | null;
   mentions?: string[];
-  threadRef?: { botId: string; bot: string; threadId?: string | null; assignmentId?: string } | null;
+  threadRef?: { botId: string; bot: string; threadId?: string | null; assignmentId?: string; parentAssignment?: string; rootAssignment?: string; ephemeral?: boolean } | null;
   channelBatchId?: string | null;
   routine?: { id: string; name: string; schedule: string; enabled: boolean; webhook?: boolean } | null;
 }

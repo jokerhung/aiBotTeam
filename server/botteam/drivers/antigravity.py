@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..approval import antigravity_mode
-from .base import Capabilities, Emitter, SendTurnInput, new_turn_id, preview
+from .base import Capabilities, Emitter, SendTurnInput, new_turn_id, preview, toolbox_signature
 from .proc import kill_tree, spawn
 
 AUTH_FAILURE = re.compile(r"sign in|log ?in|authenticat|unauthori[sz]ed|credentials", re.I)
@@ -63,6 +63,7 @@ class Session:
     servers: tuple = ()  # names of the MCP servers given to the session, as the agent sees them
     acp_id: Optional[str] = None  # the agent's session id (our resume cursor)
     turn_id: Optional[str] = None
+    toolbox_signature: str = ""
     settled: bool = True
     stop_requested: bool = False
     explained: bool = False
@@ -80,7 +81,7 @@ class Session:
 class AntigravityDriver(Emitter):
     provider = "antigravity"
     engine_caps = {"edits": True, "nativeReviewer": False, "agentsMcp": True, "resume": True}
-    capabilities = Capabilities(sessionModelSwitch="in-session", images=True, effortLevels=[], strictResume=False)
+    capabilities = Capabilities(sessionModelSwitch="in-session", images=True, mcpImages=True, effortLevels=[], strictResume=False)
 
     def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None, broker=None) -> None:
         super().__init__()
@@ -96,7 +97,7 @@ class AntigravityDriver(Emitter):
         model = None if inp.model in (None, "", "default") else inp.model
         mcp = tuple(sorted(inp.custom_mcp)) + (("bt",) if inp.mount_agents else ())
         s = self.sessions.get(inp.thread_id)
-        if s and (inp.session_reset or s.proc.returncode is not None or s.mode != inp.approval_mode or s.cwd != cwd or s.mcp != mcp):
+        if s and (s.toolbox_signature != toolbox_signature(inp) or inp.session_reset or s.proc.returncode is not None or s.mode != inp.approval_mode or s.cwd != cwd or s.mcp != mcp):
             await self._close(inp.thread_id)
             s = None
         self.emit("turn.started", inp.thread_id, turn_id)
@@ -120,7 +121,7 @@ class AntigravityDriver(Emitter):
             return turn_id
         s.turn_id, s.settled, s.explained, s.stop_requested, s.text, s.started, s.asked = turn_id, False, False, False, "", set(), set()
         prompt = inp.text
-        if inp.system and not inp.resume_cursor:  # a resumed session already has it
+        if inp.system:  # a resumed session already has it
             prompt = f"{inp.system}\n\n---\n\n{inp.text}"
         others = [p for p in inp.attachments if p not in inp.image_attachments]
         if others:
@@ -219,13 +220,14 @@ class AntigravityDriver(Emitter):
         if inp.mount_agents and self.broker is not None and self.broker.port:  # the team tools, as the Claude driver mounts them
             server_dir = str(__import__("pathlib").Path(__file__).resolve().parents[2])
             entries["bt"] = {"command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
-                             "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_BROKER_PORT": str(self.broker.port),
-                                     "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id}}
+                             "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_ASK_USER": "1" if inp.allow_questions else "0", **({"BT_TOOLS": json.dumps(inp.allowed_tools)} if inp.allowed_tools is not None else {}), "BT_BROKER_PORT": str(self.broker.port),
+                                     "BT_BROKER_TOKEN": self.broker.token_for(inp.thread_id) if hasattr(self.broker, "token_for") else self.broker.token, "BT_THREAD_ID": inp.thread_id}}
         return acp_mcp_servers(entries)
 
     async def _start(self, inp: SendTurnInput, cwd: str, model: Optional[str], mcp: tuple) -> Session:
         proc = await spawn(self._args(inp), cwd=cwd, env=self._env())
         s = Session(proc=proc, cwd=cwd, mode=inp.approval_mode, model=None, effort=None, mcp=mcp)
+        s.toolbox_signature = toolbox_signature(inp)
         self.sessions[inp.thread_id] = s
         s.tasks = [asyncio.create_task(self._read(inp.thread_id, s)), asyncio.create_task(self._drain_stderr(s))]
         await self._request(s, "initialize", {"protocolVersion": 1, "clientCapabilities": {}, "clientInfo": {"name": "botteam", "version": "0.3.0"}})

@@ -4,22 +4,24 @@ import { useState, type ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Bot } from "@/lib/wire";
+import type { Bot, Group } from "@/lib/wire";
 import { api } from "@/state/api";
 
 const FLOAT_PILL =
   "bg-composer ring-[0.5px] ring-ink/10 shadow-(--shadow-float) transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--color-composer),var(--color-ink)_7%)]";
 
-/** The header pill: the bot's face and name; opens the bot's conversations (its main chat and its tasks). */
-export function TaskMenu({ bot, face }: { bot: Bot; face: ReactNode }) {
+/** The header pill: the face and name of a bot or a team; opens its conversations (the main one and the others), to switch, rename, pin, close, delete or start one. */
+export function TaskMenu({ bot, group, face }: { bot?: Bot; group?: Group; face: ReactNode }) {
+  const owner = (bot ?? group) as Bot | Group;
+  const base = bot ? `/api/bots/${owner.id}` : `/api/groups/${owner.id}`;
   const [open, setOpen] = useState(false);
-  const active = bot.tasks.find((t) => t.threadId === bot.threadId);
+  const active = owner.tasks.find((t) => t.threadId === owner.threadId);
   const away = active && !active.main;
   const go = (threadId: string) => {
-    void api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ threadId }) });
+    void api(`${base}`, { method: "PATCH", body: JSON.stringify({ threadId }) });
     setOpen(false);
   };
-  const tasks = bot.tasks.filter((t) => !t.closed);
+  const tasks = owner.tasks.filter((t) => !t.closed);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -27,14 +29,14 @@ export function TaskMenu({ bot, face }: { bot: Bot; face: ReactNode }) {
         className={cn("group flex min-w-0 max-w-full items-center gap-2 rounded-full py-[7.5px] pl-[7.5px] pr-[13.5px] text-ink", FLOAT_PILL)}
       >
         {face}
-        <span dir="auto" data-no-i18n="" className="min-w-0 truncate text-[14px] font-medium leading-5">{bot.name}</span>
+        <span dir="auto" data-no-i18n="" className="min-w-0 truncate text-[14px] font-medium leading-5">{owner.name}</span>
         {away && <span className="min-w-0 max-w-[10rem] truncate text-[13px] text-ink-secondary">· {active.title || "New task"}</span>}
         <ChevronRight size={14} className={cn("-ml-0.5 shrink-0 text-ink-secondary transition-transform", open && "rotate-90")} />
       </PopoverTrigger>
       <PopoverContent align="center" className="w-[320px] gap-0 rounded-xl bg-menu p-1.5 text-ink ring-1 ring-ink/10">
         <div className="px-2.5 pb-1 pt-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">Conversations</div>
         {tasks.map((t) => (
-          <div key={t.threadId} className={cn("group/row flex items-center gap-1 rounded-md pr-1 hover:bg-menu-hover", t.threadId === bot.threadId && "bg-ink/[0.05]")}>
+          <div key={t.threadId} className={cn("group/row flex items-center gap-1 rounded-md pr-1 hover:bg-menu-hover", t.threadId === owner.threadId && "bg-ink/[0.05]")}>
             <button type="button" onClick={() => go(t.threadId)} className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-[14px]">
               <MessageSquare size={14} className="shrink-0 text-ink-secondary" />
               <span className="min-w-0 flex-1 truncate">{t.main ? "Main conversation" : t.title || "New task"}</span>
@@ -43,20 +45,20 @@ export function TaskMenu({ bot, face }: { bot: Bot; face: ReactNode }) {
             </button>
             {!t.main && (
               <span className="flex opacity-0 transition-opacity group-hover/row:opacity-100 touch:opacity-100">
-                <RowButton title={t.pinned ? "Unpin" : "Pin"} onClick={() => api(`/api/bots/${bot.id}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ pinned: !t.pinned }) })}>
+                <RowButton title={t.pinned ? "Unpin" : "Pin"} onClick={() => api(`${base}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ pinned: !t.pinned }) })}>
                   {t.pinned ? <PinOff size={13} /> : <Pin size={13} />}
                 </RowButton>
                 <RowButton title="Rename" onClick={() => {
                   const title = window.prompt(tr("Rename task"), t.title);
-                  if (title?.trim()) void api(`/api/bots/${bot.id}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ title: title.trim() }) });
+                  if (title?.trim()) void api(`${base}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ title: title.trim() }) });
                 }}>
                   <Pencil size={13} />
                 </RowButton>
-                <RowButton title="Close" onClick={() => api(`/api/bots/${bot.id}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ closed: true }) })}>
+                <RowButton title="Close" onClick={() => api(`${base}/tasks/${t.threadId}`, { method: "PATCH", body: JSON.stringify({ closed: true }) })}>
                   <X size={13} />
                 </RowButton>
                 <RowButton title="Delete" danger onClick={() => {
-                  if (window.confirm(`Delete "${t.title || "this task"}"?`)) void api(`/api/bots/${bot.id}/tasks/${t.threadId}`, { method: "DELETE" });
+                  if (window.confirm(`Delete "${t.title || "this task"}"?`)) void api(`${base}/tasks/${t.threadId}`, { method: "DELETE" });
                 }}>
                   <Trash2 size={13} />
                 </RowButton>
@@ -68,7 +70,7 @@ export function TaskMenu({ bot, face }: { bot: Bot; face: ReactNode }) {
         <button
           type="button"
           onClick={async () => {
-            await api(`/api/bots/${bot.id}/tasks`, { method: "POST", body: JSON.stringify({}) });
+            await api(`${base}/tasks`, { method: "POST", body: JSON.stringify({}) });
             setOpen(false);
           }}
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[14px] hover:bg-menu-hover"

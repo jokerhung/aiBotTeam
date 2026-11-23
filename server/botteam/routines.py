@@ -163,7 +163,7 @@ class RoutineService:
     # ---- definitions ----------------------------------------------------------------------------------------------
     async def create(self, *, target_kind: str, target_id: str, name: str, prompt: str, kind: str, every_min: Optional[int] = None, at: Optional[str] = None,
                      days: Optional[list[int]] = None, run_at: Optional[int] = None, tz: Optional[str] = None, max_run_min: Optional[int] = None,
-                     created_by: str = "person") -> dict:
+                     created_by: str = "person", enabled: bool = True) -> dict:
         kind = normalize_kind(kind)
         why = valid_schedule(kind, every_min, at, days, run_at, tz)
         if why:
@@ -173,7 +173,7 @@ class RoutineService:
         now = now_ms()
         nxt = next_run_after(kind, every_min, at, now, days=days, tz=tz, anchor_ms=now, run_at=run_at)
         r = await self.store.create_routine(target_kind, target_id, (name or prompt)[:60], prompt, kind, every_min, at, days if kind == "weekly" else None, run_at, tz or "UTC",
-                                            nxt, now, max_run_min, created_by)
+                                            nxt, now, max_run_min, created_by, enabled=enabled)
         await self.publish(r["id"])
         return r
 
@@ -342,7 +342,7 @@ class RoutineService:
             if action == "create":
                 r = await self.create(target_kind="bot", target_id=run.bot_id, name=str(args.get("name") or ""), prompt=str(args.get("prompt") or ""),
                                       kind=str(args.get("kind") or "interval"), every_min=args.get("every_min"), at=args.get("at"), days=args.get("days"),
-                                      run_at=args.get("run_at"), tz=args.get("timezone"), created_by="bot")
+                                      run_at=args.get("run_at"), tz=args.get("timezone"), created_by="bot", enabled=args.get("enabled") is not False)
                 await self._card(thread_id, run.bot_id, r)
                 return {"ok": True, "id": r["id"], "schedule": describe(r), "note": "Created. The person sees a card in this chat with Edit, Pause and Undo."}
             rid = str(args.get("id") or "")

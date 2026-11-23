@@ -98,10 +98,9 @@ async def test_text_from_a_tool_or_a_page_cannot_answer_a_card(ctx):
 async def test_a_page_a_bot_reads_is_marked_as_a_stranger_and_changes_no_setting(ctx):
     c, app = ctx
     bot = await make_bot(c, "Browser")
-    r = await app.state.agents.call(bot["threadId"], "browser_snapshot", {})
-    assert r["ok"] is False  # nothing is open: the typed reason, never an exception
-    assert "stranger" in app.state.agents.PAGE_NOTE and "approval" in app.state.agents.PAGE_NOTE
-    # a browser address is checked the way an import is: this app's own API is not reachable through a bot
+    # No active turn can discover or call the browser relay. The old bespoke tools are absent.
+    result = await app.state.browser_mcp.request(bot["threadId"], "tools/list", {})
+    assert result["result"]["isError"]
     assert app.state.browser.allow_local is False
     out = await app.state.agents.call(bot["threadId"], "browser_open", {"url": "http://127.0.0.1:8899/api/config"})
-    assert out["ok"] is False and out["reason"] == "browser"
+    assert not out["ok"] and out["reason"] == "unknown_tool"

@@ -21,6 +21,7 @@
 
 .PARAMETER Dir        Where to clone the repository when the script is not inside one (default: $HOME\aiBotTeam).
 .PARAMETER RepoUrl    The repository to clone.
+.PARAMETER Computer   Install optional Computer SDKs (Python 3.11+). Host provisioning remains manual.
 .PARAMETER Browser    Also download Playwright's Chromium (about 150 MB).
 .PARAMETER Claude     Also install the Claude Code CLI (npm package @anthropic-ai/claude-code). You still sign in yourself: run `claude` once.
 .PARAMETER Codex      Also install the Codex CLI (npm package @openai/codex). You still sign in yourself: run `codex login`.
@@ -33,6 +34,7 @@ param(
   [string]$Dir = (Join-Path $HOME "aiBotTeam"),
   [string]$RepoUrl = "https://github.com/jokerhung/aiBotTeam",
   [switch]$Browser,
+  [switch]$Computer,
   [switch]$Claude,
   [switch]$Codex,
   [switch]$Antigravity,
@@ -202,7 +204,11 @@ Say "Installing the web dependencies (pnpm install)"
 Run "pnpm install --frozen-lockfile" { pnpm install --frozen-lockfile }
 
 Say "Installing the server dependencies (uv sync)"
-Run "uv sync --project server" { uv sync --project server }
+if ($Computer) {
+  Run "uv sync --project server --python 3.12 --extra computer" { uv sync --project server --python 3.12 --extra computer }
+} else {
+  Run "uv sync --project server" { uv sync --project server }
+}
 
 if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
   Say "Creating .env from .env.example"
@@ -255,6 +261,7 @@ elseif ($DryRun -and $Antigravity) { Write-Host "    Antigravity CLI would be in
 else { Write-Host "    Antigravity CLI (agy) not found: optional. Run this script again with -Antigravity to install it, then sign in once with:  agy" -ForegroundColor DarkGray }
 
 Write-Host ""
+Write-Host "  Computer use is optional: install.ps1 -Computer, then follow docs/e2b-setup.en.md or docs/opensandbox-setup.en.md."
 Write-Host "BotTeam is installed in $root" -ForegroundColor Green
 Write-Host "  Start it for development (API, web, Zalo service):   .\start.bat        (frees the ports first, then runs pnpm dev)"
 Write-Host "  Start it as one program (needs the web build):       pnpm start:one        (API + web build + Zalo service)"

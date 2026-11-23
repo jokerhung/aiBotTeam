@@ -119,7 +119,7 @@ async def test_client_disconnect_resolves_unavailable(tmp_path):
     b, opened, resolved = make_broker(tmp_path)
     port = await b.start()
     r, w = await asyncio.open_connection("127.0.0.1", port)
-    w.write((json.dumps({"t": "hello", "token": b.token, "thread": "th"}) + "\n").encode())
+    w.write((json.dumps({"t": "hello", "token": b.token_for("th"), "thread": "th"}) + "\n").encode())
     w.write((json.dumps({"t": "ask", "id": "c1", "tool": "Bash", "input": {"command": "mkdir x"}}) + "\n").encode())
     await w.drain()
     for _ in range(50):
@@ -152,7 +152,7 @@ async def test_socket_roundtrip(tmp_path):
     b, opened, _ = make_broker(tmp_path)
     port = await b.start()
     r, w = await asyncio.open_connection("127.0.0.1", port)
-    w.write((json.dumps({"t": "hello", "token": b.token, "thread": "th"}) + "\n").encode())
+    w.write((json.dumps({"t": "hello", "token": b.token_for("th"), "thread": "th"}) + "\n").encode())
     w.write((json.dumps({"t": "ask", "id": "s1", "tool": "Bash", "input": {"command": "mkdir x"}}) + "\n").encode())
     await w.drain()
     for _ in range(50):

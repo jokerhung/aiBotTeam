@@ -39,6 +39,7 @@ export function AgentActions({ bot, edit = false, onColor }: { bot: Bot; edit?: 
       {[
         ["Open in chat", () => dispatch({ type: "select", id: bot.id })],
         ["Duplicate", () => void run(async () => { const b = await api<Bot>(`/api/bots/${bot.id}/duplicate`, { method: "POST" }); dispatch({ type: "frame", frame: { kind: "bot", bot: b } }); dispatch({ type: "openAgent", id: b.id }); })],
+        ["Duplicate with delegates", () => void run(async () => { const b = await api<Bot>(`/api/bots/${bot.id}/duplicate?withDelegates=true`, { method: "POST" }); dispatch({ type: "frame", frame: { kind: "bot", bot: b } }); dispatch({ type: "openAgent", id: b.id }); })],
         ["Export bot file", () => void run(() => exportBotFile(bot))],
         ...(onColor ? [["Change mascot color", onColor]] : []),
         [bot.hidden ? "Restore" : "Archive", () => { setConfirm("archive"); setOpen(false); }],

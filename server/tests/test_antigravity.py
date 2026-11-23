@@ -98,7 +98,7 @@ async def test_model_system_resume_and_missing_session(log):
     await d.send_turn(inp("hello", resume_cursor="S-1", system="BE BRIEF"))
     await c.until("turn.completed")
     assert any(m.get("method") == "session/resume" for m in log())
-    assert [m for m in log() if m.get("method") == "session/prompt"][-1]["params"]["prompt"][0]["text"] == "hello"  # a resumed session already has the system prompt
+    assert [m for m in log() if m.get("method") == "session/prompt"][-1]["params"]["prompt"][0]["text"] == "BE BRIEF\n\n---\n\nhello"  # the system prompt goes with every turn: what the Toolbox adds to it can change between turns
     await d.stop_all()
     c.events.clear()
     await d.send_turn(inp("hello", resume_cursor="gone"))

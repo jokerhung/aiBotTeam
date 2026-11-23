@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { tr, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Bot, Section } from "@/lib/wire";
+import type { Bot, Group, Section } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { exportBotFile } from "./BotFile";
@@ -107,6 +107,74 @@ export function BotActionsButton({ bot, className }: { bot: Bot; className?: str
       <DropdownMenuTrigger
         aria-label={`Actions for ${bot.name}`}
         title={`Actions for ${bot.name}`}
+        className={cn("flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink aria-expanded:bg-ink/10", className)}
+      >
+        <MoreHorizontal size={16} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className={MENU}>
+        {entries.map((e, i) =>
+          e === "sep" ? (
+            <DropdownMenuSeparator key={`s${i}`} className="mx-1.5 my-0" />
+          ) : (
+            <DropdownMenuItem key={e.key} className={cn(ITEM, e.danger && "text-danger focus:text-danger")} onClick={e.run}>
+              <e.icon />
+              {e.label}
+            </DropdownMenuItem>
+          ),
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** What a team's row and card offer, like an agent's: pin, move between sections, read state, edit, copy the conversation id, delete. */
+export function useGroupMenu(group: Group): Entry[] {
+  const { state, dispatch } = useStore();
+  const t = useT();
+  const patchGroup = (body: object) => void api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(body) });
+  return [
+    { key: "pin", label: t(group.pinned ? "Unpin" : "Pin"), icon: group.pinned ? PinOff : Pin, run: () => patchGroup({ pinned: !group.pinned }) },
+    ...state.sections.filter((x) => x.id !== group.section).map((x): Entry => ({ key: `to-${x.id}`, label: `Move to ${x.name}`, icon: FolderPlus, run: () => patchGroup({ section: x.id }) })),
+    ...(group.section ? [{ key: "unsection", label: "Remove from section", icon: FolderPlus, run: () => patchGroup({ section: null }) } as Entry] : []),
+    { key: "unread", label: t(group.unread ? "Mark as Read" : "Mark as Unread"), icon: BellDot, run: () => patchGroup({ unread: !group.unread }) },
+    "sep",
+    { key: "edit", label: t("Edit team"), icon: Pencil, run: () => { dispatch({ type: "selectGroup", id: group.id }); dispatch({ type: "groupPanel", id: group.id }); } },
+    { key: "copy", label: t("Copy conversation ID"), icon: Copy, run: () => void navigator.clipboard?.writeText(group.threadId) },
+    "sep",
+    { key: "delete", label: t("Delete"), icon: Trash2, danger: true, run: () => { if (window.confirm(tr(`Delete the room “${group.name}”? The bots stay.`))) void api(`/api/groups/${group.id}`, { method: "DELETE" }); } },
+  ];
+}
+
+export function GroupContextMenu({ group, children }: { group: Group; children: ReactNode }) {
+  const entries = useGroupMenu(group);
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={<div />}>{children}</ContextMenuTrigger>
+      <ContextMenuContent className={MENU}>
+        {entries.map((e, i) =>
+          e === "sep" ? (
+            <ContextMenuSeparator key={`s${i}`} className="mx-1.5 my-0" />
+          ) : (
+            <ContextMenuItem key={e.key} className={cn(ITEM, e.danger && "text-danger focus:text-danger")} onClick={e.run}>
+              <e.icon />
+              {e.label}
+            </ContextMenuItem>
+          ),
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** The same menu behind the "Actions for {team}" button. */
+export function GroupActionsButton({ group, className }: { group: Group; className?: string }) {
+  const entries = useGroupMenu(group);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Actions for ${group.name}`}
+        title={`Actions for ${group.name}`}
+        data-testid="team-actions"
         className={cn("flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink aria-expanded:bg-ink/10", className)}
       >
         <MoreHorizontal size={16} />

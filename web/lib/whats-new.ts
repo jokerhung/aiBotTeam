@@ -2,6 +2,7 @@
 export interface Release { id: string; date: string; title: string; items: string[] }
 
 export const RELEASES: readonly Release[] = [
+  { id: "2026-11-toolbox", date: "2026-11-22", title: "Choose each agent's capabilities", items: ["Configure Subagents, Web browser and Computer use in Toolbox.", "New agents start with Web browser on and Subagents off. Existing collaborating bots keep delegation through a one-time migration; review their delegates in Agents.", "Create a five-agent Social media team or duplicate an agent with its delegates.", "Connect an isolated desktop host in Settings ? Computer host."] },
   {
     id: "2026-11-extensions",
     date: "2026-11-11",

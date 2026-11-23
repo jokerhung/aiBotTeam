@@ -1,6 +1,6 @@
 import type { Bot } from "./wire";
 
-export const EDITABLE_FIELDS = ["name", "title", "description", "soul", "color", "section", "modelSelection", "fallbackSelection", "approvalMode", "cwd", "notifications", "reportsTo", "chief", "managedSections", "skills", "memory", "mcpServers", "mcpAccess"] as const;
+export const EDITABLE_FIELDS = ["name", "title", "description", "soul", "color", "section", "modelSelection", "fallbackSelection", "approvalMode", "cwd", "notifications", "reportsTo", "chief", "managedSections", "skills", "memory", "mcpServers", "mcpAccess", "toolbox"] as const;
 export function agentValues(bot: Bot): Partial<Bot> {
   return Object.fromEntries(EDITABLE_FIELDS.map((key) => [key, bot[key]]));
 }
@@ -9,7 +9,7 @@ export function agentChanges(base: Bot, draft: Bot): Partial<Bot> {
 }
 export function filterAgents(bots: Bot[], search: string, status: string, section: string) {
   const term = search.toLocaleLowerCase().trim();
-  return bots.filter((b) => !b.admin && (status === "all" || b.hidden === (status === "archived")) && (!section || b.section === section) && `${b.name} ${b.title} ${b.description}`.toLocaleLowerCase().includes(term));
+  return bots.filter((b) => !b.admin && !b.inline && !b.ephemeral && (status === "all" || b.hidden === (status === "archived")) && (!section || b.section === section) && `${b.name} ${b.title} ${b.description}`.toLocaleLowerCase().includes(term));
 }
 export const agentHandle = (name: string) => name.trim().toLocaleLowerCase().replace(/\s+/g, "-");
 

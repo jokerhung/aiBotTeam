@@ -13,4 +13,6 @@ def load_templates() -> list[dict]:
                      "description": meta["description"], "industry": meta["industry"],
                      "instructions": body.split("<!-- Source:")[0].strip()})
     rows.extend({**p, "id": f"general--{p['id']}", "industry": "general"} for p in BUILTIN_PRESETS)
+    from .team_templates import TEMPLATE
+    rows.append(TEMPLATE)
     return rows

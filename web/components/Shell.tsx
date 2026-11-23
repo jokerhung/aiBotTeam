@@ -1,4 +1,5 @@
 "use client";
+import { ToolboxMigrationNotice } from "./ToolboxMigrationNotice";
 import { Loader2 } from "lucide-react";
 import { useStore } from "@/state/store";
 import type { Bot, Group } from "@/lib/wire";
@@ -144,7 +145,7 @@ export function Shell() {
       <TranscriptAnnouncer />
       <WelcomeGate />
       <GuidedTour />
-      <WhatsNew />
+      <WhatsNew /><ToolboxMigrationNotice />
       <NewGroupDialog />
       <PairBrowser />
       <ShareTeamDialog />

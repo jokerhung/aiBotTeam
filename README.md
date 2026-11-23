@@ -174,8 +174,26 @@ Your data lives in `~/.botteam` (change it with `BOTTEAM_DATA_DIR`). Back it up 
 
 ---
 
+## Toolbox capabilities
+
+Each agent has its own Toolbox. New agents start with Web browser on, Subagents off and Computer use off. Save capability changes with the agent editor's **Save** button. Existing collaborating bots are migrated once after a backup; the app lists affected agents so you can review their delegates.
+
+Subagents supports explicit delegates, synchronous/background hand-back, bounded depth and concurrency, inline specialists and approved temporary specialists. Unattended routines, webhooks and channels use explicitly declared delegates. **Social media team** in Templates creates Master plus four delegates. **Duplicate with delegates** creates a separate team with fresh workspaces.
+
+Web browser uses a private profile and Playwright MCP **0.0.86** through Node.js/npx. Edge, Chrome or Playwright Chromium is required (`install.ps1 -Browser` / `install.sh --browser`). Browser settings control a visible window, local-network access and idle shutdown. Browser profiles and saved sign-ins are excluded from backups and exports. The chat panel provides Browser/Computer tabs and Take control / Give it back.
+
+Computer use is optional: Python **3.11+**, `uv sync --project server --extra computer`, or `install.ps1 -Computer` / `install.sh --computer`. In **Settings > Computer host**, configure E2B Cloud/Embed or OpenSandbox and test the connection before enabling Computer use. The installer adds SDKs; you provision the host yourself. Setup: [E2B English](docs/e2b-setup.en.md), [E2B Vietnamese](docs/e2b-setup.vi.md), [OpenSandbox English](docs/opensandbox-setup.en.md), [OpenSandbox Vietnamese](docs/opensandbox-setup.vi.md). API keys remain on the server. Desktop streams pass through BotTeam; no provider credentials reach the browser. Checks are recorded in [Toolbox verification](docs/verification/toolbox-port.md).
+
+---
+
 ## 📄 License
 
 BotTeam does not have its own license file yet. Third-party notices are in [NOTICE](NOTICE).
 
 - Repository: <https://github.com/jokerhung/aiBotTeam>
+
+Project settings include **Maximum automatic handoffs** (0-50 levels after a person sends a message; default 2). Raise it for longer collaboration or use 0 to disable automatic handoffs. Each room transcript entry retains up to 20,000 characters for handoffs.
+
+Social media workflow: Creator saves the final Markdown caption and image files, then Scheduler creates a disabled `[DRAFT]` routine with the full caption and verified image paths (`trigger` with `enabled=false`). The person reviews and enables the job in Routines. Team instructions prohibit bots from enabling or running these drafts themselves.
+
+When an agent opens its Browser or Computer, chat and project conversations show a compact live preview automatically. Expand the preview for a larger screen, choose **Take over** to send mouse/keyboard input, and **Give it back** to let the agent continue. Browser frames stream only while the preview is watched; Computer uses the existing view-only noVNC stream with separate authorized input.

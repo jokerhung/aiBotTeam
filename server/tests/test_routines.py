@@ -266,3 +266,22 @@ async def test_phase3_routines_are_migrated(tmp_path):
             rows = (await c.get("/api/routines")).json()["routines"]
             assert [(r["id"], r["kind"], r["at"], r["days"], r["targetId"]) for r in rows] == [("rt_old", "weekly", "09:15", list(range(7)), "bot_x")]
             assert rows[0]["schedule"] == "Daily at 09:15"
+
+
+async def test_bot_can_create_disabled_post_draft(ctx):
+    from types import SimpleNamespace
+    client, app = ctx
+    bot = await make_bot(client, "Scheduler")
+    thread = bot["threadId"]
+    app.state.turns.runs[thread] = SimpleNamespace(bot_id=bot["id"])
+    prompt = "Caption: Final post text\nImages: C:/posts/post-1.png\nSource: C:/posts/post-1.md\nRequires user review."
+    try:
+        result = await app.state.routines.tool_trigger(thread, {"action": "create", "enabled": False, "name": "[DRAFT] post-1", "prompt": prompt, "kind": "weekly", "days": [0], "at": "12:00", "timezone": "Asia/Bangkok"})
+        assert result["ok"], result
+        saved = await app.state.store.get_routine(result["id"])
+        assert saved["enabled"] is False
+        assert saved["prompt"] == prompt
+        assert saved["createdBy"] == "bot"
+        assert not await app.state.store.list_runs(routine_id=result["id"])
+    finally:
+        app.state.turns.runs.pop(thread, None)

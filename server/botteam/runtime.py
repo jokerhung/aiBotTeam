@@ -121,8 +121,11 @@ class Runtime:
         if self._loop_task:
             self._loop_task.cancel()
             self._loop_task = None
-        for t in list(self.tasks.values()):
+        active = list(self.tasks.values())
+        for t in active:
             t.cancel()
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
         if getattr(self, "_closed", False):
             return
         self._closed = True
@@ -284,6 +287,11 @@ class Runtime:
             return self._refuse(bot_id, "parent_not_running", f"the requesting turn is {parent['status']}")
         if not self.host.bot_name(bot_id):
             return self._refuse(bot_id, "unknown_bot", "no such bot; list_bots shows the team")
+        policy = getattr(self.host, "delegation_policy", None)
+        if policy and not own_thread:
+            denied = await policy(parent, bot_id)
+            if denied:
+                return {**denied, "bot": bot_id}
         # a tree: never hand work back to an ancestor (a direct conversation may open a new thread of its own bot)
         chain = [parent]
         while chain[-1]["parent_id"]:
@@ -323,7 +331,7 @@ class Runtime:
             (aid, parent["root_id"], parent["id"], depth, parent["origin"], json.dumps(requester), bot_id, tid, mode, reply, "queued", None, None,
              level, source, 0, 0, message.strip(), h, done_when, None, "{}", int(rework), 0, 0, 0, 0, 0, None, int(own_thread), t, t))
         await self._event(aid, "enqueued", "queued", by=parent["id"], level=level)
-        if reply != "none":
+        if reply in ("resume", "poll"):
             await self.db.execute("UPDATE assignments SET children_since_turn=children_since_turn+1 WHERE id=?", (parent["id"],))
         await self._bump(parent["root_id"], "requests")
         await self.db.commit()
@@ -424,6 +432,8 @@ class Runtime:
         who = self._who(req)
         if kind == "resume":
             kids = await self.children(a["id"])
+            limit_for = getattr(self.host, "result_limit", None)
+            limit = await limit_for(a["assignee_bot"]) if limit_for else 4000
             lines = []
             for k in kids:
                 if k["reply"] == "none":
@@ -431,7 +441,13 @@ class Runtime:
                 name = self.host.bot_name(k["assignee_bot"])
                 outcome = k["outcome"] or k["status"]
                 seen = f" (observed: {'it acted with tools' if k['evidence'].get('acted') else 'it did not use tools'})"
-                lines.append(f"- @{name} [{k['id']}] {outcome}{seen}: {escape_notes((k['result'] or k['outcome_detail'] or '').strip())[:1500]}")
+                result = (k["result"] or k["outcome_detail"] or "").strip()
+                excerpt = escape_notes(result[:limit])
+                if len(result) > limit:
+                    excerpt += (f"\n[Report truncated: {len(result)} characters; showing {limit}. "
+                                f"Read the FULL result with assignment_status(id='{k['id']}') before making decisions. "
+                                "The missing text is saved; do not ask the teammate to redo the work.]")
+                lines.append(f"- @{name} [{k['id']}] {outcome}{seen}: {excerpt}")
             cut = "\nYour earlier turn was cut by a restart; check what you already did.\n" if a["cut"] else "\n"
             body = ("Your teammates have reported. Check claims against what was observed; redo only what the evidence does not cover.\n"
                     + "\n".join(lines) + cut + "Now finish the work for the person who asked.")
@@ -475,6 +491,8 @@ class Runtime:
             await self.db.commit()
         try:
             await self.host.report(a)
+            if not a["parent_id"] and getattr(self.host, "root_finished", None):
+                await self.host.root_finished(a["id"])
         except Exception as e:  # the host is asked once; a throw is read as "not now"
             self.errors.append(f"report {aid}: {type(e).__name__}: {e}")
         self.poke()

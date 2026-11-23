@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- the saved collapse choice and the window size are read from the browser after the first render */
-import { Bell, Hash, PanelLeft, Search } from "lucide-react";
+import { Bell, Hash, PanelLeft, Search, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { NAV, PROJECTS_ITEM, hasChatList, type NavItem, type View } from "@/lib/nav";
@@ -131,6 +131,11 @@ export function AppRail() {
               <span data-no-i18n="">{state.config.settings.displayName || "You"}</span>
             </button>
           )}
+          <button type="button" data-testid="rail-settings" title={t("Settings")} aria-label={t("Settings")} aria-pressed={state.settingsOpen}
+            onClick={() => dispatch({ type: "settings", open: true, page: "general" })}
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink">
+            <Settings size={16} />
+          </button>
           <button type="button" data-testid="rail-bell" title={t("Notifications")} aria-label={t("Notifications")} aria-pressed={state.notifOpen}
             onClick={() => dispatch({ type: "notifPanel", open: !state.notifOpen })}
             className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink">

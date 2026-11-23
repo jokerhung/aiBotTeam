@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- these effects hydrate from localStorage or reset form state when a dialog opens or the target changes */
-import { Smartphone, Menu, Archive, BarChart3, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Settings, Share2, Network, Trash2, User, UserPlus, Users } from "lucide-react";
+import { Smartphone, Menu, Archive, BarChart3, Gift, CalendarClock, Check, ChevronDown, ChevronRight, Keyboard, ListChecks, FileUp, Pencil, Plus, Search, Share2, Network, Trash2, User, UserPlus, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { tr, useT } from "@/lib/i18n";
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import type { Bot, Group, SearchHit, Section } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
-import { BotActionsButton, BotContextMenu, deleteBotWithUndo } from "./BotContextMenu";
+import { BotActionsButton, BotContextMenu, GroupActionsButton, GroupContextMenu, deleteBotWithUndo } from "./BotContextMenu";
 import { GroupAvatar } from "./GroupAvatar";
 import { LATEST_RELEASE } from "@/lib/whats-new";
 import { Mascot } from "./Mascot";
@@ -137,7 +137,10 @@ function BotRow({ bot, selected, icons, onSelect, drag }: { bot: Bot; selected: 
 
 function GroupRow({ group, selected, icons, onSelect }: { group: Group; selected: boolean; icons: boolean; onSelect: () => void }) {
   const waiting = group.activity === "waiting-on-you";
+  const { state, dispatch } = useStore();
+  const selecting = state.selecting;
   return (
+    <GroupContextMenu group={group}>
     <div className="group relative">
       <div
         role="button"
@@ -163,7 +166,18 @@ function GroupRow({ group, selected, icons, onSelect }: { group: Group; selected
           </div>
         </div>
       </div>
+        {!icons && !selecting && (
+          <button type="button" title={tr("Edit team")} aria-label={`${tr("Edit team")}: ${group.name}`} data-testid="edit-team"
+            onClick={() => { dispatch({ type: "selectGroup", id: group.id }); dispatch({ type: "groupPanel", id: group.id }); }}
+            className="absolute right-9 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-panel/80 text-ink-secondary opacity-0 backdrop-blur hover:bg-ink/10 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 touch:opacity-100">
+            <Pencil size={14} />
+          </button>
+        )}
+        {!icons && !selecting && (
+          <GroupActionsButton group={group} className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-panel/80 opacity-0 backdrop-blur group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 max-md:opacity-100 touch:opacity-100" />
+        )}
     </div>
+    </GroupContextMenu>
   );
 }
 
@@ -244,7 +258,6 @@ export function ProfileMenu({ icons }: { icons: boolean }) {
         <button type="button" data-testid="open-whats-new" onClick={() => { setOpen(false); dispatch({ type: "whatsNew", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Gift size={15} /> What&apos;s new{unseen && <span aria-label="New" className="ml-auto size-2 rounded-full bg-accent" />}</button>
         <button type="button" data-testid="open-usage" onClick={() => { setOpen(false); dispatch({ type: "usage", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><BarChart3 size={15} /> Usage</button>
         <button type="button" data-testid="open-team-map" onClick={() => { setOpen(false); dispatch({ type: "teamMap", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Network size={15} /> Team map</button>
-        <button type="button" onClick={() => { setOpen(false); dispatch({ type: "settings", open: true, page: "general" }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Settings size={15} /> Settings</button>
         <button type="button" data-testid="pair-phone" onClick={() => { setOpen(false); dispatch({ type: "pair", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Smartphone size={15} /> {tr("Pair a browser")}</button>
         <button type="button" onClick={() => { setOpen(false); dispatch({ type: "shortcuts", open: true }); }} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[14px] hover:bg-menu-hover"><Keyboard size={15} /> Keyboard shortcuts</button>
       </PopoverContent>

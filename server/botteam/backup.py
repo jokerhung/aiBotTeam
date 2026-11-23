@@ -12,7 +12,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-SKIP_DIRS = {"mcp-run", "skill-run", "__pycache__"}
+SKIP_DIRS = {"mcp-run", "skill-run", "__pycache__", "browser", "mcp-output"}
 DB_SUFFIXES = (".db",)
 SIDE_SUFFIXES = (".db-wal", ".db-shm", ".db-journal")
 

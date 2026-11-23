@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .toolbox import Toolbox
+
 import json
 import os
 import time
@@ -169,6 +171,7 @@ class Store:
         n = len(await self.list_bots())
         tid = new_id("th")
         bot = WireBot(
+            toolbox=Toolbox(),
             createdAt=now_ms(), updatedAt=now_ms(),
             id=new_id("bot"), threadId=tid, mainThreadId=tid, name=name, title=title, description=description,
             color=color or MAUS_COLORS[n % 8],  # type: ignore[arg-type]
@@ -525,10 +528,10 @@ class Store:
 
     async def create_routine(self, target_kind: str, target_id: str, name: str, prompt: str, kind: str, every_min: Optional[int], at: Optional[str],
                              days: Optional[list[int]], run_at: Optional[int], tz: str, next_run: Optional[int], anchor: int, max_run_min: Optional[int],
-                             created_by: str) -> dict[str, Any]:
+                             created_by: str, enabled: bool = True) -> dict[str, Any]:
         rid = new_id("rt")
         await self.db.execute(f"INSERT INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 18)})",
-                              (rid, target_kind, target_id, name, prompt, kind, every_min, at, json.dumps(days) if days else None, run_at, tz, anchor, 1, None, next_run,
+                              (rid, target_kind, target_id, name, prompt, kind, every_min, at, json.dumps(days) if days else None, run_at, tz, anchor, int(enabled), None, next_run,
                                max_run_min, created_by, now_ms()))
         await self.db.commit()
         return (await self.get_routine(rid)) or {}

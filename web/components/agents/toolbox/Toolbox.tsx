@@ -1,9 +1,9 @@
 "use client";
-import { ChevronLeft, ChevronRight, Info, Search, Settings2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useT } from "@/lib/i18n";
 import { SKINS } from "@/lib/skins";
-import type { Bot } from "@/lib/wire";
+import { DEFAULT_TOOLBOX, type Bot } from "@/lib/wire";
 import { useStore } from "@/state/store";
 import { AppsField, LibraryTab } from "../../BotPanel";
 import { MemorySection } from "../../MemorySection";
@@ -13,17 +13,33 @@ import { CAPABILITY_ART, CAPABILITY_HUE } from "./art.generated";
 import { DRAWN_ART, DRAWN_HUE } from "./art.drawn";
 import { TOOLBOX_CATALOG, toolboxShelves, type ToolboxCapability } from "./catalog";
 import "./capability-art.css";
+import { api } from "@/state/api";
+import { NativeSettings } from "./NativeSettings";
+import { nativeSupport } from "./native";
 
 type Resource = NonNullable<ToolboxCapability["resource"]>;
 export function Toolbox({ bot, onChange }: { bot: Bot; onChange: (patch: Partial<Bot>) => void }) {
   const { state, dispatch } = useStore(); const t = useT();
   const [query, setQuery] = useState(""); const [opened, setOpened] = useState<string | null>(null);
   const [backup, setBackup] = useState<{ skills: string[]; apps: string[] }>({ skills: [], apps: [] });
+  const [availability, setAvailability] = useState<Record<string, { available: boolean; reason?: string }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([api<{ available: boolean; reason?: string; mcpAvailable: boolean }>(`/api/bots/${bot.id}/browser`), api<{ available: boolean; reason?: string }>(`/api/bots/${bot.id}/computer/capability`)]).then(([web, computer]) => { if (!cancelled) setAvailability({ web: { ...web, available: web.available && web.mcpAvailable }, computer }); });
+    return () => { cancelled = true; };
+  }, [bot.id, bot.modelSelection.instanceId, bot.modelSelection.model]);
+  const locked = (item: ToolboxCapability) => !!native(item) || !!item.resource && ["web", "computer"].includes(item.resource) && !enabled(item) && !availability[item.resource]?.available;
+  const driver = state.instances.find((item) => item.id === bot.modelSelection.instanceId)?.driver;
+  const native = (item: ToolboxCapability) => nativeSupport(item.id, driver);
   const shelves = toolboxShelves(query, t); const entry = TOOLBOX_CATALOG.find((item) => item.id === opened);
-  const enabled = (item: ToolboxCapability) => item.resource === "memory" ? bot.memory !== false : item.resource === "skills" ? !!bot.skills?.length : item.resource === "apps" ? !!bot.mcpServers?.length : false;
+  const enabled = (item: ToolboxCapability) => native(item) ? true : item.resource === "memory" ? bot.memory !== false : item.resource === "skills" ? !!bot.skills?.length : item.resource === "apps" ? !!bot.mcpServers?.length : item.resource && ["subagents", "web", "computer"].includes(item.resource) ? (bot.toolbox ?? DEFAULT_TOOLBOX)[item.resource as "subagents" | "web" | "computer"].enabled : false;
   const toggle = (resource: Resource) => {
+    if ((resource === "computer" || resource === "web") && !(bot.toolbox ?? DEFAULT_TOOLBOX)[resource].enabled && !availability[resource]?.available) return;
     if (resource === "memory") onChange({ memory: bot.memory === false });
-    else {
+    else if (resource === "subagents" || resource === "web" || resource === "computer") {
+      const config = bot.toolbox ?? DEFAULT_TOOLBOX;
+      onChange({ toolbox: { ...config, [resource]: { ...config[resource], enabled: !config[resource].enabled } } });
+    } else {
       const values = resource === "skills" ? bot.skills ?? [] : bot.mcpServers ?? [];
       if (values.length) setBackup((saved) => ({ ...saved, [resource]: values }));
       const next = values.length ? [] : backup[resource];
@@ -31,15 +47,15 @@ export function Toolbox({ bot, onChange }: { bot: Bot; onChange: (patch: Partial
       onChange(resource === "skills" ? { skills: next } : { mcpServers: next });
     }
   };
-  const count = (item: ToolboxCapability) => item.resource === "memory" ? t("Built in") : item.resource === "skills" ? `${bot.skills?.length ?? 0} ${t("assigned")}` : item.resource === "apps" ? `${bot.mcpServers?.length ?? 0} ${t("assigned")}` : t("Soon");
+  const count = (item: ToolboxCapability) => !item.resource && native(item) ? t("Built in") : item.resource === "memory" ? t("Built in") : item.resource === "skills" ? `${bot.skills?.length ?? 0} ${t("assigned")}` : item.resource === "apps" ? `${bot.mcpServers?.length ?? 0} ${t("assigned")}` : item.resource && locked(item) ? availability[item.resource]?.reason ?? t("Unavailable") : item.resource ? t("Built in") : t("Soon");
   const open = (id: string) => setOpened(id);
   return <section data-testid="toolbox-gallery" className="toolbox-gallery rounded-xl border border-edge bg-composer p-4 sm:p-5" data-dark={SKINS.find((skin) => skin.id === state.config.settings.skin)?.dark ?? false} data-reduced-motion={state.config.settings.reduceMotion}>
     <h2 className="text-base font-medium">{t("Capabilities")}</h2>
     <p className="mt-1 text-[13px] leading-5 text-ink-secondary">{t("What this agent can do, and where it keeps what it produces.")}</p>
-    <div className="my-5 flex items-center gap-3"><label className="relative block w-full max-w-72"><Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-ink-tertiary" /><input aria-label={t("Search capabilities")} placeholder={t("Search capabilities…")} value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 w-full rounded-xl border border-edge bg-card pl-8 pr-3 text-[13px] outline-none focus:border-ink-tertiary" /></label><Info size={15} className="shrink-0 text-ink-tertiary" aria-label={t("Unavailable capabilities are marked Soon")} /></div>
-    <div className="space-y-7">{shelves.map((shelf) => <Shelf key={shelf.category} category={shelf.category} entries={shelf.entries} enabled={enabled} count={count} opened={opened} onOpen={open} onToggle={toggle} />)}</div>
+    <div className="my-5 flex items-center gap-3"><label className="relative block w-full max-w-72"><Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-ink-tertiary" /><input aria-label={t("Search capabilities")} placeholder={t("Search capabilities…")} value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 w-full rounded-xl border border-edge bg-card pl-8 pr-3 text-[13px] outline-none focus:border-ink-tertiary" /></label></div>
+    <div className="space-y-7">{shelves.map((shelf) => <Shelf key={shelf.category} category={shelf.category} entries={shelf.entries} enabled={enabled} locked={locked} count={count} opened={opened} onOpen={open} onToggle={toggle} />)}</div>
     {shelves.length === 0 && <p className="py-12 text-center text-sm text-ink-tertiary">{t("No capabilities match your search")}</p>}
-    {entry && <CapabilityPanel key={entry.id} entry={entry} bot={bot} enabled={enabled(entry)} onToggle={() => entry.resource && toggle(entry.resource)} onChange={onChange} onClose={() => setOpened(null)} onConnect={() => { if (dispatch({ type: "view", view: "apps" })) setOpened(null); }} />}
+    {entry && <CapabilityPanel key={entry.id} entry={entry} bot={bot} enabled={enabled(entry)} locked={locked(entry)} builtin={native(entry)} onToggle={() => entry.resource && toggle(entry.resource)} onChange={onChange} onClose={() => setOpened(null)} onConnect={() => { if (dispatch({ type: "view", view: "apps" })) setOpened(null); }} />}
   </section>;
 }
 
@@ -55,8 +71,8 @@ function CapabilitySwitch({ checked, disabled, label, onToggle }: { checked: boo
   return <button type="button" role="switch" aria-checked={checked} disabled={disabled} aria-label={label} onClick={onToggle} className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "border-success bg-success" : "border-ink-tertiary bg-ink/15"}`}><span className={`absolute top-px size-4 rounded-full shadow-sm transition-transform ${checked ? "translate-x-[17px] bg-white" : "translate-x-px bg-ink-secondary"}`} style={{ left: 0 }} /></button>;
 }
 
-function Shelf({ category, entries, enabled, count, opened, onOpen, onToggle }: {
-  category: string; entries: ToolboxCapability[]; enabled: (entry: ToolboxCapability) => boolean; count: (entry: ToolboxCapability) => string; opened: string | null; onOpen: (id: string) => void; onToggle: (resource: Resource) => void;
+function Shelf({ category, entries, enabled, locked, count, opened, onOpen, onToggle }: {
+  category: string; entries: ToolboxCapability[]; enabled: (entry: ToolboxCapability) => boolean; locked: (entry: ToolboxCapability) => boolean; count: (entry: ToolboxCapability) => string; opened: string | null; onOpen: (id: string) => void; onToggle: (resource: Resource) => void;
 }) {
   const t = useT(); const strip = useRef<HTMLDivElement>(null); const { state } = useStore();
   const [edges, setEdges] = useState({ left: false, right: false });
@@ -79,14 +95,14 @@ function Shelf({ category, entries, enabled, count, opened, onOpen, onToggle }: 
           <div className="capability-art-viewport relative w-full overflow-hidden border-b border-edge"><CapabilityArt entry={item} off={!enabled(item)} />{item.recommended && <span className="absolute left-2 top-2 rounded-md border border-edge bg-composer/95 px-1.5 text-[11px] leading-4 text-success shadow-sm">{t("Recommended")}</span>}</div>
           <div className="w-full px-3 pb-1 pt-2.5"><span className="flex items-center gap-2"><span className={`min-w-0 flex-1 text-sm font-medium ${enabled(item) ? "text-ink" : "text-ink-secondary"}`}>{t(item.name)}</span><Settings2 size={13} className="shrink-0 text-ink-tertiary" /></span><span className="mt-1 line-clamp-2 text-xs leading-5 text-ink-secondary">{t(item.description)}</span></div>
         </button>
-        <footer className="mt-auto flex items-center justify-between gap-2 px-3 pb-2.5 pt-1 text-[11px] text-ink-tertiary"><span className="flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${enabled(item) ? "bg-success" : "bg-ink/25"}`} />{count(item)}</span><CapabilitySwitch checked={enabled(item)} disabled={!item.resource} label={item.resource ? `${item.resource} enabled` : `${t(item.name)} ${t("unavailable")}`} onToggle={() => item.resource && onToggle(item.resource)} /></footer>
+        <footer className="mt-auto flex items-center justify-between gap-2 px-3 pb-2.5 pt-1 text-[11px] text-ink-tertiary"><span className="flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${enabled(item) ? "bg-success" : "bg-ink/25"}`} />{count(item)}</span><CapabilitySwitch checked={enabled(item)} disabled={!item.resource || locked(item)} label={item.resource ? `${item.resource} enabled` : `${t(item.name)} ${t("unavailable")}`} onToggle={() => item.resource && onToggle(item.resource)} /></footer>
       </article>)}
     </div>
   </section>;
 }
 
-function CapabilityPanel({ entry, bot, enabled, onToggle, onChange, onClose, onConnect }: {
-  entry: ToolboxCapability; bot: Bot; enabled: boolean; onToggle: () => void; onChange: (patch: Partial<Bot>) => void; onClose: () => void; onConnect: () => void;
+function CapabilityPanel({ entry, bot, enabled, locked, builtin, onToggle, onChange, onClose, onConnect }: {
+  entry: ToolboxCapability; bot: Bot; enabled: boolean; locked: boolean; builtin: Readonly<Record<"claude" | "codex", string>> | null; onToggle: () => void; onChange: (patch: Partial<Bot>) => void; onClose: () => void; onConnect: () => void;
 }) {
   const t = useT(); const [tab, setTab] = useState("settings"); const close = useRef<HTMLButtonElement>(null);
   useEffect(() => { const previous = document.activeElement as HTMLElement | null; close.current?.focus(); return () => previous?.focus(); }, []);
@@ -94,12 +110,22 @@ function CapabilityPanel({ entry, bot, enabled, onToggle, onChange, onClose, onC
     <button tabIndex={-1} className="absolute inset-0 cursor-default" aria-label={t("Dismiss capability settings")} onClick={onClose} />
     <aside className="relative flex h-full w-full max-w-2xl flex-col border-l border-edge bg-app shadow-xl">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-edge px-4"><h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t(`${entry.name} settings`)}</h2><button ref={close} aria-label={t("Close capability settings")} className="rounded-md p-2 text-ink-secondary hover:bg-raised" onClick={onClose}><X size={18} /></button></header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"><div className="rounded-xl border border-edge bg-composer p-4 sm:p-5"><div className="flex items-center gap-2"><h3 className="text-sm font-medium">{t(entry.name)}</h3><code className="min-w-0 flex-1 truncate text-xs text-ink-tertiary">{entry.id}</code><CapabilitySwitch checked={enabled} disabled={!entry.resource} label={`${t(entry.name)} ${t("enabled")}`} onToggle={onToggle} /></div><p className="my-4 text-sm leading-5 text-ink-secondary">{t(entry.description)}</p>
-        {!entry.resource ? <div className="rounded-lg bg-card p-4 text-sm text-ink-secondary"><span className="mb-2 block font-medium">{t("Soon")}</span><span>{t("This capability is not available in BotTeam yet.")}</span></div> : <><div role="tablist" aria-label={t("Capability settings")} className="mb-4 flex gap-2 border-b border-edge">{["settings", ...(entry.resource === "memory" ? ["notes"] : [])].map((id) => <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`border-b-2 px-3 py-2 text-sm ${tab === id ? "border-ink" : "border-transparent text-ink-secondary"}`}>{t(id === "notes" ? "Notes" : "Settings")}</button>)}</div>
-          {entry.resource === "memory" ? tab === "notes" ? <LibraryTab bot={bot} /> : <MemorySection bot={bot} embedded onChange={(memory) => onChange({ memory })} /> : entry.resource === "skills" ? <SkillsSection bot={bot} onChange={(skills) => onChange({ skills })} /> : <><AppsField bot={bot} onChange={onChange} /><button className={`${BUTTON} mt-4`} onClick={onConnect}>{t("Connect apps")}</button></>}
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"><div className="rounded-xl border border-edge bg-composer p-4 sm:p-5"><div className="flex items-center gap-2"><h3 className="text-sm font-medium">{t(entry.name)}</h3><code className="min-w-0 flex-1 truncate text-xs text-ink-tertiary">{entry.id}</code><CapabilitySwitch checked={enabled} disabled={!entry.resource || locked} label={`${t(entry.name)} ${t("enabled")}`} onToggle={onToggle} /></div><p className="my-4 text-sm leading-5 text-ink-secondary">{t(entry.description)}</p>{builtin && <BuiltinNote tools={builtin} />}
+        {!entry.resource ? (builtin ? null : <div className="rounded-lg bg-card p-4 text-sm text-ink-secondary"><span className="mb-2 block font-medium">{t("Soon")}</span><span>{t("This capability is not available in BotTeam yet.")}</span></div>) : <><div role="tablist" aria-label={t("Capability settings")} className="mb-4 flex gap-2 border-b border-edge">{["settings", ...(entry.resource === "memory" ? ["notes"] : [])].map((id) => <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`border-b-2 px-3 py-2 text-sm ${tab === id ? "border-ink" : "border-transparent text-ink-secondary"}`}>{t(id === "notes" ? "Notes" : "Settings")}</button>)}</div>
+          {entry.resource === "subagents" || entry.resource === "web" || entry.resource === "computer" ? <NativeSettings resource={entry.resource} bot={bot} onChange={onChange} /> : entry.resource === "memory" ? tab === "notes" ? <LibraryTab bot={bot} /> : <MemorySection bot={bot} embedded onChange={(memory) => onChange({ memory })} /> : entry.resource === "skills" ? <SkillsSection bot={bot} onChange={(skills) => onChange({ skills })} /> : <><AppsField bot={bot} onChange={onChange} /><button className={`${BUTTON} mt-4`} onClick={onConnect}>{t("Connect apps")}</button></>}
         </>}
       </div></div>
       {entry.resource && <footer className="flex shrink-0 items-center gap-4 border-t border-edge px-5 py-3"><p className="flex-1 text-xs text-ink-secondary">{t("Agent changes are saved with Save in the page header.")}</p><button className={BUTTON} onClick={onClose}>{t("Done")}</button></footer>}
     </aside>
+  </div>;
+}
+
+/** The panel's note for a capability the agent's engine already has: what it is called in each CLI, and that it cannot be turned off. */
+function BuiltinNote({ tools }: { tools: Readonly<Record<"claude" | "codex", string>> }) {
+  const t = useT();
+  return <div data-testid="builtin-note" className="mb-4 rounded-lg border border-edge bg-card p-3 text-xs leading-5 text-ink-secondary">
+    <span className="block font-medium text-ink">{t("Built into Claude Code and Codex")}</span>
+    <span className="block">{t("This agent runs on an engine that already does this by itself, so it is always on and cannot be turned off.")}</span>
+    <span className="mt-1 block"><span className="text-ink-tertiary">{t("Claude Code")}:</span> {t(tools.claude)} · <span className="text-ink-tertiary">{t("Codex")}:</span> {t(tools.codex)}</span>
   </div>;
 }

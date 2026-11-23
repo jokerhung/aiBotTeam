@@ -55,8 +55,9 @@ class Groups:
 
     async def dict_of(self, g: WireGroup) -> dict[str, Any]:
         threads = await self.store.list_threads(g.id)
-        busy = g.threadId in self.turns.runs
-        waiting = bool(self.turns.broker and self.turns.broker.open_for(g.threadId))
+        ids = [t["id"] for t in threads]
+        busy = any(i in self.turns.runs for i in ids)  # a turn in any of the room's conversations, not only the one on screen
+        waiting = bool(self.turns.broker and any(self.turns.broker.open_for(i) for i in ids))
         queue = [QueueEntry(**e) for e in ([{**self.running[g.id], "state": "running"}] if g.id in self.running else []) + self.queues.get(g.id, [])]
         out = g.model_copy(update={
             "memberInfo": await self.info(g), "busy": busy or bool(queue), "queue": queue,
@@ -147,11 +148,14 @@ class Groups:
     async def kick(self, group_id: str) -> None:
         """Start the next waiting responder unless a turn of this room is already running."""
         g = await self.store.get_group(group_id)
-        if not g or g.threadId in self.turns.runs or group_id in self.running:
+        if not g or group_id in self.running:  # one turn at a time in the room, whichever conversation it is in
             return
         q = self.queues.get(group_id, [])
         while q:
             entry = q.pop(0)
+            if entry["thread"] in self.turns.runs:  # something else is still answering in that conversation: wait
+                q.insert(0, entry)
+                break
             if entry["botId"] not in g.members:
                 continue
             bot = await self.store.get_bot(entry["botId"])
@@ -172,7 +176,8 @@ class Groups:
     def _room_system(self, g: WireGroup, bot) -> str:
         team = ", ".join(f"{self.host.bot_name(m)}" for m in g.members)
         return (f"\n\nYou are {bot.name} in the room \"{g.name}\" with: {team}, and the person. Answer as {bot.name} only, briefly. "
-                f"To hand the floor to a teammate, name them with @Name. Do not speak for others."
+                f"To hand the floor to a teammate, name them with @Name only when you need them to act now. Do not @mention people just to acknowledge them or when reporting completion. Do not speak for others. "
+                "Complete your own assigned research using your tools before handing off. Report missing access once rather than passing the same request around."
                 + (f"\nRoom instructions: {g.instructions.strip()}" if g.instructions.strip() else ""))
 
     async def _prompt(self, g: WireGroup, bot, entry: dict) -> str:
@@ -182,7 +187,7 @@ class Groups:
             if m.kind != "text" or not m.text.strip():
                 continue
             who = m.sender or "Person" if m.role == "user" else (self.host.bot_name(m.author or "") or "Bot")
-            lines.append(f"{who}: {m.text.strip()[:1200]}")
+            lines.append(f"{who}: {m.text.strip()[:20000]}")
         return "Room transcript so far:\n" + "\n".join(lines[-TRANSCRIPT_LINES:]) + f"\n\nIt is your turn, {bot.name}. Reply now."
 
     async def turn_done(self, thread_id: str, run) -> None:
@@ -196,24 +201,43 @@ class Groups:
         if text.strip():
             g.lastText, g.lastAt, g.unread = text, now_ms(), True
             await self.store.save_group(g)
-            if entry.get("depth", 0) < MAX_CHAIN:
+            if entry.get("depth", 0) < g.maxHandoffs:
                 members = [(b.id, b.name) for b in [await self.store.get_bot(i) for i in g.members] if b]
                 for bid in mentions_in(text, members):
                     if bid != run.bot_id and not any(e["botId"] == bid for e in self.queues.get(gid, [])):
                         self.queues.setdefault(gid, []).append({"id": new_id("rq"), "botId": bid, "name": self.host.bot_name(bid), "reason": "chained",
                                                                 "text": text, "thread": entry["thread"], "depth": entry.get("depth", 0) + 1})
+            else:
+                members = [(b.id, b.name) for b in [await self.store.get_bot(i) for i in g.members] if b]
+                if any(bid != run.bot_id for bid in mentions_in(text, members)):
+                    notice = WireMessage(id=new_id("msg"), role="bot", kind="notice", at=now_ms(),
+                                         text="Automatic handoffs paused at the conversation limit. Send a message to continue.")
+                    await self.store.add_message(g.id, thread_id, notice)
+                    self.turns._frame("message", g.id, thread_id, notice)
         await self.publish(g)
         await self.kick(gid)
 
     async def stop(self, g: WireGroup) -> None:
         self.queues.pop(g.id, None)
-        run = self.turns.runs.get(g.threadId)
+        for tid in [t["id"] for t in await self.store.list_threads(g.id)]:
+            run = self.turns.runs.get(tid)
+            if run:
+                bot = await self.store.get_bot(run.bot_id)
+                if bot:
+                    await self.turns.interrupt(bot, tid)
+        self.running.pop(g.id, None)
+        await self.publish(g)
+
+    async def drop_thread(self, g: WireGroup, thread_id: str) -> None:
+        """A conversation of the room is being deleted: its running turn stops and its waiting responders are dropped; the others stay."""
+        self.queues[g.id] = [e for e in self.queues.get(g.id, []) if e.get("thread") != thread_id]
+        run = self.turns.runs.get(thread_id)
         if run:
             bot = await self.store.get_bot(run.bot_id)
             if bot:
-                await self.turns.interrupt(bot, g.threadId)
-        self.running.pop(g.id, None)
-        await self.publish(g)
+                await self.turns.interrupt(bot, thread_id)
+        if (self.running.get(g.id) or {}).get("thread") == thread_id:
+            self.running.pop(g.id, None)
 
     # ---- a bot posting into a room from outside it ------------------------------------------------------------------
     async def post_from_bot(self, thread_id: str, room: str, message: str) -> dict:
@@ -229,16 +253,17 @@ class Groups:
         if not message.strip():
             return {"ok": False, "reason": "empty_message", "detail": "say what to post"}
         bot = await self.store.get_bot(run.bot_id)
+        tid = thread_id if run.group_id == g.id else g.threadId  # a bot answering in this room posts into the conversation it was asked in
         msg = WireMessage(id=new_id("msg"), role="bot", author=run.bot_id, text=message.strip(), at=now_ms())
-        await self.store.add_message(g.id, g.threadId, msg)
-        self.turns._frame("message", g.id, g.threadId, msg)
+        await self.store.add_message(g.id, tid, msg)
+        self.turns._frame("message", g.id, tid, msg)
         g.lastText, g.lastAt, g.unread = msg.text, msg.at, True
         await self.store.save_group(g)
         members = [(b.id, b.name) for b in [await self.store.get_bot(i) for i in g.members] if b]
         for bid in mentions_in(msg.text, members):
             if bid != run.bot_id:
                 self.queues.setdefault(g.id, []).append({"id": new_id("rq"), "botId": bid, "name": self.host.bot_name(bid), "reason": "chained", "text": msg.text,
-                                                         "thread": g.threadId, "depth": 1})
+                                                         "thread": tid, "depth": 1})
         await self.publish(g)
         await self.kick(g.id)
         _ = bot

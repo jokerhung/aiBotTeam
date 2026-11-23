@@ -1,7 +1,14 @@
 """Bots handing work to bots through the real app: runtime + turns + the demo engine."""
 import asyncio
 
-from .test_api import ctx, make_bot  # noqa: F401  (fixture)
+from .test_api import ctx, make_bot as create_bot  # noqa: F401  (fixture)
+
+
+async def make_bot(client, name="A"):
+    bot = await create_bot(client, name)
+    response = await client.patch(f"/api/bots/{bot['id']}", json={"toolbox": {"subagents": {"enabled": True, "allowAnyAgent": True}}})
+    assert response.status_code == 200
+    return response.json()
 
 
 async def wait_until(fn, timeout=8.0):
@@ -100,12 +107,12 @@ async def test_the_team_tools_answer_from_the_bridge_over_the_broker_socket(ctx)
     a, b = await make_bot(c, "Alpha"), await make_bot(c, "Beta")
     broker = app.state.broker
     r, w = await asyncio.open_connection("127.0.0.1", broker.port)
-    w.write((json.dumps({"t": "hello", "token": broker.token, "thread": a["threadId"]}) + "\n").encode())
+    w.write((json.dumps({"t": "hello", "token": broker.token_for(a["threadId"]), "thread": a["threadId"]}) + "\n").encode())
     w.write((json.dumps({"t": "agent", "id": "x1", "tool": "list_bots", "args": {}}) + "\n").encode())
     await w.drain()
     ans = json.loads(await asyncio.wait_for(r.readline(), 3))
     names = [x["name"] for x in ans["agent"]["bots"]]
-    assert ans["t"] == "answer" and names == ["Alpha", "Beta"]
+    assert ans["t"] == "answer" and names == ["Beta"]
     w.write((json.dumps({"t": "agent", "id": "x2", "tool": "no_such_tool", "args": {}}) + "\n").encode())
     await w.drain()
     bad = json.loads(await asyncio.wait_for(r.readline(), 3))
@@ -157,7 +164,7 @@ async def test_reports_to_scopes_a_chief_and_refuses_loops(ctx):
 async def test_a_chief_answers_a_childs_question_for_the_person_and_the_card_says_who(ctx):
     c, app = ctx
     a, b, x = await make_bot(c, "Chiefa"), await make_bot(c, "Asker"), await make_bot(c, "Bystander")
-    await c.patch(f"/api/bots/{a['id']}", json={"chief": True})
+    await c.patch(f"/api/bots/{a['id']}", json={"chief": True, "toolbox": {"subagents": {"enabled": True, "allowQuestions": True, "delegates": [{"bot": b["id"], "handBack": "sync"}]}}})
     await c.post(f"/api/bots/{a['id']}/messages", json={"text": "/coordinate Asker | /ask Which colour? | Red | Blue"})
 
     async def waiting():
@@ -174,7 +181,7 @@ async def test_a_chief_answers_a_childs_question_for_the_person_and_the_card_say
     assert done["ok"] is True
 
     async def card():
-        for m in await msgs(c, b, child["thread_id"]):
+        for m in await msgs(c, a):
             if m["kind"] == "request" and m["request"]["status"] == "resolved":
                 return m["request"]
     req = await wait_until(card)

@@ -50,6 +50,7 @@ Thanh bên trái (bố cục **Không gian làm việc**, mặc định) gom m�
 - **Dashboard:** chi phí và token theo ngày, bot hoặc model; số bot đang làm việc và số việc đang chờ bạn.
 - **Chat:** danh sách bot ở cột giữa, khung chat bên phải. **Inbox:** mọi thẻ đang chờ bạn trả lời.
 - **Projects:** mỗi nhóm bot bạn đã gom trong danh sách chat (section) là một dự án, hiện với biểu tượng `#`; bấm vào thì cột giữa chỉ còn các bot của dự án đó và bên phải là khung chat như ở mục Chat; các phòng nhiều bot làm việc chung cũng nằm ở đây. **All projects** liệt kê cả hai và tạo phòng mới.
+- **Team (phòng nhiều bot):** mới tạo thì có sẵn một cuộc trò chuyện chính (**Main conversation**). Bấm tên team ở đầu khung chat để xem danh sách cuộc trò chuyện, chuyển sang cuộc khác, hoặc bấm **New task** để tạo thêm; mỗi cuộc có tin nhắn riêng và bot trả lời trong đúng cuộc đã hỏi. Có thể đổi tên, ghim, đóng hoặc xóa cuộc trò chuyện phụ; cuộc trò chuyện chính không đóng hay xóa được. Team trả lời từng lượt một, kể cả khi có nhiều cuộc trò chuyện.
 - **Build:** **Agents** (bảng các bot, mở hồ sơ, tạo hoặc nhập bot), **Workflows** (chưa có, trang trống), **Routines** (lịch và webhook).
 - **Knowledge:** **Knowledge bases** và **Documents** (chưa có, trang trống), **Skills** (thư viện kỹ năng).
 - **Connect:** **Apps** (Composio và MCP riêng), **Input** (Telegram, Zalo).

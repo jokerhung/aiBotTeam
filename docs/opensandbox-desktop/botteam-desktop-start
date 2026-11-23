@@ -1,0 +1,31 @@
+#!/bin/sh
+# Starts the desktop of a BotTeam computer: display :0, the XFCE desktop, and a view-only VNC + noVNC stream on port 6080.
+# Safe to run again: whatever already runs is left alone. RESOLUTION (for example 1280x800) sets the screen size.
+# Every daemon is started with setsid so it outlives the command that started it.
+export DISPLAY=:0
+RESOLUTION="${RESOLUTION:-1280x800}"
+
+pgrep -x Xvfb >/dev/null || setsid -f Xvfb :0 -screen 0 "${RESOLUTION}x24" -ac -nolisten tcp >/tmp/xvfb.log 2>&1
+i=0
+until xset q >/dev/null 2>&1; do
+  i=$((i + 1)); [ "$i" -gt 100 ] && { echo "the display did not start" >&2; exit 1; }
+  sleep 0.1
+done
+
+pgrep -x xfce4-session >/dev/null || setsid -f dbus-launch --exit-with-session startxfce4 >/tmp/xfce.log 2>&1
+
+pgrep -x x11vnc >/dev/null || setsid -f x11vnc -display :0 -forever -shared -viewonly -nopw -localhost -rfbport 5900 -o /tmp/x11vnc.log >/dev/null 2>&1
+pgrep -f "websockify.*6080" >/dev/null || setsid -f websockify --web=/usr/share/novnc 6080 localhost:5900 >/tmp/novnc.log 2>&1
+
+# The desktop needs a moment to paint before the first screenshot.
+i=0
+until pgrep -x xfce4-panel >/dev/null; do
+  i=$((i + 1)); [ "$i" -gt 150 ] && break
+  sleep 0.1
+done
+
+# A blank screen looks like a broken computer: no screensaver, no power saving (after the desktop has started its own).
+sleep 1
+xset s off s noblank >/dev/null 2>&1
+pkill -x xfce4-screensaver >/dev/null 2>&1
+echo ready

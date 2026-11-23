@@ -6,7 +6,7 @@ export interface ToolboxCapability {
   description: string;
   category: string;
   recommended: boolean;
-  resource?: "memory" | "skills" | "apps";
+  resource?: "memory" | "skills" | "apps" | "subagents" | "web" | "computer";
   artId?: string;
 }
 export const TOOLBOX_CATALOG: readonly ToolboxCapability[] = [
@@ -149,6 +149,7 @@ export const TOOLBOX_CATALOG: readonly ToolboxCapability[] = [
   },
   {
     "id": "subagents",
+    "resource": "subagents",
     "name": "Subagents",
     "description": "Lets the agent hand part of a job to another agent and use its answer.",
     "category": "Thinking and planning",
@@ -163,6 +164,7 @@ export const TOOLBOX_CATALOG: readonly ToolboxCapability[] = [
   },
   {
     "id": "computer_use",
+    "resource": "computer",
     "name": "Computer use",
     "description": "Lets the agent operate a whole desktop - any application, not only web pages - by looking at screenshots and using the mouse and keyboard. You watch it live in the chat.",
     "category": "The web",
@@ -177,6 +179,7 @@ export const TOOLBOX_CATALOG: readonly ToolboxCapability[] = [
   },
   {
     "id": "browser_use",
+    "resource": "web",
     "name": "Web browser",
     "description": "Gives the agent a real web browser it works step by step - reading pages, clicking, filling forms and searching - to finish a task.",
     "category": "The web",
@@ -270,6 +273,6 @@ export const TOOLBOX_CATALOG: readonly ToolboxCapability[] = [
 
 export function toolboxShelves(query: string, translate: (text: string) => string = (text) => text) {
   const term = query.trim().toLocaleLowerCase();
-  const matches = TOOLBOX_CATALOG.filter((entry) => [entry.name, entry.description, translate(entry.name), translate(entry.description)].some((text) => text.toLocaleLowerCase().includes(term)));
+  const matches = TOOLBOX_CATALOG.filter((entry) => !!entry.resource).filter((entry) => [entry.name, entry.description, translate(entry.name), translate(entry.description)].some((text) => text.toLocaleLowerCase().includes(term)));
   return [...new Set(matches.map((entry) => entry.category))].map((category) => ({ category, entries: matches.filter((entry) => entry.category === category) }));
 }

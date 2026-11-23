@@ -1,4 +1,5 @@
 "use client";
+import { InlineLiveViews } from "./InlineLiveView";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, MessageCircle, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { locale } from "@/lib/i18n";
@@ -331,6 +332,7 @@ export function ChatView({ bot, embedded = false }: { bot: Bot; embedded?: boole
               );
             })}
             {bot.threadBusy && !bot.waitingFor?.length && <TurnPresence bot={bot} hasLiveText={liveText} />}
+            <InlineLiveViews bots={[bot]} />
             <WaitingForTeammates bot={bot} />
           </div>
         </div>

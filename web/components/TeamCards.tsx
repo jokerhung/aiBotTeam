@@ -16,9 +16,11 @@ export function ThreadRefCard({ m }: { m: Message }) {
   const batchNotice = m.kind === "notice";
   const target = state.bots.find((b) => b.id === ref.botId);
   const open = async () => {
-    if (!target) return;
-    if (ref.threadId) await api(`/api/bots/${target.id}`, { method: "PATCH", body: JSON.stringify({ threadId: ref.threadId }) }).catch(() => {});
-    dispatch({ type: "select", id: target.id });
+    const selected = target ?? await api<Bot>(`/api/bots/${ref.botId}`).catch(() => null);
+    if (!selected) return;
+    dispatch({ type: "frame", frame: { kind: "bot", bot: selected } });
+    if (ref.threadId) await api(`/api/bots/${selected.id}`, { method: "PATCH", body: JSON.stringify({ threadId: ref.threadId }) }).catch(() => {});
+    dispatch({ type: "select", id: selected.id });
   };
   return (
     <div className="space-y-2">
@@ -28,6 +30,7 @@ export function ThreadRefCard({ m }: { m: Message }) {
         <span data-no-i18n="" className="min-w-0 text-left">{batchNotice ? m.text : `${t("Handed work to")} ${ref.bot}`}</span>
         <ArrowUpRight size={13} className="shrink-0 text-ink-tertiary" />
       </button>
+      {ref.ephemeral && !target && <button className="mx-auto block rounded-lg border border-edge px-3 py-1 text-xs" onClick={async () => { const bot = await api<Bot>(`/api/bots/${ref.botId}/promote`, { method: "POST" }); dispatch({ type: "frame", frame: { kind: "bot", bot } }); }}>{t("Promote to agent")}</button>}
     </div>
   );
 }

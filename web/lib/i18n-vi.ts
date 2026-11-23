@@ -1,7 +1,13 @@
+import { builtinToolboxVi } from "./builtin-toolbox-i18n-vi";
+import { roomVi } from "./room-i18n-vi";
+import { nativeToolboxVi } from "./native-toolbox-i18n-vi";
 import { toolboxVi } from "./toolbox-i18n-vi";
 /** Vietnamese for every fixed string in the interface. English is the key (see lib/i18n.ts). */
 export const vi: Record<string, string> = {
   ...toolboxVi,
+  ...nativeToolboxVi,
+  ...builtinToolboxVi,
+  ...roomVi,
   "template not found": "Kh?ng t?m th?y m?u",
   "New agent": "Agent m?i",
   "Agent templates": "M?u Agent",

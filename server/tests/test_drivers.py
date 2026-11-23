@@ -254,12 +254,13 @@ async def test_the_codex_app_server_is_started_with_the_custom_mcp_servers(monke
     except OSError:
         pass
     assert seen["args"][:2] == ["codex", "app-server"] and 'mcp_servers.x_Composio_e25f.env.BT_MCP_SPEC_FILE="s.json"' in seen["args"]
+    assert seen["args"][2:4] == ["-c", 'web_search="live"']  # its native web search is on, as the Toolbox says
     seen.clear()
     try:
         await d._start(SendTurnInput(thread_id="t2", bot_id="b", text="x"), ".")
     except OSError:
         pass
-    assert seen["args"] == ["codex", "app-server"]
+    assert seen["args"] == ["codex", "app-server", "-c", 'web_search="live"']
     # the team tools are given for a turn that asks for them (an answering bot), and only then
     class FakeBroker:
         port, token = 4321, "tok"

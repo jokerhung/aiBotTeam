@@ -4,11 +4,15 @@ import { CAPABILITY_ART } from "./art.generated";
 import { DRAWN_ART } from "./art.drawn";
 
 describe("Toolbox reference catalog", () => {
-  it("keeps the seven reference shelves and adds BotTeam's connected apps", () => {
+  it("shows only implemented capabilities and omits empty shelves", () => {
     expect(TOOLBOX_CATALOG).toHaveLength(36);
     expect(new Set(TOOLBOX_CATALOG.map((entry) => entry.id)).size).toBe(36);
-    expect(toolboxShelves("").map((shelf) => shelf.category)).toEqual(["Work with data", "Chat channels", "Knowledge and memory", "Thinking and planning", "The web", "Everyday", "Advanced"]);
-    expect(TOOLBOX_CATALOG.filter((entry) => entry.resource).map((entry) => entry.resource)).toEqual(["memory", "skills", "apps"]);
+    expect(toolboxShelves("").map((shelf) => shelf.category)).toEqual(["Knowledge and memory", "Thinking and planning", "The web"]);
+    const visible = toolboxShelves("").flatMap((shelf) => shelf.entries);
+    expect(visible).toHaveLength(6);
+    expect(visible.every((entry) => !!entry.resource)).toBe(true);
+    expect(toolboxShelves("Charts")).toEqual([]);
+    expect(TOOLBOX_CATALOG.filter((entry) => entry.resource).map((entry) => entry.resource)).toEqual(["memory", "skills", "apps", "subagents", "computer", "web"]);
     for (const entry of TOOLBOX_CATALOG) expect(CAPABILITY_ART[entry.artId ?? entry.id] ?? DRAWN_ART[entry.artId ?? entry.id], entry.id).toContain("<svg");
   });
   it("searches names, descriptions and translated labels without moving category order", () => {

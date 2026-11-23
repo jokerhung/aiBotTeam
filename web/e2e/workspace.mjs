@@ -81,6 +81,37 @@ ok(await page.locator('[data-testid="page-workflows"]').count() === 1, "G then W
 await page.keyboard.press("a");
 ok(await page.locator('[data-testid="page-workflows"]').count() === 1, "a letter alone does nothing");
 
+// a team has its main conversation from the start and can have more (two throw-away Echo bots and a team, removed afterwards)
+const room = await page.evaluate(async () => {
+  const post = async (path, body) => (await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+  const echo = { instanceId: "echo", model: "echo-1" };
+  const a = await post("/api/bots", { name: "E2E Room A", modelSelection: echo, approvalMode: "ask" });
+  const b = await post("/api/bots", { name: "E2E Room B", modelSelection: echo, approvalMode: "ask" });
+  const g = await post("/api/groups", { name: "E2E Team", members: [a.id, b.id], responder: "mention" });
+  return { a: a.id, b: b.id, g };
+});
+if (room.g?.id) {
+  ok(room.g.threadId === room.g.mainThreadId && room.g.tasks.length === 1 && room.g.tasks[0].main === true, "a new team starts on its main conversation");
+  await page.goto(`${BASE}/#/project/${room.g.id}`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="group-view"]', { timeout: 15000 }).catch(() => {});
+  ok(await page.locator('[data-testid="group-view"]').count() === 1, "a team opens from its address even when the page has just loaded");
+  const pill = page.locator('[data-testid="group-view"] button[title="Details and conversations"]');
+  await pill.click();
+  await page.getByText("New task", { exact: true }).last().click();
+  await page.waitForTimeout(800);
+  const now = await page.evaluate(async (id) => (await (await fetch("/api/groups")).json()).groups.find((x) => x.id === id), room.g.id);
+  ok(now.tasks.length === 2 && now.threadId !== now.mainThreadId, "New task adds a conversation to the team and opens it");
+  await pill.click();
+  await page.getByText("Main conversation", { exact: true }).last().click();
+  await page.waitForTimeout(800);
+  const back = await page.evaluate(async (id) => (await (await fetch("/api/groups")).json()).groups.find((x) => x.id === id), room.g.id);
+  ok(back.threadId === back.mainThreadId, "the team's Main conversation can be opened again");
+}
+await page.evaluate(async (r) => {
+  if (r.g?.id) await fetch(`/api/groups/${r.g.id}`, { method: "DELETE" });
+  for (const id of [r.a, r.b]) if (id) await fetch(`/api/bots/${id}`, { method: "DELETE" });
+}, room);
+
 await checkAgents(page, ok);
 
 // a chat message to a throw-away Echo bot (the demo engine: no model is called), removed afterwards

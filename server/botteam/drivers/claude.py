@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..approval import claude_permission_mode
-from .base import Capabilities, Emitter, SendTurnInput, SteerOutcome, new_turn_id, preview
+from .base import Capabilities, Emitter, SendTurnInput, SteerOutcome, new_turn_id, preview, toolbox_signature
 from .proc import kill_tree, spawn
 
 AUTH_FAILURE = re.compile(r"not logged in|please run /login|invalid api key", re.I)
@@ -35,6 +35,7 @@ class Session:
     cursor: str | None = None
     saw_stream_delta: bool = False
     explained: bool = False
+    toolbox_signature: str = ""
     settled: bool = True
     stop_requested: bool = False
     stderr_tail: list[str] = field(default_factory=list)
@@ -51,7 +52,7 @@ def with_attachments(inp: SendTurnInput) -> str:
 class ClaudeDriver(Emitter):
     provider = "claude"
     engine_caps = {"edits": True, "nativeReviewer": True, "agentsMcp": True, "resume": True}
-    capabilities = Capabilities(queueing=True, images=True, effortLevels=["low", "medium", "high"], strictResume=True)
+    capabilities = Capabilities(queueing=True, images=True, mcpImages=True, effortLevels=["low", "medium", "high"], strictResume=True)
 
     def __init__(self, binary: str | list[str], extra_env: dict[str, str] | None = None, broker=None) -> None:
         super().__init__()
@@ -65,7 +66,7 @@ class ClaudeDriver(Emitter):
         turn_id = new_turn_id()
         model = None if inp.model in (None, "", "default") else inp.model
         s = self.sessions.get(inp.thread_id)
-        if s and (inp.session_reset or s.proc.returncode is not None or s.model != model or s.system != inp.system or s.mode != inp.approval_mode or s.mcp != tuple(sorted(inp.custom_mcp))):
+        if s and (s.toolbox_signature != toolbox_signature(inp) or inp.session_reset or s.proc.returncode is not None or s.model != model or s.system != inp.system or s.mode != inp.approval_mode or s.mcp != tuple(sorted(inp.custom_mcp))):
             await self._close(inp.thread_id)
             s = None
         if s is None:
@@ -120,10 +121,14 @@ class ClaudeDriver(Emitter):
             server_dir = str(__import__("pathlib").Path(__file__).resolve().parents[2])
             cfg = {"mcpServers": {"bt": {
                 "command": sys.executable, "args": ["-m", "botteam.mcp_bridge"],
-                "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_BROKER_PORT": str(self.broker.port),
-                        "BT_BROKER_TOKEN": self.broker.token, "BT_THREAD_ID": inp.thread_id},
+                "env": {"PYTHONPATH": server_dir, "BT_AGENTS": "1", "BT_ASK_USER": "1" if inp.allow_questions else "0", **({"BT_TOOLS": json.dumps(inp.allowed_tools)} if inp.allowed_tools is not None else {}), "BT_BROKER_PORT": str(self.broker.port),
+                        "BT_BROKER_TOKEN": self.broker.token_for(inp.thread_id) if hasattr(self.broker, "token_for") else self.broker.token, "BT_THREAD_ID": inp.thread_id},
             }, **inp.custom_mcp}}
             args += ["--mcp-config", self._config_file(inp.thread_id, cfg), "--permission-prompt-tool", "mcp__bt__approve"]
+        elif inp.custom_mcp:
+            args += ["--mcp-config", self._config_file(inp.thread_id, {"mcpServers": inp.custom_mcp})]
+        if inp.max_steps:
+            args += ["--max-turns", str(inp.max_steps)]
         if model:
             args += ["--model", model]
         if inp.effort:
@@ -152,6 +157,7 @@ class ClaudeDriver(Emitter):
     async def _start(self, inp: SendTurnInput, model: str | None) -> Session:
         proc = await spawn(self.build_args(inp, model), cwd=inp.cwd, env=self.env)
         s = Session(proc=proc, model=model, system=inp.system, mode=inp.approval_mode, cursor=inp.resume_cursor, mcp=tuple(sorted(inp.custom_mcp)))
+        s.toolbox_signature = toolbox_signature(inp)
         self.sessions[inp.thread_id] = s
         s.tasks = [
             asyncio.create_task(self._read(inp.thread_id, s)),

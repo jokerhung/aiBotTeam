@@ -136,7 +136,71 @@ def send(obj: dict) -> None:
     sys.stdout.flush()
 
 
+async def browser_request(spec: dict, method: str, params: dict) -> dict:
+    reader, writer = await asyncio.open_connection("127.0.0.1", spec["port"], limit=32 * 1024 * 1024)
+    try:
+        packets = [
+            {"t": "hello", "token": spec["token"], "thread": spec["thread"]},
+            {"t": spec.get("surface", "browser"), "id": "surface", "tool": method, "args": params},
+        ]
+        writer.write(b"".join(json.dumps(packet).encode() + b"\n" for packet in packets))
+        await writer.drain()
+        response = json.loads(await reader.readline())
+        return response["agent"]
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+async def browser_main(spec: dict) -> None:
+    loop = asyncio.get_running_loop()
+    tasks: set[asyncio.Task] = set()
+    name = "computer" if spec.get("surface") == "computer" else "playwright"
+    unavailable = "Computer service unavailable" if name == "computer" else "Browser service unavailable"
+
+    async def handle(message: dict) -> None:
+        id_, method = message.get("id"), message.get("method")
+        if id_ is None:
+            return
+        params = message.get("params") or {}
+        try:
+            if method == "initialize":
+                response = {"result": {
+                    "protocolVersion": params.get("protocolVersion", "2025-03-26"), "capabilities": {"tools": {}},
+                    "serverInfo": {"name": name, "version": "1"},
+                }}
+            elif method == "ping":
+                response = {"result": {}}
+            elif method in ("tools/list", "tools/call"):
+                response = await browser_request(spec, method, params)
+                if "result" not in response and "error" not in response:
+                    response = {"error": {"code": -32000, "message": response.get("detail", unavailable)}}
+            else:
+                response = {"error": {"code": -32601, "message": "Method not found"}}
+        except Exception:
+            response = {"error": {"code": -32000, "message": unavailable}}
+        send({"jsonrpc": "2.0", "id": id_, **response})
+
+    try:
+        while line := await loop.run_in_executor(None, sys.stdin.buffer.readline):
+            try:
+                message = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(message, dict):
+                task = asyncio.create_task(handle(message))
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+    finally:
+        for task in list(tasks):
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def main() -> None:
+    if browser_spec := os.environ.get("BT_BROWSER_PROXY"):
+        await browser_main(json.loads(Path(browser_spec).read_text(encoding="utf8")))
+        return
     spec = json.loads(Path(os.environ["BT_MCP_SPEC_FILE"]).read_text(encoding="utf8"))
     budget = int(spec.get("outputBudget") or DEFAULT_BUDGET)
     out_dir = Path(spec.get("outputDir") or ".")

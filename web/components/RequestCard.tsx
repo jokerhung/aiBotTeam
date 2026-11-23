@@ -92,6 +92,8 @@ export function ApprovalDock({ m, thread, bot }: { m: Message; thread: string; b
         <span className="min-w-0 flex-1 truncate"><span data-no-i18n="">{bot.name}</span> {t(what)}</span>
         <ChevronDown size={15} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
       </button>
+      {r.by && <p className="mt-2 text-xs text-ink-secondary">{t("From")}: {r.by}</p>}
+      {r.instructions && <details open className="mt-2 rounded-lg border border-edge p-3"><summary className="text-sm">{t("Specialist instructions")}</summary><pre className="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-xs">{r.instructions}</pre></details>}
       <pre className={cn("mt-2 overflow-auto rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-[17px] text-ink-secondary", open ? "max-h-48 whitespace-pre-wrap break-all" : "max-h-[33px] truncate whitespace-nowrap")}>{r.command ?? r.summary}</pre>
       {open && (r.cwd || r.tool) && (
         <div className="mt-1.5 space-y-0.5 font-mono text-[12px] text-ink-tertiary">

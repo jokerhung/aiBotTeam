@@ -1,6 +1,7 @@
 "use client";
+import { InlineLiveViews } from "./InlineLiveView";
 /* eslint-disable react-hooks/set-state-in-effect -- the draft is read from localStorage when the room changes */
-import { ArrowUp, Menu, Square } from "lucide-react";
+import { ArrowUp, Menu, Square, Hash } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { GroupAvatar } from "./GroupAvatar";
+import { TaskMenu } from "./TaskMenu";
 import { mentionParts } from "@/lib/team";
 import { MentionEditor } from "./MentionEditor";
 import { Mascot } from "./Mascot";
@@ -28,8 +30,8 @@ function RoomHeader({ group }: { group: Group }) {
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(max-content,1fr)] items-center max-md:flex max-md:justify-between">
           <button type="button" aria-label="Open bot list" onClick={() => dispatch({ type: "drawer", open: true })}
             className="-ml-2 rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink md:hidden"><Menu size={20} /></button>
-          <div className="col-start-1 row-start-1 flex min-w-0 items-center justify-self-start">
-            <div data-no-i18n="" className="truncate text-[15px] font-medium text-ink" title={group.memberInfo.map((m) => m.name).join(", ")}>{group.name}</div>
+          <div className="col-start-2 flex min-w-0 items-center justify-self-center">
+            <TaskMenu group={group} face={<span aria-hidden className="flex size-7 items-center justify-center rounded-full bg-raised text-ink-secondary"><Hash size={14} /></span>} />
           </div>
           <div className="col-start-3 flex shrink-0 items-center justify-self-end gap-2">
             <button type="button" title="Room details" aria-label="Room details" aria-pressed={open} onClick={() => dispatch({ type: "groupPanel", id: open ? null : group.id })}
@@ -194,6 +196,7 @@ export function GroupView({ group }: { group: Group }) {
           <div role="log" aria-label={`Room ${group.name}`} className="chat-column relative flex w-full flex-col gap-3">
             {messages.length === 0 && <div className="py-20 text-center text-[14px] text-ink-secondary">{`Start the conversation in ${group.name}. Use @ to ask a member.`}</div>}
             {messages.map((m, i) => <RoomMessage key={m.id} group={group} list={messages} i={i} />)}
+            <InlineLiveViews bots={state.bots.filter((bot) => group.members.includes(bot.id))} />
             {runner && (
               <div role="status" aria-live="polite" className="flex items-center gap-2 py-1 text-[13px] text-ink-secondary">
                 <Mascot color={runner.color} size={22} busy />

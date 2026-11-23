@@ -122,6 +122,10 @@ export function RoomPanel({ group }: { group: Group }) {
         </div>
       </Field>
       {group.responder === "auto" && <DeciderField />}
+      <Field label={t("Maximum automatic handoffs")}>
+        <input aria-label={t("Maximum automatic handoffs")} type="number" min={0} max={50} defaultValue={group.maxHandoffs ?? 2} key={`${group.id}-${group.maxHandoffs}`} onBlur={(event) => { const value = event.currentTarget.valueAsNumber; if (Number.isInteger(value) && value >= 0 && value <= 50 && value !== (group.maxHandoffs ?? 2)) patch({ maxHandoffs: value }); }} className="w-full rounded-lg border border-edge bg-inset px-3 py-2 text-sm" />
+        <p className="mt-1 text-xs text-ink-tertiary">{t("Limits consecutive handoff levels after your message. Set 0 to disable automatic handoffs.")}</p>
+      </Field>
       <Field label={t("Instructions")}>
         <textarea data-no-i18n="" value={instructions} rows={4} onChange={(e) => { setInstructions(e.target.value); later({ instructions: e.target.value }); }}
           aria-label={t("Instructions")} placeholder={t("What is this room for? Every member is told.")} className={cn(INPUT, "py-2 leading-5")} />
