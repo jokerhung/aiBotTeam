@@ -135,6 +135,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     mcp = McpServers(store, bus, home)
     turns.mcp = mcp
     turns.config = config
+    from .resources import Resources
+    resources = Resources(store, home, bus)
+    turns.resources = agents.resources = routines.resources = resources
     memory, skills = Memory(home), Skills(home)
     turns.memory, turns.skills = memory, skills
     browser = BrowserHost(home, bus, allow_local=bool((config.data.get("browser") or {}).get("allowLocal")) or os.environ.get("BOTTEAM_BROWSER_LOCAL") == "1",
@@ -172,6 +175,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await store.open()
+        await resources.open()
+        from .social_workflow import migrate_resources_workflow
+        await migrate_resources_workflow(store, config, home)
         if pairing.required:
             print("\nBotTeam domain access needs browser pairing (localhost and LAN/Tailscale IPs open directly). "
                   "To pair a browser, press the phone button at the bottom of the sidebar on this computer: it shows a one-time code.\n", flush=True)
@@ -388,6 +394,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     # ---- bots ---------------------------------------------------------------------
     from .templates import load_templates
     agent_templates = load_templates()
+
+    from .resources_api import register as register_resources
+    register_resources(app, resources)
 
     @app.get("/api/templates")
     async def templates():
@@ -968,7 +977,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         f.pop("title", None)
         f["prompt"] = f.pop("prompt", None) or f.pop("text", None)
         f.pop("text", None)
-        return {k: v for k, v in f.items() if v is not None or k in ("maxRunMin",)}
+        return {k: v for k, v in f.items() if v is not None or k in ("maxRunMin", "resource_id", "resource_version", "require_approved")}
 
     async def need_routine(rid: str):
         r = await store.get_routine(rid)
@@ -997,7 +1006,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         await check_target(kind, tid)
         try:
             r = await routines.create(target_kind=kind, target_id=tid, name=f.get("name") or "", prompt=f.get("prompt") or "", kind=f.get("kind") or "interval",
-                                      every_min=f.get("everyMin"), at=f.get("at"), days=f.get("days"), run_at=f.get("runAt"), tz=f.get("tz"), max_run_min=f.get("maxRunMin"))
+                                      every_min=f.get("everyMin"), at=f.get("at"), days=f.get("days"), run_at=f.get("runAt"), tz=f.get("tz"), max_run_min=f.get("maxRunMin"), enabled=f.get("enabled", True), resource_id=f.get("resource_id"), resource_version=f.get("resource_version"), require_approved=f.get("require_approved"))
         except ValueError as e:
             raise HTTPException(400, str(e))
         return routines.public(r)
@@ -1024,7 +1033,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     async def run_routine(rid: str):
         r = await need_routine(rid)
         run = await routines.start_run(r)
-        if run and run["status"] == "skipped":
+        if run and run["status"] == "skipped" and run["detail"] == "the previous run is still going":
             raise HTTPException(409, "the previous run is still going")
         return {"run": run, "routine": routines.public(await need_routine(rid))}
 
@@ -1058,7 +1067,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             raise HTTPException(400, "a routine needs a message")
         try:
             r = await routines.create(target_kind="bot", target_id=bot_id, name=f.get("name") or "", prompt=f["prompt"], kind=f.get("kind") or "interval",
-                                      every_min=f.get("everyMin"), at=f.get("at"), days=f.get("days"), run_at=f.get("runAt"), tz=f.get("tz"), max_run_min=f.get("maxRunMin"))
+                                      every_min=f.get("everyMin"), at=f.get("at"), days=f.get("days"), run_at=f.get("runAt"), tz=f.get("tz"), max_run_min=f.get("maxRunMin"), enabled=f.get("enabled", True), resource_id=f.get("resource_id"), resource_version=f.get("resource_version"), require_approved=f.get("require_approved"))
         except ValueError as e:
             raise HTTPException(400, str(e))
         return routines.public(r)
@@ -1360,12 +1369,53 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
 
     @app.get("/api/skills")
     async def list_skills():
-        return {"skills": skills.list()}
+        bots = await store.list_bots()
+        return {"skills": [{**skill, "used_by": [{"id": bot.id, "name": bot.name, "color": bot.color} for bot in bots if skill["id"] in bot.skills]} for skill in skills.list()]}
+
+    @app.get("/api/skills/gallery")
+    async def skill_gallery():
+        return skills.gallery()
+
+    @app.get("/api/skills/gallery/preview")
+    async def preview_gallery_skill(key: str):
+        from .skill_gallery import preview
+        try:
+            return preview(key)
+        except SkillError as exc:
+            raise HTTPException(404, str(exc))
+
+    @app.post("/api/skills/gallery/install")
+    async def install_gallery_skills(body: dict):
+        try:
+            result = skills.install_gallery(body.get("keys"))
+            bus.publish({"kind": "skills.changed"})
+            return result
+        except SkillError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/skills/{sid}/files")
+    async def list_skill_files(sid: str):
+        try:
+            if not skills.get(sid):
+                raise SkillError("unknown skill")
+            return {"files": skills.files(sid)}
+        except SkillError as exc:
+            raise HTTPException(404, str(exc))
+
+    @app.get("/api/skills/{sid}/file")
+    async def read_skill_file(sid: str, name: str):
+        try:
+            path = skills.file(sid, name)
+            return {"name": name, "content": path.read_text(encoding="utf8")}
+        except (SkillError, OSError, UnicodeError) as exc:
+            raise HTTPException(404, str(exc))
 
     @app.post("/api/skills", status_code=201)
     async def create_skill(body: dict):
         try:
-            return skills.save(None, str(body.get("name") or ""), str(body.get("description") or ""), str(body.get("body") or ""), body.get("enabled"))
+            result = skills.save(None, str(body.get("name") or ""), str(body.get("description") or ""), str(body.get("body") or ""), body.get("enabled"), category=body.get("category"))
+            bus.publish({"kind": "skills.changed"})
+            return result
         except SkillError as e:
             raise HTTPException(400, str(e))
 
@@ -1375,7 +1425,9 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
         if not cur:
             raise HTTPException(404, "skill not found")
         try:
-            return skills.save(sid, str(body.get("name", cur["name"])), str(body.get("description", cur["description"])), str(body.get("body", cur["body"])), body.get("enabled"))
+            result = skills.save(sid, str(body.get("name", cur["name"])), str(body.get("description", cur["description"])), str(body.get("body", cur["body"])), body.get("enabled"), category=body.get("category"))
+            bus.publish({"kind": "skills.changed"})
+            return result
         except SkillError as e:
             raise HTTPException(400, str(e))
 
@@ -1391,6 +1443,8 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
             if sid in b.skills:
                 b.skills = [x for x in b.skills if x != sid]
                 await store.save_bot(b)
+                await turns.publish_bot(b)
+        bus.publish({"kind": "skills.changed"})
         return {"ok": True}
 
     # ---- custom MCP servers -----------------------------------------------------------------------------------------------------
@@ -1895,6 +1949,7 @@ def create_app(db_path: str | None = None, home: Path | None = None, with_echo: 
     app.state.web_dir = static
     app.state.pairing = pairing
     app.state.memory, app.state.skills = memory, skills
+    app.state.resources = resources
     app.state.config = config
     app.state.delegation = delegation
     app.state.computer_settings = computer_settings_store

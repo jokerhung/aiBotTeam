@@ -10,7 +10,7 @@ from typing import Any, Optional
 from .approval import normalize_mode
 from .runtime import LEVELS
 
-TOOL_NAMES = ["remember", "recall", "forget", "team_remember", "list_bots", "coordinate_bots", "assignment_status", "task", "cancel_assignment", "create_agent", "delegate", "start_thread", "list_threads", "post_to_room", "list_rooms", "trigger_info", "trigger", "delete_trigger", "browser_request_help", "sheet_rows", "admin_list_bots", "admin_create_bot", "admin_update_bot"]
+TOOL_NAMES = ["publish_resource", "read_resource", "update_resource", "list_resources", "list_resource_versions", "set_resource_status", "remember", "recall", "forget", "team_remember", "list_bots", "coordinate_bots", "assignment_status", "task", "cancel_assignment", "create_agent", "delegate", "start_thread", "list_threads", "post_to_room", "list_rooms", "trigger_info", "trigger", "delete_trigger", "browser_request_help", "sheet_rows", "admin_list_bots", "admin_create_bot", "admin_update_bot"]
 
 
 class AgentTools:
@@ -85,6 +85,78 @@ class AgentTools:
             return await fn(thread_id, args if isinstance(args, dict) else {})
         except Exception as e:  # the runtime never throws into a turn
             return {"ok": False, "reason": "internal", "detail": f"{type(e).__name__}: {e}"}
+
+    async def _resource_tool(self, thread, name, args):
+        from .resources import ResourceError, split_ref
+        from .toolbox import settings
+        from .wire import WireMessage
+        from .store import new_id, now_ms
+        run = self.turns.runs.get(thread)
+        bot = await self._me(thread)
+        if not run or not bot or not settings(bot).resources.enabled:
+            return {"ok": False, "reason": "capability_disabled", "detail": "Resources requires an enabled capability and active turn"}
+        service = self.resources
+        workspace = getattr(getattr(run, "inp", None), "cwd", None) or bot.cwd
+        prefs = settings(bot).resources
+        try:
+            if name == "list_resources":
+                return {"ok": True, "resources": await service.list(kind=args.get("kind"), status=args.get("status"), bot=bot.id if args.get("mine") else None, query=str(args.get("query") or ""))}
+            if name == "list_resource_versions":
+                return {"ok": True, "id": args["id"], "versions": (await service.versions(args["id"]))[:10]}
+            if name == "publish_resource":
+                result = await service.publish(args, owner=bot.id, thread=thread, workspace=workspace, settings=prefs)
+            elif name == "update_resource":
+                result = await service.update(args["id"], args, owner=bot.id, workspace=workspace, settings=prefs)
+            elif name == "read_resource":
+                item = await service.resolve(args, bot.id)
+                result = await service.read(item)
+                if item["kind"] == "image":
+                    copied = await service.materialize(item, workspace)
+                    result["file"] = copied["file"]
+                return {"ok": True, **result}
+            else:
+                rid, number = split_ref(args.get("ref"))
+                pinned = None
+                if getattr(run, "routine_run_id", None):
+                    record = await self.store.get_run(run.routine_run_id)
+                    if record and record["status"] == "running":
+                        pinned = record["detail"]
+                item = await service.version(rid, number)
+                if args.get("status") == "draft" and item["owner_bot"] != bot.id:
+                    raise ResourceError("Only the resource owner can edit it", 403)
+                result = await service.set_status(rid, number, args.get("status"), published_ref=pinned)
+            if name in {"publish_resource", "update_resource"} and result.get("kind") == "post":
+                post = (await service.read(result)).get("post") or {}
+                if not post.get("media"):  # a post with no picture is usually a forgotten one: say so, once, in the tool's own answer
+                    result["warning"] = ("This post has NO images. If the post should have a picture (it usually does, unless the person asked for text only): "
+                                         "create the image file in your workspace with your image skill, then call update_resource with base_version and images=[<absolute path>] and alts=[<description>] "
+                                         "to save it as the next version, and hand off the NEW ref. If the person asked for text only, say so in your report.")
+            if prefs.chatCards and name in {"publish_resource", "update_resource"}:
+                card = WireMessage(id=new_id("msg"), role="bot", kind="resource", author=bot.id, at=now_ms(), resource={"resource_id": result["id"], "version": result["version"], "kind": result["kind"], "title": result["title"]})
+                owner = self.turns._owner_for(thread, bot.id)
+                await self.store.add_message(owner, thread, card)
+                self.turns._frame("message", owner, thread, card)
+            return {"ok": True, **result}
+        except (ResourceError, KeyError) as exc:
+            return {"ok": False, "reason": "resource", "detail": str(exc)}
+
+    async def t_publish_resource(self, thread, args):
+        return await self._resource_tool(thread, "publish_resource", args)
+
+    async def t_read_resource(self, thread, args):
+        return await self._resource_tool(thread, "read_resource", args)
+
+    async def t_update_resource(self, thread, args):
+        return await self._resource_tool(thread, "update_resource", args)
+
+    async def t_list_resources(self, thread, args):
+        return await self._resource_tool(thread, "list_resources", args)
+
+    async def t_list_resource_versions(self, thread, args):
+        return await self._resource_tool(thread, "list_resource_versions", args)
+
+    async def t_set_resource_status(self, thread, args):
+        return await self._resource_tool(thread, "set_resource_status", args)
 
     # ---- memory -----------------------------------------------------------------------------------------------------------
     async def _me(self, thread_id: str):

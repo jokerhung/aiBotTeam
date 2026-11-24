@@ -107,6 +107,7 @@ export interface Specialist {
   capabilities: SharedCapability[]; knowledge: string[]; skills: string[]; botId?: string | null;
 }
 export interface ToolboxSettings {
+  resources: { enabled: boolean; allowHtml: boolean; chatCards: boolean; maxHtmlBytes: number; maxMarkdownBytes: number; maxImageBytes: number };
   subagents: { enabled: boolean; allowAnyAgent: boolean; delegates: { bot: string; handBack?: HandBack | null }[];
     inline: Specialist[]; allowDynamic: boolean; mode: HandBack; allowQuestions: boolean;
     maxDepth: number; maxFanout: number; maxResultChars: number; maxWaitSeconds: number; shareWithDelegates: SharedCapability[] };
@@ -114,6 +115,7 @@ export interface ToolboxSettings {
   computer: { enabled: boolean; resolution: [number, number]; idleSeconds: number; allowCommands: boolean };
 }
 export const DEFAULT_TOOLBOX: ToolboxSettings = {
+  resources: { enabled: true, allowHtml: true, chatCards: true, maxHtmlBytes: 2097152, maxMarkdownBytes: 512000, maxImageBytes: 10485760 },
   subagents: { enabled: false, allowAnyAgent: false, delegates: [], inline: [], allowDynamic: false, mode: "async", allowQuestions: false, maxDepth: 2, maxFanout: 3, maxResultChars: 10000, maxWaitSeconds: 300, shareWithDelegates: [] },
   web: { enabled: true, headed: false, allowLocal: false, idleSeconds: 900 },
   computer: { enabled: false, resolution: [1280, 800], idleSeconds: 600, allowCommands: false },
@@ -194,6 +196,9 @@ export interface Group {
 }
 
 export interface Routine {
+  resource_id?: string | null;
+  resource_version?: number | null;
+  require_approved?: boolean;
   id: string;
   name: string;
   title: string;
@@ -289,6 +294,11 @@ export interface Skill {
   description: string;
   body: string;
   enabled: boolean;
+  category?: string;
+  industry?: string;
+  sourceKey?: string | null;
+  files?: string[];
+  used_by?: { id: string; name: string; color: MausColor }[];
 }
 
 export interface McpStatus {
@@ -334,7 +344,7 @@ export interface ErrorInfo {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "activity" | "error" | "stopped" | "notice" | "request" | "routine";
+  kind: "text" | "activity" | "error" | "stopped" | "notice" | "request" | "routine" | "resource";
   text: string;
   at: number;
   sendId?: string | null;
@@ -351,6 +361,7 @@ export interface Message {
   sender?: string | null;
   author?: string | null;
   mentions?: string[];
+  resource?: { resource_id: string; version: number; kind: string; title: string } | null;
   threadRef?: { botId: string; bot: string; threadId?: string | null; assignmentId?: string; parentAssignment?: string; rootAssignment?: string; ephemeral?: boolean } | null;
   channelBatchId?: string | null;
   routine?: { id: string; name: string; schedule: string; enabled: boolean; webhook?: boolean } | null;

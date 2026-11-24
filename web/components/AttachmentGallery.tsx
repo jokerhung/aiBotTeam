@@ -1,7 +1,8 @@
 "use client";
-import { FileText, X } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useState } from "react";
 import type { Attachment } from "@/lib/wire";
+import { FilePreview, previewKind } from "./FilePreview";
 
 const href = (a: Attachment) => `/api/attachments/${encodeURIComponent(a.name)}`;
 const size = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -18,6 +19,12 @@ export function AttachmentGallery({ items }: { items: Attachment[] }) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={href(a)} alt={a.filename} className="max-h-40 max-w-[220px] object-cover" />
             </button>
+          ) : previewKind(a.filename, a.mime) === "text" ? (
+            <button key={a.name} type="button" title={a.filename} onClick={() => setOpen(a)} className="flex max-w-[240px] items-center gap-2 rounded-xl bg-ink/10 px-2.5 py-1.5 text-[13px] hover:bg-ink/15">
+              <FileText size={15} className="shrink-0" />
+              <span className="min-w-0 truncate">{a.filename}</span>
+              <span className="shrink-0 text-[11px] opacity-70">{size(a.size)}</span>
+            </button>
           ) : (
             <a key={a.name} href={href(a)} download={a.filename} className="flex max-w-[240px] items-center gap-2 rounded-xl bg-ink/10 px-2.5 py-1.5 text-[13px] hover:bg-ink/15">
               <FileText size={15} className="shrink-0" />
@@ -27,14 +34,7 @@ export function AttachmentGallery({ items }: { items: Attachment[] }) {
           ),
         )}
       </div>
-      {open && (
-        <div role="dialog" aria-modal="true" aria-label="Image preview" className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
-          onMouseDown={(e) => e.target === e.currentTarget && setOpen(null)} onKeyDown={(e) => e.key === "Escape" && setOpen(null)}>
-          <button type="button" aria-label="Close preview" autoFocus onClick={() => setOpen(null)} className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white"><X size={18} /></button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={href(open)} alt={open.filename} className="max-h-full max-w-full rounded-lg" />
-        </div>
-      )}
+      {open && <FilePreview src={href(open)} kind={previewKind(open.filename, open.mime) ?? "image"} name={open.filename} downloadName={open.filename} onClose={() => setOpen(null)} />}
     </>
   );
 }

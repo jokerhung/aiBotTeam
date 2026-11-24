@@ -1,5 +1,6 @@
 "use client";
 import { ToolboxMigrationNotice } from "./ToolboxMigrationNotice";
+import { ResourcesPage } from "./ResourcesPage";
 import { Loader2 } from "lucide-react";
 import { useStore } from "@/state/store";
 import type { Bot, Group } from "@/lib/wire";
@@ -102,6 +103,7 @@ function WorkspaceContent({ view, bot, group }: { view: View; bot: Bot | undefin
     case "agent": return <AgentEditorPage />;
     case "routines": return <AutomationsPage />;
     case "skills": return <SkillsPage />;
+    case "resources": return <ResourcesPage />;
     case "apps": return <AppsPage />;
     case "input": return <InputPage />;
     case "team-map": return <TeamMapPage />;

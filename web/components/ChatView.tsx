@@ -1,4 +1,5 @@
 "use client";
+import { ResourceChatCard } from "./ResourcesPage";
 import { InlineLiveViews } from "./InlineLiveView";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, Menu, MessageCircle, Monitor, Pencil, PanelRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import { AttachmentGallery } from "./AttachmentGallery";
 import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { Linkify } from "./Linkify";
 import { Composer } from "./Composer";
 import { ApprovalDock, RequestCard } from "./RequestCard";
 import { Mascot } from "./Mascot";
@@ -88,6 +90,7 @@ function Row({ bot, list, i, busy, detailed = false }: { bot: Bot; list: Message
     return <RequestCard m={m} thread={bot.threadId} active={lastOpen?.id === m.id} bot={bot} />;
   }
   if (m.kind === "routine" && m.routine) return <RoutineCard m={m} />;
+  if (m.resource) return <ResourceChatCard resource={m.resource} />;
   if (m.threadRef) return <ThreadRefCard m={m} />;
   if (m.kind === "stopped" || m.kind === "notice") {
     return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;
@@ -149,7 +152,7 @@ function Row({ bot, list, i, busy, detailed = false }: { bot: Bot; list: Message
             {mine ? (
               <>
                 {m.attachments && m.attachments.length > 0 && <AttachmentGallery items={m.attachments} />}
-                {m.text && <div className="chat-text whitespace-pre-wrap break-words">{m.text}</div>}
+                {m.text && <div className="chat-text whitespace-pre-wrap break-words"><Linkify text={m.text} /></div>}
               </>
             ) : (
               <>

@@ -15,6 +15,16 @@ export const startOfDay = (ms: number) => { const d = new Date(ms); d.setHours(0
 export const mondayOf = (ms: number) => { const s = startOfDay(ms); const wd = (new Date(s).getDay() + 6) % 7; return s - wd * DAY; };
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([locale()], { hour: "numeric", minute: "2-digit" });
 
+export type RoutineStatus = "active" | "draft" | "paused";
+/** Active runs on schedule; a draft is a routine a bot made that waits for the person to enable it; paused is anything else switched off. */
+export const routineStatus = (r: Routine): RoutineStatus => (r.enabled ? "active" : r.createdBy === "bot" ? "draft" : "paused");
+/** The colour of a routine that has not run yet, by its state: the same three the Active / Draft / Pause tabs use. */
+export const PLAN_TONE: Record<RoutineStatus, string> = {
+  active: "bg-success/20 text-success",
+  draft: "bg-warning/20 text-warning ring-warning/40",
+  paused: "bg-ink/10 text-ink-secondary",
+};
+
 const STATUS_TONE: Record<string, string> = {
   done: "bg-success/20 text-success", completed: "bg-success/20 text-success", running: "bg-accent/20 text-accent-text", failed: "bg-danger/15 text-danger", timeout: "bg-danger/15 text-danger",
   skipped: "bg-warning/20 text-warning", cancelled: "bg-ink/10 text-ink-secondary", stopped: "bg-ink/10 text-ink-secondary",
@@ -109,7 +119,7 @@ function Grid({ routines, runs, anchor, range, onEdit, onDropBot }: { routines: 
   const byId = useMemo(() => new Map(routines.map((r) => [r.id, r])), [routines]);
   const blocks = (day: number) => {
     const end = day + DAY;
-    const future = routines.flatMap((r) => occurrences(r, Math.max(day, now), end).map((at) => ({ key: `${r.id}-${at}`, r, at, run: null as RoutineRun | null })));
+    const future = routines.flatMap((r) => occurrences(r, Math.max(day, now), end, true).map((at) => ({ key: `${r.id}-${at}`, r, at, run: null as RoutineRun | null })));
     const past = runs.filter((x) => x.startedAt >= day && x.startedAt < end).map((x) => ({ key: x.id, r: byId.get(x.routineId), at: x.startedAt, run: x }));
     return [...past, ...future].filter((b) => b.r);
   };
@@ -152,8 +162,8 @@ function Grid({ routines, runs, anchor, range, onEdit, onDropBot }: { routines: 
               {Array.from({ length: 24 }, (_, h) => <div key={h} className="absolute inset-x-0 border-t border-edge/70" style={{ top: h * HOUR_PX }} />)}
               {today && <div className="absolute inset-x-0 z-[5] h-px bg-danger" style={{ top: ((now - d) / 3_600_000) * HOUR_PX }}><span className="absolute -left-1 -top-[3px] size-[7px] rounded-full bg-danger" /></div>}
               {blocks(d).map((b) => (
-                <button key={b.key} type="button" data-testid="routine-block" onClick={() => b.r && onEdit(b.r)} title={`${b.r!.name} · ${clock(b.at)}${b.run ? ` · ${b.run.status}` : ""}`}
-                  className={cn("absolute inset-x-1 z-[3] flex items-center gap-1 overflow-hidden rounded-md px-1.5 text-left text-[11.5px] leading-[16px] ring-1 ring-ink/10", b.run ? (STATUS_TONE[b.run.status] ?? "bg-ink/10") : "bg-accent/15 text-accent-text")}
+                <button key={b.key} type="button" data-testid="routine-block" onClick={() => b.r && onEdit(b.r)} title={`${b.r!.name} · ${clock(b.at)} · ${b.run ? b.run.status : routineStatus(b.r!)}`} data-status={b.run ? b.run.status : routineStatus(b.r!)}
+                  className={cn("absolute inset-x-1 z-[3] flex items-center gap-1 overflow-hidden rounded-md px-1.5 text-left text-[11.5px] leading-[16px] ring-1 ring-ink/10", b.run ? (STATUS_TONE[b.run.status] ?? "bg-ink/10") : PLAN_TONE[routineStatus(b.r!)])}
                   style={{ top: ((b.at - d) / 3_600_000) * HOUR_PX, height: 22 }}>
                   <span data-no-i18n="" className="truncate font-medium">{b.r!.name}</span>
                   <span data-no-i18n="" className="ml-auto shrink-0 opacity-70">{clock(b.at)}</span>
@@ -188,7 +198,10 @@ export function CalendarView({ routines, runs, anchor, setAnchor, range, setRang
         <button type="button" aria-label={t("Next")} onClick={() => setAnchor((a) => a + step)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><ChevronRight size={16} /></button>
         <div data-no-i18n="" className="ml-1 text-[14.5px] font-medium text-ink">{title}</div>
         <button type="button" onClick={() => setAnchor(() => Date.now())} className="ml-1 rounded-lg bg-composer px-3 py-1 text-[13px] text-ink ring-1 ring-ink/15 hover:bg-ink/[0.05]">{t("Today")}</button>
-        <div role="group" aria-label={t("Range")} className="ml-auto flex overflow-hidden rounded-lg ring-1 ring-ink/10">
+        <div data-testid="calendar-legend" className="ml-auto hidden items-center gap-3 text-[12px] text-ink-secondary md:flex">
+          {([["active", "Active", "bg-success"], ["draft", "Draft", "bg-warning"], ["paused", "Pause", "bg-ink/30"]] as const).map(([id, text, dot]) => <span key={id} className="flex items-center gap-1.5"><span className={cn("size-2 rounded-full", dot)} />{t(text)}</span>)}
+        </div>
+        <div role="group" aria-label={t("Range")} className="flex overflow-hidden rounded-lg ring-1 ring-ink/10">
           {([[1, "Day"], [3, "3 days"], [7, "Week"]] as const).map(([n, text]) => <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} className={seg(range === n)}>{t(text)}</button>)}
         </div>
       </div>

@@ -1,5 +1,5 @@
 "use client";
-import { Check, MessageCircle, Plus, QrCode, Send } from "lucide-react";
+import { Check, MessageCircle, Plus, QrCode, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ interface GrantIntake { exists: boolean; valid: boolean; error: string | null; l
 const list = (text: string) => text.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
 
 /** One bot's use of one account: which chats it serves, where results go, and the limits of a batch. */
-function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged }: {
+export function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged }: {
   app: string; account: ChannelAccount; botId: string; botName: string; grant: ChannelGrant | undefined; accounts: ChannelAccount[]; onChanged: () => void;
 }) {
   const t = useT();
@@ -116,54 +116,47 @@ function GrantEditor({ app, account, botId, botName, grant, accounts, onChanged 
   );
 }
 
-function AccountRow({ app, account, accounts, onChanged }: { app: string; account: ChannelAccount; accounts: ChannelAccount[]; onChanged: () => void }) {
+const STATE_LABEL = { active: "Connected", error: "Needs you", stopped: "Stopped" } as const;
+const STATE_INK = { active: "text-success", error: "text-danger", stopped: "text-ink-tertiary" } as const;
+const ICON_BTN = "flex size-8 items-center justify-center rounded-lg border border-edge bg-composer text-ink hover:bg-raised";
+
+function Fact({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  const t = useT();
+  return <div className={cn("min-w-0", className)}><div className="text-[10.5px] font-medium uppercase tracking-wide text-ink-tertiary">{t(label)}</div><div data-no-i18n="" className="text-[12.5px] leading-[17px] text-ink">{children}</div></div>;
+}
+
+/** One connected account as a card: its state, name, what it is used by, and what to do when it needs you. */
+function AccountCard({ app, account, onChanged }: { app: string; account: ChannelAccount; onChanged: () => void }) {
   const { state } = useStore();
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const [grants, setGrants] = useState<ChannelGrant[]>([]);
-  const [adding, setAdding] = useState("");
+  const look = LOOK[app] ?? LOOK.telegram;
   const base = `/api/channels/${app}/accounts/${account.id}`;
-  const load = useCallback(() => api<{ grants: ChannelGrant[] }>(`${base}/grants`).then((r) => setGrants(r.grants)).catch(() => {}), [base]);
-  useEffect(() => { if (open) void load(); }, [open, load, state.channelTick]);
   const names = account.usedBy.map((id) => state.bots.find((b) => b.id === id)?.name).filter(Boolean) as string[];
   const act = async (path: string, init: RequestInit) => { await api(`${base}${path}`, init).catch(() => {}); onChanged(); };
   const webhook = !!account.error && /webhook/i.test(account.error);
-  const free = state.bots.filter((b) => !grants.some((g) => g.botId === b.id));
   return (
-    <div data-testid="input-account" className="mt-1.5 pl-14 pr-1 text-[12.5px]">
-      <div className="flex items-center gap-2">
-        <span data-no-i18n="" className="min-w-0 flex-1 truncate text-ink-secondary">{account.label}{account.username ? ` · ${account.username.startsWith("Bot") ? "" : "@"}${account.username}` : ""}</span>
-        <span className={cn(account.state === "active" ? "text-success" : account.state === "error" ? "text-danger" : "text-ink-tertiary")}>
-          {account.state === "active" ? t("Connected") : account.state === "error" ? t("Needs you") : t("Stopped")}
-        </span>
+    <article data-testid="input-account" data-state={account.state} className="relative flex min-w-0 flex-col rounded-2xl border border-edge bg-card p-3.5 shadow-sm">
+      <span className={cn("absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg", look.tone)} aria-hidden><look.icon size={15} /></span>
+      <div className={cn("text-[11px] font-semibold uppercase tracking-wide", STATE_INK[account.state])}>{t(STATE_LABEL[account.state])}</div>
+      <h3 data-no-i18n="" className="mt-0.5 truncate pr-10 text-[13px] font-medium text-ink">{account.label}</h3>
+      {account.username && <div data-no-i18n="" className="truncate text-[12px] text-ink-secondary">{account.username.startsWith("Bot") ? "" : "@"}{account.username}</div>}
+      {account.error && <div role="alert" data-no-i18n="" className="mt-1.5 max-h-[60px] overflow-y-auto text-[12px] leading-[17px] text-danger">{account.error}</div>}
+      <div className="mt-3 grid grid-cols-1 gap-y-2.5">
+        <Fact label="Channel">{t(NAMES[app] ?? "Telegram bot")}</Fact>
+        <Fact label="Used by">{names.length ? names.join(", ") : <span className="text-ink-tertiary">{t("No agent answers on this account yet")}</span>}</Fact>
+      </div>
+      <div className="mt-auto flex items-center gap-1.5 pt-3.5">
         {account.state === "error" && (webhook
-          ? <button type="button" onClick={() => void act("/clear-webhook", { method: "POST" })} className="rounded-full px-2.5 py-1 text-accent-text hover:bg-ink/10">{t("Clear webhook")}</button>
-          : <button type="button" onClick={() => void act("", { method: "PATCH", body: JSON.stringify({ enabled: true }) })} className="rounded-full px-2.5 py-1 text-accent-text hover:bg-ink/10">{t("Reconnect")}</button>)}
-        <button type="button" onClick={() => void act("", { method: "DELETE" })} className="rounded-full px-2.5 py-1 text-ink-secondary hover:bg-ink/10">{t("Disconnect")}</button>
+          ? <button type="button" onClick={() => void act("/clear-webhook", { method: "POST" })} className="h-8 rounded-lg border border-edge bg-composer px-3 text-[12.5px] text-ink hover:bg-raised">{t("Clear webhook")}</button>
+          : <button type="button" onClick={() => void act("", { method: "PATCH", body: JSON.stringify({ enabled: true }) })} className="h-8 rounded-lg border border-edge bg-composer px-3 text-[12.5px] text-ink hover:bg-raised">{t("Reconnect")}</button>)}
+        <button type="button" title={t("Disconnect")} aria-label={`${t("Disconnect")} ${account.label}`} onClick={() => confirm(t("Disconnect this account?")) && void act("", { method: "DELETE" })}
+          className={cn(ICON_BTN, "ml-auto text-danger hover:bg-danger/10")}><Trash2 size={14} /></button>
       </div>
-      {account.error && <div role="alert" data-no-i18n="" className="mt-0.5 text-danger">{account.error}</div>}
-      <div className="mt-0.5 flex items-center gap-1.5 text-ink-tertiary">
-        <span className="min-w-0 truncate">{names.length ? <>{t("Used by")} <span data-no-i18n="">{names.join(", ")}</span></> : t("No bot uses this account yet")}</span>
-        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="input-change" className="shrink-0 text-accent-text hover:underline">{open ? t("Done") : t("Change")}</button>
-      </div>
-      {open && (
-        <div className="mb-1">
-          {grants.map((g) => <GrantEditor key={g.botId} app={app} account={account} botId={g.botId} botName={g.botName || g.botId} grant={g} accounts={accounts} onChanged={() => { void load(); onChanged(); }} />)}
-          {adding && <GrantEditor key={`new-${adding}`} app={app} account={account} botId={adding} botName={state.bots.find((b) => b.id === adding)?.name ?? adding} grant={undefined} accounts={accounts}
-            onChanged={() => { setAdding(""); void load(); onChanged(); }} />}
-          {free.length > 0 && !adding && (
-            <select value="" onChange={(e) => setAdding(e.target.value)} aria-label={t("Let a bot use this account")} data-testid="input-add-bot" className="mt-2 h-9 w-full rounded-lg bg-raised px-2 text-[13px] text-ink">
-              <option value="">{t("Let a bot use this account…")}</option>
-              {free.map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
-            </select>
-          )}
-        </div>
-      )}
-    </div>
+    </article>
   );
 }
 
-/** The Input tab: messaging channels that receive messages and start a bot by themselves. The server keeps each bot token and never shows it again. */
+/** The Channels page: connect messaging accounts (Telegram, Zalo) as cards. Which agent answers on which account is set in each agent's edit page. The server keeps each token and never shows it again. */
 export function InputChannels() {
   const { state } = useStore();
   const t = useT();
@@ -192,55 +185,59 @@ export function InputChannels() {
       setBusy(false);
     }
   };
-  const all = (channels ?? []).flatMap((c) => c.accounts);
+  const accounts = (channels ?? []).flatMap((c) => c.accounts.map((a) => ({ app: c.id, account: a })));
   return (
-    <div role="tabpanel" aria-label={t("Input")} data-testid="input-panel" className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-      <div className="mx-2 mb-3 rounded-xl bg-raised px-3.5 py-2.5 text-[13px] leading-5 text-ink-secondary">
-        {t("Inputs receive messages and start a bot by themselves. The Telegram entry under Connected apps only gives a bot tools to send.")}
+    <div role="tabpanel" aria-label={t("Channels")} data-testid="input-panel" className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+      <h2 className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-ink-tertiary">{t("Connected accounts")} <span className="rounded-full bg-ink/[0.07] px-1.5 text-[11.5px] tabular-nums">{accounts.length}</span></h2>
+      {accounts.length === 0 && <div className="mb-4 py-6 text-center text-[13.5px] text-ink-tertiary">{t("No account is connected yet.")}</div>}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="channel-accounts">
+        {accounts.map(({ app, account }) => <AccountCard key={account.id} app={app} account={account} onChanged={() => void load()} />)}
       </div>
-      {(channels ?? []).map((c) => {
-        const look = LOOK[c.id] ?? LOOK.telegram;
-        const full = c.accounts.length >= c.maxAccounts;
-        return (
-          <div key={c.id} data-testid="input-row" className="rounded-xl px-2 py-2.5 hover:bg-raised/50">
-            <div className="flex items-center gap-3">
-              <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", look.tone)} aria-hidden><look.icon size={20} /></span>
-              <div className="min-w-0 flex-1 leading-tight">
-                <div className="truncate text-[14.5px] font-medium">{t(c.name)}</div>
-                <div className="text-[12.5px] leading-[1.35] text-ink-tertiary">{t(c.blurb)}</div>
+      <h2 className="mb-2 text-[12px] font-medium text-ink-tertiary">{t("Add a channel")}</h2>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {(channels ?? []).map((c) => {
+          const look = LOOK[c.id] ?? LOOK.telegram;
+          const full = c.accounts.length >= c.maxAccounts;
+          return (
+            <article key={c.id} data-testid="input-row" className="flex min-w-0 flex-col rounded-2xl border border-edge bg-card p-3.5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", look.tone)} aria-hidden><look.icon size={18} /></span>
+                <h3 className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{t(c.name)}</h3>
+                {c.connected && <span className="flex shrink-0 items-center gap-1 text-[12px] text-success"><Check size={12} /> {c.accounts.length}</span>}
               </div>
-              {c.connected && <span className="flex shrink-0 items-center gap-1 text-[12.5px] text-success"><Check size={13} /> {t("Connected")}</span>}
-              <button type="button" disabled={full} onClick={() => { setOpen(open === c.id ? null : c.id); setNote(null); setQr(false); }} data-testid={`input-connect-${c.id}`}
-                aria-label={c.accounts.length ? `${t("Add account")}: ${t(c.name)}` : `${t("Connect")}: ${t(c.name)}`}
-                className={cn("flex h-9 shrink-0 items-center gap-1 rounded-full px-4 text-[13.5px] font-medium disabled:opacity-40", c.accounts.length ? "bg-raised text-ink hover:bg-raised-hover" : "bg-accent text-[var(--color-accent-ink)]")}>
-                {c.accounts.length ? <><Plus size={13} /> {t("Add account")}</> : t("Connect")}
-              </button>
-            </div>
-            {c.limits.length > 0 && <ul className="mt-1.5 list-disc pl-[78px] pr-2 text-[12px] leading-[1.5] text-ink-tertiary">{c.limits.map((l) => <li key={l}>{t(l)}</li>)}</ul>}
-            {c.accounts.map((a) => <AccountRow key={a.id} app={c.id} account={a} accounts={all} onChanged={() => void load()} />)}
-            {open === c.id && (
-              <div className="mt-2 pl-14 pr-1">
-                <div className="mb-1.5 text-[12px] leading-[1.45] text-ink-tertiary">{t(HELP[c.id] ?? "")}</div>
-                <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} aria-label={t("Account label")} placeholder={t("A label for this account, such as the shop's name")} maxLength={40} className={cn(INPUT, "h-10")} />
-                {c.id === "zalo-personal" ? (
-                  qr ? <ZaloQr onDone={(key) => void connect(c, key)} onCancel={() => setQr(false)} /> : null
-                ) : (
-                  <input type="password" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && label.trim() && token.trim() && void connect(c)}
-                    aria-label={t("Bot token")} placeholder={t("Bot token")} autoComplete="off" data-no-i18n="" className={cn(INPUT, "mt-1.5 h-10")} />
-                )}
-                <div className="mt-1.5 flex items-center justify-end gap-2">
-                  {note?.id === c.id && <span role="alert" data-no-i18n="" className="min-w-0 flex-1 text-[12.5px] text-danger">{note.text}</span>}
-                  {c.id === "zalo-personal"
-                    ? !qr && <button type="button" disabled={busy || !label.trim()} onClick={() => setQr(true)} data-testid="input-qr"
-                        className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Show QR code")}</button>
-                    : <button type="button" disabled={busy || !label.trim() || !token.trim()} onClick={() => void connect(c)} data-testid="input-save"
-                        className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Connect")}</button>}
+              <p className="mt-2.5 text-[12.5px] leading-[18px] text-ink-secondary">{t(c.blurb)}</p>
+              {c.limits.length > 0 && <ul className="mt-2 list-disc pl-4 text-[12px] leading-[1.5] text-ink-tertiary">{c.limits.map((l) => <li key={l}>{t(l)}</li>)}</ul>}
+              {open === c.id && (
+                <div className="mt-3">
+                  <div className="mb-1.5 text-[12px] leading-[1.45] text-ink-tertiary">{t(HELP[c.id] ?? "")}</div>
+                  <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} aria-label={t("Account label")} placeholder={t("A label for this account, such as the shop's name")} maxLength={40} className={cn(INPUT, "h-10")} />
+                  {c.id === "zalo-personal" ? (
+                    qr ? <ZaloQr onDone={(key) => void connect(c, key)} onCancel={() => setQr(false)} /> : null
+                  ) : (
+                    <input type="password" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && label.trim() && token.trim() && void connect(c)}
+                      aria-label={t("Bot token")} placeholder={t("Bot token")} autoComplete="off" data-no-i18n="" className={cn(INPUT, "mt-1.5 h-10")} />
+                  )}
+                  <div className="mt-1.5 flex items-center justify-end gap-2">
+                    {note?.id === c.id && <span role="alert" data-no-i18n="" className="min-w-0 flex-1 text-[12.5px] text-danger">{note.text}</span>}
+                    {c.id === "zalo-personal"
+                      ? !qr && <button type="button" disabled={busy || !label.trim()} onClick={() => setQr(true)} data-testid="input-qr"
+                          className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Show QR code")}</button>
+                      : <button type="button" disabled={busy || !label.trim() || !token.trim()} onClick={() => void connect(c)} data-testid="input-save"
+                          className="h-8 rounded-full bg-accent px-3.5 text-[13px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40">{t("Connect")}</button>}
+                  </div>
                 </div>
+              )}
+              <div className="mt-auto pt-3.5">
+                <button type="button" disabled={full} onClick={() => { setOpen(open === c.id ? null : c.id); setNote(null); setQr(false); }} data-testid={`input-connect-${c.id}`}
+                  aria-label={c.accounts.length ? `${t("Add account")}: ${t(c.name)}` : `${t("Connect")}: ${t(c.name)}`}
+                  className={cn("flex h-9 w-full items-center justify-center gap-1 rounded-lg px-4 text-[13.5px] font-medium disabled:opacity-40", c.accounts.length ? "border border-edge bg-composer text-ink hover:bg-raised" : "bg-accent text-[var(--color-accent-ink)]")}>
+                  {c.accounts.length ? <><Plus size={13} /> {t("Add account")}</> : t("Connect")}
+                </button>
               </div>
-            )}
-          </div>
-        );
-      })}
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -249,35 +246,53 @@ interface BotGrant extends ChannelGrant { app: string; accountLabel: string; use
 interface Batch { id: string; accountId: string; chatId: string; userName: string; status: string; machine: string; files: { name: string; kind: string }[]; outFiles: string[]; error: string | null; threadId: string | null; startedAt: number | null; finishedAt: number | null; createdAt: number }
 const STATUS: Record<string, string> = { collecting: "Receiving files", queued: "Waiting", running: "Running", done: "Done", failed: "Failed", cancelled: "Cancelled", expired: "Expired" };
 
-/** In a bot's settings: the input accounts this bot answers on, what is wrong (no folder, an engine that cannot see), and its latest batches. */
+/** In an agent's edit page (Availability): the channel accounts this agent answers on, each with its chats and its limits, and a way to add one. */
 export function BotInputs({ botId }: { botId: string }) {
   const { state, dispatch } = useStore();
   const t = useT();
   const [data, setData] = useState<{ grants: BotGrant[]; warnings: string[]; batches: Batch[] } | null>(null);
-  const load = useCallback(() => api<{ grants: BotGrant[]; warnings: string[]; batches: Batch[] }>(`/api/bots/${botId}/channels`).then(setData).catch(() => {}), [botId]);
-  useEffect(() => { void load(); }, [load, state.channelTick]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [adding, setAdding] = useState("");
+  const load = useCallback(() => {
+    void api<{ grants: BotGrant[]; warnings: string[]; batches: Batch[] }>(`/api/bots/${botId}/channels`).then(setData).catch(() => {});
+    void api<{ channels: Channel[] }>("/api/channels").then((r) => setChannels(r.channels)).catch(() => {});
+  }, [botId]);
+  useEffect(() => { load(); }, [load, state.channelTick]);
   const act = async (id: string, what: "retry" | "cancel") => { await api(`/api/channels/batches/${id}/${what}`, { method: "POST" }).catch(() => {}); void load(); };
   const grants = data?.grants ?? [];
+  const accounts = channels.flatMap((c) => c.accounts);
+  const accountOf = (id: string) => accounts.find((x) => x.id === id);
+  const appOf = (id: string) => channels.find((c) => c.accounts.some((x) => x.id === id))?.id ?? "telegram";
+  const free = accounts.filter((x) => !grants.some((g) => g.accountId === x.id));
   return (
     <div className="px-5 py-2.5" data-testid="bot-inputs">
-      <div className="mb-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Inputs")}</div>
-      {grants.length === 0 && (
-        <div className="text-[13px] text-ink-tertiary">
-          {t("No Telegram or Zalo account starts this bot yet.")}{" "}
-          <button type="button" onClick={() => dispatch({ type: "apps", open: true, tab: "input" })} className="text-accent-text hover:underline">{t("Set one up")}</button>
-        </div>
-      )}
+      <div className="mb-1.5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("Channels")}</div>
+      {grants.length === 0 && !adding && <div className="text-[13px] text-ink-tertiary">{t("This agent does not answer on any Telegram or Zalo account yet.")}</div>}
       {grants.length > 0 && (data?.warnings ?? []).map((w) => <div key={w} role="alert" className="mb-1.5 rounded-lg bg-warning/12 px-3 py-2 text-[12.5px] text-warning">{t(w)}</div>)}
-      <div className="flex flex-col gap-1.5">
-        {grants.map((g) => (
-          <div key={g.accountId} className="rounded-lg bg-inset px-3 py-2 text-[13px] ring-1 ring-inset ring-ink/[0.07]">
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-ink"><span>{t(NAMES[g.app] ?? "Telegram bot")}</span> · <span data-no-i18n="">{g.accountLabel}</span></span>
-              <button type="button" onClick={() => dispatch({ type: "apps", open: true, tab: "input" })} className="shrink-0 text-[12.5px] text-accent-text hover:underline">{t("Change")}</button>
+      <div className="flex flex-col gap-2">
+        {grants.map((g) => {
+          const account = accountOf(g.accountId);
+          return (
+            <div key={g.accountId} data-testid="bot-channel">
+              <div className="text-[13px] text-ink"><span>{t(NAMES[g.app] ?? "Telegram bot")}</span> · <span data-no-i18n="">{g.accountLabel}</span></div>
+              {account && <GrantEditor app={g.app} account={account} botId={botId} botName={state.bots.find((b) => b.id === botId)?.name ?? botId} grant={g} accounts={accounts} onChanged={load} />}
             </div>
-            <div data-no-i18n="" className="mt-0.5 truncate font-mono text-[12px] text-ink-tertiary">{g.chats.join(", ")}</div>
-          </div>
-        ))}
+          );
+        })}
+        {adding && accountOf(adding) && (
+          <GrantEditor key={`new-${adding}`} app={appOf(adding)} account={accountOf(adding)!} botId={botId} botName={state.bots.find((b) => b.id === botId)?.name ?? botId} grant={undefined} accounts={accounts}
+            onChanged={() => { setAdding(""); load(); }} />
+        )}
+        {!adding && free.length > 0 && (
+          <select value="" onChange={(e) => setAdding(e.target.value)} aria-label={t("Answer on a channel account")} data-testid="bot-add-channel" className="h-9 w-full rounded-lg bg-raised px-2 text-[13px] text-ink">
+            <option value="">{t("Answer on a channel account…")}</option>
+            {free.map((x) => <option key={x.id} value={x.id} data-no-i18n="">{`${t(NAMES[appOf(x.id)] ?? "Telegram bot")} · ${x.label}`}</option>)}
+          </select>
+        )}
+        {adding && <button type="button" onClick={() => setAdding("")} className="self-start text-[12.5px] text-ink-secondary hover:underline">{t("Cancel")}</button>}
+        {accounts.length === 0 && (
+          <button type="button" onClick={() => dispatch({ type: "view", view: "input" })} className="self-start text-[13px] text-accent-text hover:underline">{t("Connect an account in Channels")}</button>
+        )}
       </div>
       {(data?.batches.length ?? 0) > 0 && (
         <div className="mt-2">

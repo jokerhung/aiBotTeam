@@ -8,7 +8,7 @@ import { randomUuid } from "@/lib/random-uuid";
 import { BUTTON } from "../shared";
 
 const INPUT = "mt-1 w-full rounded-lg border border-edge bg-card px-3 py-2 text-sm";
-export function NativeSettings({ resource, bot, onChange }: { resource: "subagents" | "web" | "computer"; bot: Bot; onChange: (p: Partial<Bot>) => void }) {
+export function NativeSettings({ resource, bot, onChange }: { resource: "subagents" | "web" | "computer" | "resources"; bot: Bot; onChange: (p: Partial<Bot>) => void }) {
   const t = useT(); const { state } = useStore();
   const config = bot.toolbox ?? DEFAULT_TOOLBOX;
   const change = <K extends keyof ToolboxSettings>(key: K, patch: Partial<ToolboxSettings[K]>) => onChange({ toolbox: { ...config, [key]: { ...config[key], ...patch } } });
@@ -17,6 +17,14 @@ export function NativeSettings({ resource, bot, onChange }: { resource: "subagen
   const check = (label: string, value: boolean, set: (v: boolean) => void, hint?: string) => <label className="flex items-start gap-3 py-2 text-sm"><input type="checkbox" className="mt-1" checked={value} onChange={(e) => set(e.target.checked)} /><span>{t(label)}{hint && <span className="mt-1 block text-xs leading-5 text-ink-secondary">{t(hint)}</span>}</span></label>;
   const number = (label: string, value: number, min: number, max: number, set: (v: number) => void) => <label className="block text-sm">{t(label)}<input type="number" className={INPUT} value={value} min={min} max={max} onChange={(e) => { const n = Number(e.target.value); if (n >= min && n <= max) set(n); }} /></label>;
   const mode = (value: HandBack | null | undefined, set: (v: HandBack | null) => void, inherit = false) => <select aria-label={t("Hand-back mode")} className={INPUT} value={value ?? ""} onChange={(e) => set((e.target.value || null) as HandBack | null)}>{inherit && <option value="">{t("Use agent policy")}</option>}<option value="sync">{t("Synchronous")}</option><option value="async">{t("Background")}</option><option value="auto">{t("Automatic")}</option></select>;
+  if (resource === "resources") return <div className="space-y-4">
+    <p className="text-sm text-ink-secondary">{t("Resources keep immutable versions. Only people approve a version; routines use its exact reference.")}</p>
+    {check("Allow HTML resources", config.resources.allowHtml, (allowHtml) => change("resources", { allowHtml }))}
+    {check("Show resource cards in chat", config.resources.chatCards, (chatCards) => change("resources", { chatCards }))}
+    {number("Maximum HTML size (KB)", config.resources.maxHtmlBytes / 1024, 1, 2048, (value) => change("resources", { maxHtmlBytes: value * 1024 }))}
+    {number("Maximum Markdown size (KB)", config.resources.maxMarkdownBytes / 1024, 1, 500, (value) => change("resources", { maxMarkdownBytes: value * 1024 }))}
+    {number("Maximum image size (KB)", config.resources.maxImageBytes / 1024, 1, 10240, (value) => change("resources", { maxImageBytes: value * 1024 }))}
+  </div>;
   if (resource === "web") return <div className="space-y-4">
     <p className="text-sm text-ink-secondary">{t("A private browser profile for this agent, powered by Playwright MCP.")}</p>
     {check("Show browser window", config.web.headed, (headed) => change("web", { headed }))}

@@ -29,9 +29,9 @@ function weekdayIn(tz: string | null, ms: number): number {
   } catch { return (new Date(ms).getDay() + 6) % 7; }
 }
 
-/** The times a routine will fire inside a window, projected from its next run (calendar display only). */
-export function occurrences(r: Routine, from: number, to: number): number[] {
-  if (!r.enabled || !r.nextRun) return [];
+/** The times a routine will fire inside a window, projected from its next run (calendar display only). A switched-off routine has none unless `includeOff`: then they are when it would run. */
+export function occurrences(r: Routine, from: number, to: number, includeOff = false): number[] {
+  if ((!r.enabled && !includeOff) || !r.nextRun) return [];
   const out: number[] = [];
   const first = r.nextRun;
   if (r.kind === "once") return first >= from && first < to ? [first] : [];

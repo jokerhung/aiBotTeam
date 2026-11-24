@@ -1,0 +1,566 @@
+{
+  "source": "https://github.com/vstorm-co/agenticos",
+  "revision": "a8c16d6b30571c636462e99a7221cf3724861057",
+  "skills": [
+    {
+      "key": "ecommerce/abandoned-cart-follow-up",
+      "industry": "ecommerce",
+      "name": "abandoned-cart-follow-up",
+      "description": "Write a follow-up that answers the objection rather than repeating the offer.",
+      "category": "marketing"
+    },
+    {
+      "key": "ecommerce/inventory-alerting",
+      "industry": "ecommerce",
+      "name": "inventory-alerting",
+      "description": "Turn stock levels into a small number of decisions with a lead time attached.",
+      "category": "analytics"
+    },
+    {
+      "key": "ecommerce/order-status-answers",
+      "industry": "ecommerce",
+      "name": "order-status-answers",
+      "description": "Answer where-is-my-order from the order and carrier record, and say what happens next.",
+      "category": "customer-support"
+    },
+    {
+      "key": "ecommerce/print-file-validation",
+      "industry": "ecommerce",
+      "name": "print-file-validation",
+      "description": "Check an artwork file against the press requirements and say exactly what to fix.",
+      "category": "operations"
+    },
+    {
+      "key": "ecommerce/product-description-writer",
+      "industry": "ecommerce",
+      "name": "product-description-writer",
+      "description": "Write listing copy from the spec sheet, without inventing an attribute.",
+      "category": "content"
+    },
+    {
+      "key": "ecommerce/returns-and-exchanges",
+      "industry": "ecommerce",
+      "name": "returns-and-exchanges",
+      "description": "Decide a return without asking, know what needs a person, and refuse with a next step.",
+      "category": "customer-support"
+    },
+    {
+      "key": "ecommerce/review-response",
+      "industry": "ecommerce",
+      "name": "review-response",
+      "description": "Reply to a public review so the next reader is reassured, not the reviewer argued with.",
+      "category": "marketing"
+    },
+    {
+      "key": "ecommerce/shipping-and-customs",
+      "industry": "ecommerce",
+      "name": "shipping-and-customs",
+      "description": "Answer duties, delivery windows and restrictions for a destination, accurately.",
+      "category": "operations"
+    },
+    {
+      "key": "ecommerce/supplier-chase",
+      "industry": "ecommerce",
+      "name": "supplier-chase",
+      "description": "Detect a late purchase order, chase it with the right ask, and escalate on a schedule.",
+      "category": "operations"
+    },
+    {
+      "key": "ecommerce/vip-and-repeat-customers",
+      "industry": "ecommerce",
+      "name": "vip-and-repeat-customers",
+      "description": "Recognise a high-value or at-risk customer and change the handling, not the tone.",
+      "category": "sales"
+    },
+    {
+      "key": "finance/aml-alert-narrative",
+      "industry": "finance",
+      "name": "aml-alert-narrative",
+      "description": "Write the factual narrative behind a monitoring alert for an analyst to decide on.",
+      "category": "security"
+    },
+    {
+      "key": "finance/claim-intake-triage",
+      "industry": "finance",
+      "name": "claim-intake-triage",
+      "description": "Turn a first notification of loss into a structured, complete claim record.",
+      "category": "operations"
+    },
+    {
+      "key": "finance/complaint-handling",
+      "industry": "finance",
+      "name": "complaint-handling",
+      "description": "Acknowledge, classify and route a complaint within the regulatory clock.",
+      "category": "customer-support"
+    },
+    {
+      "key": "finance/credit-file-summary",
+      "industry": "finance",
+      "name": "credit-file-summary",
+      "description": "Summarise an application pack into the facts a credit decision needs, and nothing else.",
+      "category": "finance"
+    },
+    {
+      "key": "finance/kyc-document-review",
+      "industry": "finance",
+      "name": "kyc-document-review",
+      "description": "Check an identity pack for completeness and consistency, and list what blocks onboarding.",
+      "category": "finance"
+    },
+    {
+      "key": "finance/month-end-close-checklist",
+      "industry": "finance",
+      "name": "month-end-close-checklist",
+      "description": "Drive a close through its dependencies and report what is blocking it.",
+      "category": "finance"
+    },
+    {
+      "key": "finance/policy-renewal-explainer",
+      "industry": "finance",
+      "name": "policy-renewal-explainer",
+      "description": "Explain what changed at renewal, why the price moved, and what the options are.",
+      "category": "customer-support"
+    },
+    {
+      "key": "finance/product-terms-lookup",
+      "industry": "finance",
+      "name": "product-terms-lookup",
+      "description": "Answer questions about rates, fees and terms from the current document, with the version cited.",
+      "category": "customer-support"
+    },
+    {
+      "key": "finance/regulatory-change-digest",
+      "industry": "finance",
+      "name": "regulatory-change-digest",
+      "description": "Compare two versions of a rulebook and report what changed and who it hits.",
+      "category": "research"
+    },
+    {
+      "key": "finance/transaction-dispute-workflow",
+      "industry": "finance",
+      "name": "transaction-dispute-workflow",
+      "description": "Classify a disputed transaction and drive it down the right path with the right evidence.",
+      "category": "operations"
+    },
+    {
+      "key": "healthcare/appointment-preparation",
+      "industry": "healthcare",
+      "name": "appointment-preparation",
+      "description": "What a patient must bring, stop, fast for, or arrange before a listed appointment.",
+      "category": "customer-support"
+    },
+    {
+      "key": "healthcare/clinical-procedure-lookup",
+      "industry": "healthcare",
+      "name": "clinical-procedure-lookup",
+      "description": "Answer staff questions from SOPs and guidelines with a citation, and refuse when the procedure is silent.",
+      "category": "documentation"
+    },
+    {
+      "key": "healthcare/coding-and-billing-support",
+      "industry": "healthcare",
+      "name": "coding-and-billing-support",
+      "description": "Match a documented episode to the right billing code, and flag what the notes do not support.",
+      "category": "finance"
+    },
+    {
+      "key": "healthcare/consent-explainer",
+      "industry": "healthcare",
+      "name": "consent-explainer",
+      "description": "Explain a consent form in plain language without advising, and route every clinical question.",
+      "category": "content"
+    },
+    {
+      "key": "healthcare/discharge-summary-plain-language",
+      "industry": "healthcare",
+      "name": "discharge-summary-plain-language",
+      "description": "Rewrite a discharge summary for the patient without changing a single clinical fact.",
+      "category": "content"
+    },
+    {
+      "key": "healthcare/incident-reporting-assistant",
+      "industry": "healthcare",
+      "name": "incident-reporting-assistant",
+      "description": "Turn an account of a patient-safety incident into a complete, factual, blame-free report.",
+      "category": "operations"
+    },
+    {
+      "key": "healthcare/medication-list-reconciliation",
+      "industry": "healthcare",
+      "name": "medication-list-reconciliation",
+      "description": "Compare medication lists from two sources and surface every discrepancy for a pharmacist.",
+      "category": "operations"
+    },
+    {
+      "key": "healthcare/patient-enquiry-triage",
+      "industry": "healthcare",
+      "name": "patient-enquiry-triage",
+      "description": "Which patient messages an agent may answer, which go to a clinician, and what it must never do.",
+      "category": "customer-support"
+    },
+    {
+      "key": "healthcare/records-request-handling",
+      "industry": "healthcare",
+      "name": "records-request-handling",
+      "description": "Identity checks, lawful basis, timescales and refusals for a request to access records.",
+      "category": "legal"
+    },
+    {
+      "key": "healthcare/referral-letter-draft",
+      "industry": "healthcare",
+      "name": "referral-letter-draft",
+      "description": "Assemble a structured referral from the record, and mark every field the notes cannot fill.",
+      "category": "documentation"
+    },
+    {
+      "key": "legal/bundle-preparation",
+      "industry": "legal",
+      "name": "bundle-preparation",
+      "description": "Assemble and check a document bundle against the court's requirements.",
+      "category": "operations"
+    },
+    {
+      "key": "legal/client-update-letter",
+      "industry": "legal",
+      "name": "client-update-letter",
+      "description": "Tell a client where the matter is, what it costs and what happens next.",
+      "category": "content"
+    },
+    {
+      "key": "legal/conflict-check-summary",
+      "industry": "legal",
+      "name": "conflict-check-summary",
+      "description": "Assemble the entity and relationship picture a conflict decision needs.",
+      "category": "research"
+    },
+    {
+      "key": "legal/contract-clause-library",
+      "industry": "legal",
+      "name": "contract-clause-library",
+      "description": "Retrieve the approved clause, its variants and the fallback position.",
+      "category": "legal"
+    },
+    {
+      "key": "legal/deadline-and-limitation-tracker",
+      "industry": "legal",
+      "name": "deadline-and-limitation-tracker",
+      "description": "Compute and monitor the dates a matter turns on, and escalate before they bite.",
+      "category": "operations"
+    },
+    {
+      "key": "legal/disclosure-triage",
+      "industry": "legal",
+      "name": "disclosure-triage",
+      "description": "Sort documents for relevance and privilege, and never decide privilege alone.",
+      "category": "legal"
+    },
+    {
+      "key": "legal/document-review-first-pass",
+      "industry": "legal",
+      "name": "document-review-first-pass",
+      "description": "Extract the operative terms of an agreement and flag what deviates from the standard.",
+      "category": "legal"
+    },
+    {
+      "key": "legal/legal-research-brief",
+      "industry": "legal",
+      "name": "legal-research-brief",
+      "description": "Answer a research question with authority, currency and the counter-argument.",
+      "category": "research"
+    },
+    {
+      "key": "legal/matter-intake",
+      "industry": "legal",
+      "name": "matter-intake",
+      "description": "Capture a new matter completely, and run the conflict and scope questions first.",
+      "category": "operations"
+    },
+    {
+      "key": "legal/time-recording-narrative",
+      "industry": "legal",
+      "name": "time-recording-narrative",
+      "description": "Write a time narrative a client will pay without querying.",
+      "category": "finance"
+    },
+    {
+      "key": "manufacturing/delivery-exception-handling",
+      "industry": "manufacturing",
+      "name": "delivery-exception-handling",
+      "description": "Detect a shipment going wrong and act before the customer notices.",
+      "category": "operations"
+    },
+    {
+      "key": "manufacturing/inbound-goods-check",
+      "industry": "manufacturing",
+      "name": "inbound-goods-check",
+      "description": "Verify a delivery against the order and record what is wrong before it is signed for.",
+      "category": "operations"
+    },
+    {
+      "key": "manufacturing/maintenance-scheduling",
+      "industry": "manufacturing",
+      "name": "maintenance-scheduling",
+      "description": "Turn a maintenance backlog into a sequence that fits the production plan.",
+      "category": "operations"
+    },
+    {
+      "key": "manufacturing/production-schedule-explainer",
+      "industry": "manufacturing",
+      "name": "production-schedule-explainer",
+      "description": "Explain what the schedule can absorb, and what a change costs.",
+      "category": "analytics"
+    },
+    {
+      "key": "manufacturing/quality-deviation-report",
+      "industry": "manufacturing",
+      "name": "quality-deviation-report",
+      "description": "Record a deviation, contain it, and set up the investigation without pre-judging it.",
+      "category": "qa"
+    },
+    {
+      "key": "manufacturing/safety-observation-logging",
+      "industry": "manufacturing",
+      "name": "safety-observation-logging",
+      "description": "Capture a near miss or unsafe condition so it produces an action, not a statistic.",
+      "category": "operations"
+    },
+    {
+      "key": "manufacturing/shift-handover",
+      "industry": "manufacturing",
+      "name": "shift-handover",
+      "description": "Hand over a line so the next shift starts informed rather than discovering.",
+      "category": "operations"
+    },
+    {
+      "key": "manufacturing/supplier-nonconformance",
+      "industry": "manufacturing",
+      "name": "supplier-nonconformance",
+      "description": "Raise a nonconformance with the evidence a supplier cannot dispute.",
+      "category": "operations"
+    },
+    {
+      "key": "manufacturing/technical-documentation-lookup",
+      "industry": "manufacturing",
+      "name": "technical-documentation-lookup",
+      "description": "Answer from the right revision of a drawing or manual, and say which one.",
+      "category": "documentation"
+    },
+    {
+      "key": "manufacturing/work-order-troubleshooting",
+      "industry": "manufacturing",
+      "name": "work-order-troubleshooting",
+      "description": "Take a machine fault from symptom to the documented procedure, safely.",
+      "category": "operations"
+    },
+    {
+      "key": "public-sector/accessibility-review",
+      "industry": "public-sector",
+      "name": "accessibility-review",
+      "description": "Check a public document or page against the standard and say what to fix.",
+      "category": "qa"
+    },
+    {
+      "key": "public-sector/asset-fault-triage",
+      "industry": "public-sector",
+      "name": "asset-fault-triage",
+      "description": "Classify a reported fault, set the response class, and dispatch with the right detail.",
+      "category": "operations"
+    },
+    {
+      "key": "public-sector/citizen-enquiry-routing",
+      "industry": "public-sector",
+      "name": "citizen-enquiry-routing",
+      "description": "Answer procedural questions from published information and route everything else correctly.",
+      "category": "customer-support"
+    },
+    {
+      "key": "public-sector/complaint-stage-tracking",
+      "industry": "public-sector",
+      "name": "complaint-stage-tracking",
+      "description": "Track a complaint through its statutory stages and never miss an escalation right.",
+      "category": "operations"
+    },
+    {
+      "key": "public-sector/foi-request-handling",
+      "industry": "public-sector",
+      "name": "foi-request-handling",
+      "description": "Log, clarify and route a request for information within the statutory clock.",
+      "category": "legal"
+    },
+    {
+      "key": "public-sector/grant-eligibility-check",
+      "industry": "public-sector",
+      "name": "grant-eligibility-check",
+      "description": "Check an application against published criteria and list what is missing.",
+      "category": "operations"
+    },
+    {
+      "key": "public-sector/meeting-minutes",
+      "industry": "public-sector",
+      "name": "meeting-minutes",
+      "description": "Produce minutes that record decisions, actions and dissent, not the discussion.",
+      "category": "documentation"
+    },
+    {
+      "key": "public-sector/policy-plain-language",
+      "industry": "public-sector",
+      "name": "policy-plain-language",
+      "description": "Rewrite a policy so a resident can act on it, without changing what it means.",
+      "category": "content"
+    },
+    {
+      "key": "public-sector/procurement-question-response",
+      "industry": "public-sector",
+      "name": "procurement-question-response",
+      "description": "Answer a bidder's clarification correctly, and publish it to every bidder.",
+      "category": "legal"
+    },
+    {
+      "key": "public-sector/service-outage-notice",
+      "industry": "public-sector",
+      "name": "service-outage-notice",
+      "description": "Tell residents what is affected, what to do meanwhile, and when it returns.",
+      "category": "content"
+    },
+    {
+      "key": "software/agent-budgets",
+      "industry": "software",
+      "name": "agent-budgets",
+      "description": "Set an agent's monthly budget and limits so a mistake costs little and a busy month does not stop it.",
+      "category": "operations"
+    },
+    {
+      "key": "software/agent-design",
+      "industry": "software",
+      "name": "agent-design",
+      "description": "Turn \"I need an agent for X\" into a design - its one job, what it may do, what it knows, who approves.",
+      "category": "product"
+    },
+    {
+      "key": "software/agent-instructions",
+      "industry": "software",
+      "name": "agent-instructions",
+      "description": "Write an agent's instructions so it does one job well - role, scope, refusals, sources and tone.",
+      "category": "product"
+    },
+    {
+      "key": "software/agent-testing",
+      "industry": "software",
+      "name": "agent-testing",
+      "description": "Try an agent before publishing it - the questions to ask, the failures to look for, what to change.",
+      "category": "qa"
+    },
+    {
+      "key": "software/agenticos-guide",
+      "industry": "software",
+      "name": "agenticos-guide",
+      "description": "Answer questions about AgenticOS itself - what a feature is called, how it works, how to connect it to Claude Code or another tool, the API - from the product's own documentation, not from a web search.",
+      "category": "documentation"
+    },
+    {
+      "key": "software/api-support",
+      "industry": "software",
+      "name": "api-support",
+      "description": "Answer integration questions with a request that works, and diagnose from status codes.",
+      "category": "engineering"
+    },
+    {
+      "key": "software/architecture-decision-record",
+      "industry": "software",
+      "name": "architecture-decision-record",
+      "description": "Capture a decision, the options rejected, and the cost accepted.",
+      "category": "documentation"
+    },
+    {
+      "key": "software/bug-report-triage",
+      "industry": "software",
+      "name": "bug-report-triage",
+      "description": "Turn a report into something reproducible, or say precisely what is missing.",
+      "category": "qa"
+    },
+    {
+      "key": "software/customer-facing-postmortem",
+      "industry": "software",
+      "name": "customer-facing-postmortem",
+      "description": "Explain an outage to customers honestly, without leaking internals or blaming a person.",
+      "category": "content"
+    },
+    {
+      "key": "software/dependency-upgrade-assessment",
+      "industry": "software",
+      "name": "dependency-upgrade-assessment",
+      "description": "Judge whether an upgrade is safe, and say what to test.",
+      "category": "engineering"
+    },
+    {
+      "key": "software/incident-triage",
+      "industry": "software",
+      "name": "incident-triage",
+      "description": "Turn an alert into a severity, an owner and a first hypothesis within minutes.",
+      "category": "devops"
+    },
+    {
+      "key": "software/model-choice",
+      "industry": "software",
+      "name": "model-choice",
+      "description": "Pick a model for an agent by quality, speed, cost and where data may go - and say why.",
+      "category": "engineering"
+    },
+    {
+      "key": "software/onboarding-buddy",
+      "industry": "software",
+      "name": "onboarding-buddy",
+      "description": "Answer a new engineer's questions from the repository's own docs, with the file path.",
+      "category": "documentation"
+    },
+    {
+      "key": "software/pull-request-review",
+      "industry": "software",
+      "name": "pull-request-review",
+      "description": "Review a diff against the repository's own conventions, in the order a maintainer does.",
+      "category": "engineering"
+    },
+    {
+      "key": "software/pydantic-ai-import",
+      "industry": "software",
+      "name": "pydantic-ai-import",
+      "description": "Bring an agent written with Pydantic AI into AgenticOS - read its code, map it to a draft, say what did not translate.",
+      "category": "engineering"
+    },
+    {
+      "key": "software/rag-setup",
+      "industry": "software",
+      "name": "rag-setup",
+      "description": "Choose how documents become a knowledge base - parser, chunking, retrieval and reranking - for the documents at hand.",
+      "category": "engineering"
+    },
+    {
+      "key": "software/release-notes-writer",
+      "industry": "software",
+      "name": "release-notes-writer",
+      "description": "Turn merged changes into notes a user can act on, grouped by what they mean.",
+      "category": "content"
+    },
+    {
+      "key": "software/runbook-generator",
+      "industry": "software",
+      "name": "runbook-generator",
+      "description": "Write a runbook somebody woken at 3am can follow without thinking.",
+      "category": "devops"
+    },
+    {
+      "key": "software/virtual-tables",
+      "industry": "software",
+      "name": "virtual-tables",
+      "description": "Design and use AgenticOS typed tables for an automation's records, state, notes and reporting.",
+      "category": "data"
+    },
+    {
+      "key": "software/workflow-builder",
+      "industry": "software",
+      "name": "workflow-builder",
+      "description": "Build and verify AgenticOS automations and API integrations, including tools unavailable in the MCP gallery.",
+      "category": "automation"
+    }
+  ]
+}

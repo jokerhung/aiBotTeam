@@ -27,8 +27,10 @@ export function useHashRoute(enabled: boolean) {
         window.history.replaceState(null, "", toHash(s.view, id, s.agentTab));
       };
       // the address names the page to open; the writer below waits until the state shows exactly that page (a chat without an id has no fixed target)
-      pending.current = route.view === "chat" && !route.id ? null : toHash(route.view, route.id, route.tab);
-      if (route.view === "agent") {
+      pending.current = route.view === "chat" && !route.id ? null : toHash(route.view, route.id, route.tab, route.version);
+      if (route.view === "resources" && route.id) {
+        navigate({ type: "openResource", id: route.id, version: route.version });
+      } else if (route.view === "agent") {
         if (s.bots.some((b) => b.id === route.id)) navigate({ type: "openAgent", id: route.id!, tab: route.tab });
         else { pending.current = null; navigate({ type: "view", view: "agents" }); }
       } else if (route.view === "chat" && route.id) {
@@ -70,12 +72,12 @@ export function useHashRoute(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled || !ready) return;
-    const id = state.view === "agent" ? state.selectedAgentId : state.view === "chat" ? state.selectedId : state.view === "project" ? state.selectedGroupId : state.view === "section" ? state.selectedSectionId : undefined;
-    const want = toHash(state.view, id, state.agentTab);
+    const id = state.view === "resources" ? state.resourceId || undefined : state.view === "agent" ? state.selectedAgentId : state.view === "chat" ? state.selectedId : state.view === "project" ? state.selectedGroupId : state.view === "section" ? state.selectedSectionId : undefined;
+    const want = toHash(state.view, id, state.agentTab, state.resourceVersion);
     if (pending.current) {
       if (want !== pending.current) return; // the page named in the address is still being opened
       pending.current = null;
     }
     if (window.location.hash !== want) window.history.pushState(null, "", want);
-  }, [enabled, ready, state.view, state.selectedId, state.selectedGroupId, state.selectedSectionId, state.selectedAgentId, state.agentTab]);
+  }, [enabled, ready, state.view, state.selectedId, state.selectedGroupId, state.selectedSectionId, state.selectedAgentId, state.agentTab, state.resourceId, state.resourceVersion]);
 }

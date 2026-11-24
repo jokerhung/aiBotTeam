@@ -18,3 +18,9 @@ web/components/agents/toolbox are adapted from agenticos (same revision above),
 Copyright agenticos contributors, Apache License 2.0. Modified: BotTeam skin
 selectors, resource adapters, unavailable states, and Connected apps entry.
 The full license is included in web/components/agents/toolbox/LICENSE.
+
+The 80 industry skills and their 17 supporting files under server/botteam/skill_gallery
+are copied from agenticos, revision a8c16d6b30571c636462e99a7221cf3724861057,
+Copyright agenticos contributors, Apache License 2.0. Skill content is unchanged;
+catalog.json adds source provenance for offline installation into BotTeam.
+The full license is included in server/botteam/skill_gallery/LICENSE.

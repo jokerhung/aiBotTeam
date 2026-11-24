@@ -97,6 +97,10 @@ class Store:
 
     async def _migrate(self) -> None:
         """Phase 1 stored messages per bot; give each bot a main thread and chain its messages."""
+        routine_cols = {row[1] for row in await (await self.db.execute("PRAGMA table_info(routine_defs)")).fetchall()}
+        for name, definition in (("resource_id", "TEXT"), ("resource_version", "INTEGER"), ("require_approved", "INTEGER NOT NULL DEFAULT 0")):
+            if name not in routine_cols:
+                await self.db.execute(f"ALTER TABLE routine_defs ADD COLUMN {name} {definition}")
         cur = await self.db.execute("PRAGMA table_info(messages)")
         cols = {r[1] for r in await cur.fetchall()}
         for col in ("thread_id", "parent_id", "role"):
@@ -502,13 +506,13 @@ class Store:
         return cur.rowcount > 0
 
     # ---- routines (Phase 4: bots and rooms, schedules, runs) ----------------------------------------------------------
-    _RCOLS = "id, target_kind, target_id, name, prompt, kind, every_min, at, days, run_at, tz, anchor, enabled, last_run, next_run, max_run_min, created_by, created_at"
+    _RCOLS = "id, target_kind, target_id, name, prompt, kind, every_min, at, days, run_at, tz, anchor, enabled, last_run, next_run, max_run_min, created_by, created_at, resource_id, resource_version, require_approved"
 
     @staticmethod
     def _routine(r) -> dict[str, Any]:
         return {"id": r[0], "targetKind": r[1], "targetId": r[2], "name": r[3], "prompt": r[4], "kind": r[5], "everyMin": r[6], "at": r[7],
                 "days": json.loads(r[8]) if r[8] else None, "runAt": r[9], "tz": r[10], "anchor": r[11], "enabled": bool(r[12]), "lastRun": r[13],
-                "nextRun": r[14], "maxRunMin": r[15], "createdBy": r[16], "createdAt": r[17]}
+                "nextRun": r[14], "maxRunMin": r[15], "createdBy": r[16], "createdAt": r[17], "resource_id": r[18], "resource_version": r[19], "require_approved": bool(r[20])}
 
     async def list_routines(self, target_kind: Optional[str] = None, target_id: Optional[str] = None) -> list[dict[str, Any]]:
         q, args = f"SELECT {self._RCOLS} FROM routine_defs", []
@@ -528,17 +532,17 @@ class Store:
 
     async def create_routine(self, target_kind: str, target_id: str, name: str, prompt: str, kind: str, every_min: Optional[int], at: Optional[str],
                              days: Optional[list[int]], run_at: Optional[int], tz: str, next_run: Optional[int], anchor: int, max_run_min: Optional[int],
-                             created_by: str, enabled: bool = True) -> dict[str, Any]:
+                             created_by: str, enabled: bool = True, resource_id=None, resource_version=None, require_approved=False) -> dict[str, Any]:
         rid = new_id("rt")
-        await self.db.execute(f"INSERT INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 18)})",
+        await self.db.execute(f"INSERT INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 21)})",
                               (rid, target_kind, target_id, name, prompt, kind, every_min, at, json.dumps(days) if days else None, run_at, tz, anchor, int(enabled), None, next_run,
-                               max_run_min, created_by, now_ms()))
+                               max_run_min, created_by, now_ms(), resource_id, resource_version, int(require_approved)))
         await self.db.commit()
         return (await self.get_routine(rid)) or {}
 
     async def update_routine(self, rid: str, **f: Any) -> bool:
         cols = {"name": "name", "prompt": "prompt", "kind": "kind", "everyMin": "every_min", "at": "at", "days": "days", "runAt": "run_at", "tz": "tz", "anchor": "anchor",
-                "enabled": "enabled", "lastRun": "last_run", "nextRun": "next_run", "maxRunMin": "max_run_min"}
+                "enabled": "enabled", "lastRun": "last_run", "nextRun": "next_run", "maxRunMin": "max_run_min", "resource_id": "resource_id", "resource_version": "resource_version", "require_approved": "require_approved"}
         sets, args = [], []
         for k, col in cols.items():
             if k in f:
@@ -628,9 +632,9 @@ class Store:
         cur = await self.db.execute("SELECT id, bot_id, title, text, kind, every_min, at, enabled, last_run, next_run FROM routines")
         n = 0
         for rid, bot_id, title, text, kind, every, at, enabled, last_run, next_run in await cur.fetchall():
-            await self.db.execute(f"INSERT OR IGNORE INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 18)})",
+            await self.db.execute(f"INSERT OR IGNORE INTO routine_defs({self._RCOLS}) VALUES({','.join('?' * 21)})",
                                   (rid, "bot", bot_id, title, text, "weekly" if kind == "daily" else kind, every, at, json.dumps(list(range(7))) if kind == "daily" else None, None,
-                                   "UTC", next_run or now_ms(), enabled, last_run, next_run, None, "person", now_ms()))
+                                   "UTC", next_run or now_ms(), enabled, last_run, next_run, None, "person", now_ms(), None, None, 0))
             n += 1
         await self.db.execute("DROP TABLE routines")
         await self.db.commit()

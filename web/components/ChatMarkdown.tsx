@@ -86,13 +86,10 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   );
 }
 
+import { AppLink } from "./Linkify";
 const components: Components = {
   p: ({ children }) => <p dir="auto">{children}</p>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer noopener" className="text-accent-text underline underline-offset-2">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <AppLink href={href}>{children}</AppLink>,
   h1: ({ children }) => <h3 className="md-heading mt-3 text-[17px] font-semibold">{children}</h3>,
   h2: ({ children }) => <h3 className="md-heading mt-3 text-[16px] font-semibold">{children}</h3>,
   h3: ({ children }) => <h4 className="md-heading mt-2 text-[15px] font-semibold">{children}</h4>,
@@ -114,7 +111,8 @@ const components: Components = {
     const lang = /language-([\w-]+)/.exec(className ?? "")?.[1];
     const text = String(children).replace(/\n$/, "");
     if (!lang && !text.includes("\n")) {
-      return <code className="rounded bg-ink/[0.07] px-1.5 py-0.5 font-mono text-[0.9em]">{children}</code>;
+      const link = /^https?:\/\/\S+$/.test(text);
+      return <code className="rounded bg-ink/[0.07] px-1.5 py-0.5 font-mono text-[0.9em]">{link ? <AppLink href={text} className="underline underline-offset-2">{text}</AppLink> : children}</code>;
     }
     return lang === "mermaid" ? <Mermaid code={text} /> : <CodeBlock code={text} lang={lang ?? "text"} />;
   },

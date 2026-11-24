@@ -1,0 +1,1545 @@
+# MCP — the tools nobody here has to write
+
+[Model Context Protocol](https://modelcontextprotocol.io) servers are this
+platform's answer to "you cannot write a connector for everything".
+
+An organization points at a server, its tools appear in the Builder, and no code
+changes on our side.
+
+Everything in the [capability catalog](https://vstorm-co.github.io/agenticos/reference/capabilities/) is code we wrote
+and hold to 100% coverage. Everything here is a URL somebody pasted.
+
+!!! info "The two are not alternatives"
+
+    A **capability** is the right shape for something the platform must guarantee
+    — a budget guard, a sandbox, retrieval that cites its sources.
+
+    **MCP** is the right shape for the dozens of SaaS products a company happens to
+    use, where the guarantee that matters is only "the tools are the ones the
+    vendor published".
+
+## A connection
+
+One row pointing at a remote server. The transport — streamable HTTP or
+server-sent events — is inferred from the URL, so an SSE-only server like
+Atlassian works alongside a streamable-HTTP one with nothing to configure.
+
+|  |  |
+| --- | --- |
+| `name` | Also the tool prefix. See [Name collisions](#name-collisions) |
+| `url` | SSRF-validated before we ever request it |
+| `auth_token` | Sealed in the [vault](https://vstorm-co.github.io/agenticos/secrets/), never returned by any endpoint |
+| `allowed_tools` | An allowlist, or null for "everything the server offers". A binding narrows within it — see below |
+| `is_enabled` | Off without losing the credential |
+| `include_instructions` | Add the server's own `initialize` instructions to the agent's. Off by default - they are the server operator's text, read as the agent's own - and switched on in the connection's Edit dialog |
+| `last_status` | What the last probe found, and when |
+
+!!! warning "An address this deployment must not reach is refused, and the refusal says so"
+
+    A URL that resolves to a loopback, private, link-local or shared-CGNAT
+    address, one that does not resolve at all, one carrying credentials in its
+    userinfo, one on a scheme other than `http`/`https`, or one that is simply
+    malformed, comes back as a **400** naming `url` as the field at fault — on
+    create, on edit, and on starting an OAuth flow, personal and organization-wide
+    alike.
+
+    What it names beyond that is the **host**, never the URL: a URL carries a key
+    in its query string, and the sentence explaining the refusal is one written in
+    this repository rather than whatever the URL parser had to say about the text
+    you sent.
+
+    It used to be a 500 with no details and a traceback in the log, which reads as
+    the platform breaking rather than as an address to correct
+    ([#861](https://github.com/vstorm-co/agenticos/issues/861)) — self-hosting and
+    pasting a `localhost` URL is the ordinary case, not the exotic one.
+
+    An operator can let a connection reach a server on the deployment's own
+    network, such as a compose service or a server on a VPN or tailnet. To do
+    this, list its host in
+    [`OUTBOUND_PRIVATE_ALLOWLIST`](https://vstorm-co.github.io/agenticos/configuration/#project-settings): an exact
+    host, a suffix with a leading dot such as `.corp.example` (which does not
+    match `corp.example` itself), an IP address or a CIDR range such as
+    `10.1.2.0/24`. The setting also covers workflow HTTP steps, connectors and A2A.
+    `MCP_ALLOWED_HOSTS` takes the same forms but reaches MCP only, so use it
+    when nothing else may reach the host. A listed host may resolve to a private
+    address, but loopback, link-local and metadata answers are refused, and a
+    listed name that does not resolve yet can still be saved. The URL still needs
+    `http` or `https`.
+
+    People can sign in to a listed server with OAuth too. Such a server often
+    runs its own sign-in, so its discovery, client registration and token
+    requests may reach the listed hosts, and no other private address. Each
+    request is still pinned to the address it was checked at, and a listed name
+    that answers a loopback, link-local or cloud metadata address is refused. The
+    list applies only to a chain that starts at a listed host: a public server's
+    sign-in never reaches a listed host, even when its metadata names one.
+
+    Every account on the deployment can then reach every port on that host. So
+    list only a server that checks a token, and never `localhost` or a service
+    of this stack, such as `app`, `db` or `redis`. The list is read when a
+    connection is saved and at every sign-in and token refresh. Removing a host
+    does not disconnect a saved connection, but an OAuth connection to it stops
+    renewing its token.
+
+    A server that speaks only stdio cannot be connected, because a connection
+    is a URL. Run a stdio-to-Streamable-HTTP bridge on the private network,
+    list the bridge's host, and connect to that. The bridge must check a token
+    itself, as every account can reach it.
+
+### Personal or organization-wide
+
+Two kinds, and the difference is the point. The connect dialog asks it as one
+choice in plain words: **One shared account** - set up once, usually by an
+admin with a service account, and used by every agent - or **My own account**,
+used by you and by agents set up to act as each person. A catalog server people
+sign in to (Notion, Linear, Gmail) recommends each person's own account; one that
+takes a key recommends the shared one.
+
+**Personal** (MCP servers → You) is scoped to one member and reached by their own
+assistant, and by an agent bound to each person's own account when they are the
+one talking to it.
+
+Its credential is sealed to the _member_, not to an organization — a personal
+connection has none, and its owner may belong to several, so binding it to
+whichever was active when they added it would make the token unreadable the moment
+they switched.
+
+**Organization** is scoped to the organization, gated on `mcp:manage`, and is the
+only kind a published agent's spec may name _by id_.
+
+An organization server can belong to a department. Under **Who can use it** the
+connect dialog offers **Everyone**, the default, or **Some people**,
+found by typing; the server is then private and shared with each of them at
+`use`. They and whoever connected it see it and bind it; owners and admins see
+every server. Its **Who can use it** button changes that later. An agent already
+bound to it keeps working for everyone who may run the agent: the choice decides
+who may pick the server, not who is answered through it, so the Builder marks it
+under [where an agent's knowledge comes from](https://vstorm-co.github.io/agenticos/departments/#where-an-agents-knowledge-comes-from).
+
+A published agent that reached different tools depending on whose session built
+it could not be reviewed or reasoned about, which is the whole reason for the
+restriction. A personal connection still reaches an agent, one way: a binding to
+[each person's own account](#whose-account-a-binding-speaks-through) names the
+service, and whoever is talking to the agent supplies their own connection to it.
+
+```
+GET  /api/v1/me/mcp-connections     personal
+GET  /api/v1/mcp-connections        organization, requires mcp:manage; each server
+                                    narrowed to groups only for them
+GET  /api/v1/workflows/{id}/mcp-connections   the servers a step of this workflow may
+                                    bind - for whoever may edit it (role or grant); name,
+                                    tools, no URL or credential
+POST /api/v1/mcp-connections/{id}/test   probe it, list its tools, store the status
+GET  /api/v1/mcp-connections/{id}/sharing   who it is narrowed to, and the same
+                                            grant routes as an agent's
+```
+
+### Two names, and they answer different questions
+
+A connection carries a **name** and a **tool prefix**, and only the second is
+constrained. The prefix is lowercase letters, digits and hyphens, unique among
+the organization's servers, because that is what a tool name can carry and what
+the model reads before it calls one. The name is free text, optional, and is
+what a person sees.
+
+The distinction earns its place the moment an organization connects one service
+twice. Two Notion accounts have to be `notion` and `notion-2`, and neither says
+which workspace either one reaches; `Marketing workspace` and `Engineering
+handbook` do.
+
+!!! info "The prefix never disappears"
+
+    Wherever a name is shown, the prefix is shown beside it. A run's tool calls
+    are recorded under the prefix, so a name that replaced it would leave "why
+    did this call `notion-2_search`" unanswerable from the page that names the
+    account. Clear the name and the connection reads as its prefix again, which
+    is what it did before you set one.
+
+A spec names organization connections in `mcp_servers`, one entry per binding.
+Deleting a connection an agent still names loses that server for the agent, not
+the run.
+
+### Which tools, and who decides
+
+Two allowlists, and neither overrides the other.
+
+**On the connection**, `allowed_tools` is one administrator's decision for
+everybody bound to it — the tools this organization is willing to reach on that
+server at all. **On the binding**, it narrows within that, per agent. So one
+server can serve a read-only agent and an editing one without connecting it
+twice.
+
+They intersect at run time. An agent cannot reach a tool the connection
+excludes, including one excluded after the agent was published — the binding
+loses that tool rather than the agent losing the server. Null on either side
+means no narrowing from there, so a binding that names nothing gets whatever the
+connection allows, which is what every binding did before this existed.
+
+So a binding's null also takes every tool the server gains later. In the
+Builder, **Add tools the server gains later** says which a binding is: on, it is
+null; off, it lists today's tools and a tool added later stays out. Ticking every
+tool back after narrowing gives today's list, never null, and the switch turns on
+only with every tool ticked - a binding cannot say "these, and whatever comes".
+
+The Builder lists a server's tools from its **last successful probe**, recorded
+on the connection. Probing dials out to a third party and is gated on
+`connections:manage`; an agent author holds `agents:edit` and needs the list to
+choose from, so the list is read rather than fetched.
+
+A connection nothing has probed yet has no catalogue to offer, and the picker
+says so and points at the servers page, which is where a connection is checked.
+A binding that already names tools shows those, so what it is bound to stays
+visible and can still be narrowed.
+
+With [Tool search](https://vstorm-co.github.io/agenticos/reference/capabilities/#tool-search), eligible MCP tools are
+hidden until the agent searches for them. Its settings let you defer MCP tools,
+capability tools or both, and keep selected server namespaces or individual tools
+visible from the first request. These exclusions change when a tool's schema is
+shown; the connection and binding allowlists still decide whether it is available.
+
+New AgenticOS and Architect templates also defer capability tools, keeping questions
+and sandbox tools visible immediately, and use local BM25 search with up to five
+results. Existing published agents keep their configuration; update their Tool
+search settings to adopt these defaults. Tool search does not remove instructions
+or conversation history, and input-token totals add together every model request.
+
+Browser availability additionally follows live tab state: opening, reading and
+listing tabs remain available for starting or restoring a session. Closing or
+switching needs an open tab; page actions need an active tab. Search cannot reveal
+an action that is unavailable in the current state. Availability changes can affect
+provider prompt caching, so fewer tool schemas alone do not establish lower cost.
+
+### Which calls wait for a person
+
+For an external server, `approval: none` lets calls run, `writes` asks before tools
+without `readOnlyHint: true`, and `all` also asks before reads. The server supplies
+that hint; use `all` when you do not trust its classification. An external MCP
+client, such as Claude Code, applies its own confirmation settings.
+
+The platform binding enforces at least `writes`. Its trusted defaults let authorized
+reads, draft preparation, ordinary task and table-record changes, empty knowledge
+bases, projects, conversations, Skills, Context files and dataset cases run without
+confirmation. Writes still advertise `readOnlyHint: false`; this changes approval,
+not permissions or side effects. `prepare_solution` prepares a plan; installing it
+with `install_solution` still requires confirmation.
+
+Task writes still ask when they may start or reschedule agent work: an active task
+with an assigned agent and an Agent next step. Human, completed, cancelled, blocked
+and waiting tasks do not acquire that floor. Generic task-board record updates use
+the same check and the mutation still requires the read revision. A task-board
+upsert asks unless its values explicitly select Person or a terminal/waiting status,
+because it can recreate a concurrently deleted record. Ordinary table writes do
+not ask again merely because an already approved automation listens to them.
+
+Every schema update, deletion, publication, active-version change, promotion, public
+App link, Inbox settlement, execution or paid operation requires a fresh answer.
+This includes tests, evaluations and improvement steps, ingestion/sync, connection
+tests, automation definitions and immediate routine runs, agent environments,
+profile/model/embedding changes, invitations and administrative/proactivity settings.
+Approve everything, remembered decisions and routine standing consent cannot waive
+these floors. Self-only language and interface preferences remain ungated.
+
+In the Builder, use each tool's shield or group control to require approval for a
+default-free operation. `tool_approval`, keyed by the original server tool name,
+keeps these choices: `required` asks and `never` waives the ordinary binding gate.
+A binding set to `all` asks for every otherwise-default operation, including reads;
+mandatory and conditional execution floors still win over `never`. A mixed group
+shows **Per tool**. Newly discovered tools follow the binding policy; unknown
+platform writes conservatively ask until explicitly classified.
+
+These rules also apply to channel runs and routine actions. They do not grant a
+linked identity, a connection, resource access or broader OAuth scopes. Only the
+platform's trusted in-process catalog supplies default-free exceptions; a remote
+server cannot obtain them by advertising matching metadata.
+
+### Whose account a binding speaks through
+
+A binding is one of two kinds, and the Builder asks which in the server's
+settings, which also list your own accounts on the service.
+
+**The organization's account** (`account: organization`) names one of the
+organization's connections and answers for everybody, on every surface. It is
+the default and the answer an agent is reviewed against.
+
+**Each person's own account** (`account: personal`) names the catalog service
+instead — `catalog_key: notion` — and no connection at all. Whoever talks to
+the agent connects their own Notion, in MCP servers → You, and the agent speaks
+to Notion as them: in the dashboard, in a direct message and in a channel
+alike. The audit trail at Notion then says who did what, which a shared service
+account never can.
+
+The account is the author of _this message_, never the thread's. Ania asks in
+`#ops` and gets an answer from her Notion; Bartek asks the same question in the
+same thread and gets his, or is told to connect one. A thread is not a boundary
+anybody's credentials should cross — were the first person to connect to answer
+for everybody after them, linking a Notion in a channel would hand it to the
+channel.
+
+!!! info "Where nobody is talking, the tools are absent — and the agent says so"
+
+    An API key without [explicit personal MCP delegation](api.md#explicit-personal-mcp-delegation), the embedded widget, a schedule, a trigger and a channel sender
+    who has not linked their chat account have no account to speak through. The
+    run proceeds without that server, every other binding intact, and one line
+    is added to its instructions saying which service is missing and why — so
+    when somebody asks for Notion the agent answers with the link that connects
+    it (`/mcp-servers?connect=notion`), or with "send `/link` to this bot
+    first" where the chat account is the missing piece.
+
+    The dashboard chat asks when the agent needs the service, not before. A
+    service the person has not connected or must authorize again is offered to
+    the model as `connect_account` instead: when a question
+    needs Notion the run pauses on a card with the connect button, and once the
+    account is connected the same run carries on with the Notion tools. Skipped,
+    it carries on without them. The chat's controls also list the agent's
+    personal services with their status, so a new member sees what to connect
+    before asking. See [the console page](https://vstorm-co.github.io/agenticos/console/#chat).
+
+The tool prefix of a personal binding is the catalog key, whatever each person
+called their connection, so the agent presents `notion_search` to everyone.
+`allowed_tools` on the binding is the administrator's ceiling; the person's own
+connection may narrow further, and the two intersect.
+
+!!! warning "Three things publish refuses"
+
+    A personal binding to a key the catalog does not hold — nothing could ever
+    match a member's connection to it. Two personal bindings to one service —
+    the same tools twice under one name. And a personal binding whose key is
+    also the name of an organization connection bound to the same agent, which
+    would put two servers under one prefix; Pydantic AI refuses the duplicate
+    tool names and the turn aborts.
+
+!!! note "A collision that reaches a run is narrowed, not lost"
+
+    Publish is a point in time and a connection's name is editable afterwards, so
+    an agent published before this check or one whose connection was renamed to a
+    colliding name can still reach a run with two servers under one prefix. That
+    run keeps the first of them that answers its probe, drops the rest, and
+    tells the model which server is unavailable this turn - and, when both carry
+    one name, which binding it is speaking through - rather than losing it to a
+    log line nobody reads. Renaming one of the two connections is the author's
+    fix.
+
+An agent may bind a service both ways - the organization's handbook Notion
+_and_ each person's own - as long as the organization's connection is not named
+after the catalog key, which is the prefix each person's own account takes.
+
+### Several accounts of one server
+
+One agent can read the company mailbox and `info@` at once. A person holding
+several of their own accounts on a service is reached through **every one of
+them**: the one they mark as their main account in MCP servers → You (else the
+one they connected first) keeps the plain prefix, `outlook_send`, and each
+other account adds its label, `outlook_info_send` (two labels that read alike
+as a tool name, `Sales US` and `Sales-US`, are told apart by the account's short
+id on the second). Which accounts those are is
+the person's choice, made by what they connect - the binding does not narrow
+it.
+
+The organization's accounts bind side by side the same way: each of its
+connections to a server is its own binding under its own name, with its own
+tools. In the Builder, a server's settings list its bound accounts with **Add
+another account**. Under **Tools**, choose the account whose tools and approvals
+you want to edit. That edit leaves the other accounts unchanged. Wherever a run
+reaches one service through more than one
+account, one line of its instructions names each account beside its prefix
+and tells the model to ask when it is unclear which one the person means.
+
+A second account on a service has to be named: its label is what tells the two
+apart in every picker and approval, so the form asks for one before it connects,
+and the API refuses an unnamed second account on `label`.
+
+The approval then says which account is acting. A call through a labelled
+connection, or through one of several accounts on one service, carries that
+account's name: the chat, Activity and the dashboard show it beside the action,
+a Slack or Telegram message asks "to _send in Gmail_ as _Work_", and the
+approval email lists it after the tool. A single unlabelled account has nothing
+to tell apart, so nothing is added.
+
+The connection’s Tools dialog shows **read-only** only for an explicit `readOnlyHint: true`, **may change data** for an explicit false, and **not declared** when the annotation was absent or an older probe did not record it. Missing metadata is treated conservatively by the `writes` policy; it does not prove the tool writes. Re-test an older connection to refresh its declarations. This classification is separate from whether isolated evals trust the server’s hints.
+
+## Authentication
+
+Three modes, which is the only thing that really varies between servers.
+
+=== "None"
+
+    Public documentation servers, mostly — Cloudflare's docs server needs no
+    credential at all.
+
+=== "Token"
+
+    A bearer token pasted once and sealed.
+
+    Each catalog entry carries its own hint about where to get one, because
+    generic instructions are the main reason token setup fails.
+
+    `PATCH` with `auth_token: ""` clears it.
+
+=== "OAuth 2.1"
+
+    Most business servers — Notion, Linear, Atlassian, Asana — return `401` with a
+    `WWW-Authenticate` header pointing at RFC 9728 protected-resource metadata,
+    and the flow runs from there.
+
+    1. **Discover** — probe the server, resolve its authorization server, fetch
+       RFC 8414 metadata.
+    2. **Register** — RFC 7591 dynamic client registration. A server that
+       publishes no registration endpoint — HubSpot's is one — refuses here, and
+       the only way past is a client you registered at the provider by hand:
+       the connect dialog takes its client ID and secret under *Your own
+       client*, and shows the redirect URL the provider has to hold exactly.
+    3. **Consent** — a PKCE authorization URL with `state` and an RFC 8707
+       resource indicator; the browser goes there.
+    4. **Exchange** — the callback swaps the code for tokens, then redirects the
+       browser back to the MCP servers page, which says whether it worked. That is
+       the only place the outcome can be told: the person is looking at a page
+       they did not navigate to themselves.
+    5. **Refresh** — when the access token expires.
+
+```mermaid
+sequenceDiagram
+    participant O as An operator
+    participant P as AgenticOS
+    participant S as The MCP server
+    participant A as Its authorization server
+    P->>S: connect
+    S-->>P: 401 + WWW-Authenticate (RFC 9728)
+    P->>S: fetch protected-resource metadata
+    P->>A: fetch RFC 8414 metadata, then register (RFC 7591)
+    P-->>O: a PKCE consent URL
+    O->>A: consents in a browser
+    A-->>P: callback with the code
+    P->>A: exchange for tokens, refresh later
+    P-->>O: back to the MCP servers page, with the outcome
+```
+
+### Every URL in that flow is checked, not just the one you typed
+
+!!! danger "Discovery means the remote server chooses most of the addresses we call"
+
+    Connecting a single hostile server used to be enough: a name could answer a
+    public address to the check and a private one to the request that followed
+    ([#860](https://github.com/vstorm-co/agenticos/issues/860)).
+
+    The address that passed the check is now the address connected to.
+
+The request goes to the resolved IP with the original host in the `Host` header and
+in TLS SNI, so the certificate is still verified against the name and nothing
+resolves it a second time.
+
+That second half matters here more than anywhere else in the product. The address
+an operator types is only the first hop — the authorization server, the token
+endpoint, the registration endpoint and every redirect after them are named by the
+remote server's own discovery documents. Nobody in your organization had to be the
+attacker.
+
+Redirects are followed one hop at a time, bounded at five, each with its own check.
+A `302` to a new host is re-resolved, not trusted.
+
+Where a name answers with several addresses, every one of them is checked and kept,
+and an address that refuses the connection is followed by the next — what an
+ordinary client gets from the resolver, without asking DNS a second time. A name
+answering with one public address and one private one is refused **whole** rather
+than narrowed to its public half.
+
+Two edges remain, both narrow and both deliberate:
+
+- The **consent URL** is checked and then handed to somebody's browser, which
+  resolves it itself. There is no pinning to do.
+- The **connection's own URL** is checked at save and resolved again when an agent
+  runs — operator-typed, so rebinding it means being the operator. A listed
+  host (`OUTBOUND_PRIVATE_ALLOWLIST` or `MCP_ALLOWED_HOSTS`) is resolved too and
+  every answer is checked: a private answer passes only for a host the list admits,
+  a loopback or metadata answer never does, and a host listed by name that does not
+  resolve yet can still be saved. The OAuth requests of a connection whose own host
+  is listed may reach the listed hosts, pinned like every other hop.
+
+Nothing a _model_ chooses reaches this check at all, and nothing should: a URL an
+agent picked wants Pydantic AI's `safe_download`.
+
+!!! info "Behind an egress proxy, the proxy does the connecting"
+
+    `HTTP_PROXY` and `HTTPS_PROXY` are honoured, because a deployment that mandates
+    an egress proxy would otherwise lose MCP OAuth entirely — and that proxy is an
+    egress control in its own right.
+
+    On that path the pinned address is what the proxy is *asked* to reach
+    (`CONNECT 93.184.216.34:443`, or an absolute-form request line for plain HTTP)
+    rather than what this process connects to, so the guarantee ends at the proxy.
+    TLS is still end to end, so the certificate is still verified against the
+    original name.
+
+    A policy proxy that refuses a bare address will refuse these requests; the log
+    line written when a proxy is configured is there so that failure is readable.
+
+### When a step fails
+
+A step that fails says **which step gave up and what class of thing raised**, never
+what the upstream client wrote.
+
+`httpx2` puts the failing request in its message, and the two requests here are a
+client registration and a token grant — so quoting it would carry a token endpoint,
+reached with credentials, into the browser. A pydantic error over an unreadable
+token response echoes the payload it rejected, which is the tokens. Both stay in
+the server log, which is where an operator already looks.
+
+**A discovery document naming a URL that cannot be requested at all is the same
+kind of answer**: a **400** saying which endpoint was unusable, and that it is
+malformed.
+
+That is a distinct refusal from "this server pointed the flow at a blocked
+address". One says the server aimed us somewhere this deployment will not go, the
+other that it wrote an address nothing can dial, and reporting either as the other
+would be a confident claim about whose fault a failure was.
+
+An unusable `WWW-Authenticate` hint ends that discovery _candidate_ rather than the
+flow, because the well-known URIs after it are derived from the URL an operator
+typed and may well answer.
+
+This was a 500 with an empty body until
+[#889](https://github.com/vstorm-co/agenticos/issues/889): `httpx2.InvalidURL` does
+not derive from `httpx2.HTTPError`, so none of the flow's catches saw it — and no
+check here could have, because the URL is refused while the request is being built,
+above both the SSRF check and the pinned client. What the parser could not read
+(`Invalid port: 'client_secret=…'`) is the remote server's own text and stays in
+the log with everything else.
+
+!!! warning "An organization's OAuth connection is still someone's grant"
+
+    `POST /mcp-connections/oauth/start` produces a connection the organization
+    owns, which is what a shared service account is for. But the grant remains the
+    *consenting person's* at the provider: revoking their access there stops the
+    organization's server working until it is authorized again.
+
+    Consent with an account the organization controls.
+
+### Three rules about tokens
+
+**A token never follows a moved URL.** Editing a connection's URL drops its OAuth
+payload, pending flow and mirrored scopes — personal and organization connections
+alike — so the connection reads "needs re-authorization" rather than sending a
+token issued for one host to a different one.
+
+On an organization row this is also a boundary between administrators: one
+`mcp:manage` holder repointing a connection another authorized must not have the
+platform deliver that token to the new host.
+
+**A disabled connection hands out no tokens anywhere.** The agent tool path skips
+it, and the trigger portals do too — a caller who kept a trigger's `connection_id`
+cannot keep enumerating repositories or registering hooks with a credential an
+administrator switched off.
+
+**Deleting a connection releases what was registered through it.** Any
+[event trigger](https://vstorm-co.github.io/agenticos/triggers/) whose provider webhook was auto-registered with this
+account's token has that hook deregistered — best-effort, while the token still
+exists — and falls back to manual delivery. The trigger's URL and secret still
+stand, so re-pointing a provider at it by hand keeps working.
+
+The GitHub portal's connect flow is also upgrade-aware in the other direction: an
+organization that connected the GitHub catalog entry as a plain bearer connection
+before the OAuth flow existed has that same row re-authorized in place — found by
+its catalog key, whatever it was named — rather than refused or duplicated, and the
+bearer token keeps working until the new consent lands.
+
+## What happens on a turn
+
+Each server is probed with a short `tools/list` handshake before the turn starts,
+and the probes run concurrently. A server gets 3 seconds to accept the connection
+and 10 seconds for the whole handshake, because one that checks every request's
+token at its identity provider is slow without being down. A server that answered its probe in
+the last two minutes, with the same credential, is not probed again: a
+conversation's next turn attaches it straight away. If it has gone down in the
+meantime, that turn goes on without its tools and the next one probes it again.
+
+A tool's name reaches the model as the prefix and the server's own name joined -
+and providers refuse a name over 64 characters, or one with anything but letters,
+digits, `_` and `-`, by refusing the whole request. Such a name is fitted: the
+refused characters replaced, the end cut and eight hex digits of a hash added, so
+two long names stay two tools. The server is still called by its real name.
+
+!!! warning "An unreachable server is skipped with a warning, not raised"
+
+    Initialization is retried once before any tool executes. This guard covers freshly probed servers, cached connections and the built-in platform MCP. A discovery failure leaves the remaining tools available. A transport failure during a tool request is reported to the model as a failed request with an unknown outcome; writes are never automatically replayed. Local platform initialization has a 15-second deadline for authentication and cold setup, while remote connections retain their 3-second deadline.
+
+    Pydantic AI enters every toolset when a run starts, so a dead server would
+    otherwise abort the whole turn: one expired token on one connection would take
+    down every agent that names it, including the ones that never needed it.
+
+    The model then answers **without** those tools, and is told so: the turn's
+    instructions name the server, say it did not answer or refused the
+    connection, and ask the model to say it could not be reached rather than
+    report an empty result. That holds for a server that answered a moment ago and
+    fails when the turn connects. It is right for a chat turn, wrong if you
+    assumed a tool was always there.
+
+That is a deliberate trade. The `/test` endpoint and `last_status` are how you find
+out, and the [audit trail](https://vstorm-co.github.io/agenticos/governance/#audit) records what actually ran.
+
+### In a test environment, and in an eval
+
+A named [environment](https://vstorm-co.github.io/agenticos/environments/#test-connections) can answer an
+organization binding with a test connection — a sandbox CRM in `staging`. The
+turn then reaches the test server under the production connection's name, so the
+model sees the same tools; if the test connection is gone or disabled, the
+binding is off for that turn and production is never reached instead.
+
+In an eval, every call to a production connection is held and recorded with its
+arguments rather than executed. The one exception is a tool the server marks
+`readOnlyHint` on a connection set to trust that mark. The mark is the server's
+own claim, so trusting it is off on every connection. To turn it on, open the
+connection's **Tools** dialog. The dialog says how many tools claim the mark,
+and the change is audited with that count.
+
+### Connecting one from the Builder
+
+An agent's **MCP servers** tab lists the whole catalog, not only what has
+credentials. A server with none is not a checkbox — there is no connection id
+for the spec to hold — so the card opens the connect dialog **in place**.
+
+A token or credential-free server is connected without leaving the page, and the
+new connection is ticked for the agent as soon as it exists. Connecting checks the
+server, and its tools come up straight away from that check, so picking a server,
+connecting it and choosing what the agent may call is one path. A check that
+fails says why in the toast, and the connection is kept to fix.
+
+!!! info "OAuth opens a tab"
+
+    The consent screen is the provider's, so there is nowhere to stay — but
+    there is a way not to lose the agent you were editing. Finish in the tab
+    that opens and come back; the server appears in the list once it is
+    authorised.
+
+### One server, connected several times
+
+An organization may connect the same server more than once — a Notion with
+read-only access to one workspace, another scoped to a single database, a third
+holding an admin credential. That is a supported shape, not a workaround: names
+are unique per organization rather than per catalog entry, and the name is the
+tool prefix, so the model sees `notion_readonly_search` and
+`notion_admin_search` as different tools.
+
+Bind whichever the agent should have, or several side by side - see
+[several accounts of one server](#several-accounts-of-one-server). The Builder
+keeps one card per server and lists its accounts in the server's settings,
+each under its label and its name.
+
+!!! tip "The name is the whole distinction"
+
+    `notion` and `notion-2` tell nobody anything. Name a connection after what
+    it may reach — `notion-handbook`, `notion-admin` — because that string is
+    what the model reads when it decides which tool to call.
+
+### Name collisions
+
+!!! note "Tools are prefixed with the connection name"
+
+    `github-work` becomes `github_work_*`, because two servers exposing the same
+    tool name make Pydantic AI raise on duplicates, which aborts the turn.
+
+    An allowlist filters *before* prefixing, so it compares against the unprefixed
+    names picked in the UI.
+
+Two connections whose names reduce to the same prefix are deduplicated — first one
+wins, with a warning naming the loser. Deployment-managed servers are ordered first,
+so they win over a user connection that happens to pick the same name.
+
+A prefix keeps one server's tools apart from another's, but not from the agent's
+other tools. A connection called `request` whose server offers `capability`
+presents `request_capability`, which nearly every agent already has, and `create`
+with `chart` lands on the charts capability's `create_chart`.
+
+Publish refuses such a binding, comparing the tools the connection's last check listed with the agent's
+capability tools and the platform's own. Where one still reaches a run - a server
+that added the tool, a connection renamed since - the whole server is left out of
+that turn and the model is told why, as for a prefix collision. Rename the
+connection or narrow its tools.
+
+### Health, users and calls
+
+A server's card on the MCP servers page says when one of its accounts did not
+answer its last check, and its accounts list says which and what it said;
+whoever manages MCP servers can check it again there.
+An OAuth account whose sign-in could not be renewed is shown as needing
+authorization rather than as unreachable, with **Authorize** to sign in again.
+
+Every fifteen minutes the deployment checks each of the organization's servers,
+and each run checks the servers its agent is bound to before the turn. When a
+server stops answering, the administrators and the owners of agents bound to it
+get one **MCP server not answering** notification for that outage, however many
+checks or runs find it down, and **MCP server answering again** when it is back.
+The next outage alerts again. Both are in-app and email, and each person can
+turn either off under **Settings → Notifications**. A member's own connection
+sends neither, and a sign-in that needs renewing is not counted as an outage.
+
+On the MCP page, each of the organization's accounts names the agents bound to
+it, and **What agents asked it** lists the latest calls agents made to its
+tools: which tool, which agent, how it went and the run it was part of. What was
+asked and answered is not shown - it stays in the conversation. Each call records the connection that served it, so a
+member's own connection with the same name is not listed, and calls from before
+that was recorded are not listed at all. API: `used_by` on `GET /api/v1/mcp-connections`, and
+`GET /api/v1/mcp-connections/{id}/calls`.
+
+**Add to an agent** binds an account into a chosen agent's draft, and connecting
+one with a key, or finishing its sign-in, offers the same.
+
+## The catalog
+
+A picker that starts empty and asks for a URL is a picker nobody uses, so the common
+servers ship with the metadata needed to connect them: the URL, how it
+authenticates, what to tell whoever is pasting a credential.
+
+This is a hand-maintained list, **not** a mirror of the public registry. Each entry
+is a small promise — that somebody looked at the server, that the auth flow works,
+that the description is honest — and a mirrored registry cannot make that promise.
+
+!!! info "What mirroring would actually add"
+
+    The official registry was read in full in August 2026: 20,100 records, 7,127
+    of them the current version of an active server, 5,824 carrying a hosted
+    HTTPS endpoint, across 5,141 distinct hosts. So the "thousands of servers" a
+    registry advertises is real.
+
+    Cross-referenced against this catalog, **four** of those hosts belonged to a
+    company most readers would recognise and were missing here — CircleCI, New
+    Relic, Statsig and Lusha, all four now listed. The rest of the uncovered
+    hosts are single-project servers, proxies on `workers.dev`, SEO tools and
+    games: alphabetically the first few are a land-price lookup, a contractor
+    bidding tool and a Hungarian window-quote service.
+
+    Both facts are worth holding at once. The catalog is not short of entries
+    because nobody looked; it is the length it is because a hand-checked list of
+    things a company actually uses converges at about a hundred.
+
+Each scheduled check takes at most 64 enabled organization servers, oldest check first, and runs at most eight probes at once. Unusable credentials also advance the check time, without creating an outage. Larger deployments therefore cover all servers over successive checks.
+
+### The registry is in the same list, and in the database
+
+So the mirror is shipped too, and **/mcp is one list of all of them** — the
+curated catalog first, then the mirrored registry, paged: 4,700+ servers, the
+count the gallery shows. Not a curated grid
+with a search that reaches further: one list, one pager, one count.
+
+That needed a table. `mcp_registry_servers` is deployment-wide and has no
+`organization_id`, which is the whole reason it is a table rather than five
+thousand rows per tenant — the skill gallery settled the neighbouring question
+the other way, and the difference is that a catalog is not tenant data. It is
+filled by `agenticos cmd mcp-registry-sync`, from the bundled snapshot or, with
+`--fetch`, from the live registry.
+
+Held in the database because a file cannot be paged. Thousands of entries in memory
+could answer "servers matching 'linear'" and could not answer "the fourth page of
+all of them" without loading the lot and slicing it. The ranking moved into SQL
+with it, for the same reason: ranking a page is ranking whatever that page
+happened to contain. Three bands — the server _called_ Linear, then names merely
+containing it, then descriptions that mention it — shorter name first inside a
+band, so `Stripe` beats `Sweden Payments (Stripe)`.
+
+It is one list with a fact on some rows rather than two lists. A registry row
+carries a **Registry** badge where a curated one carries its auth kind, because
+the difference is worth knowing before somebody pastes a credential: nobody here
+reviewed it, the description is the publisher's, and there is no token hint —
+the registry has no such field to mirror.
+
+Three things follow from the size, and each is why it is a search rather than a
+listing:
+
+- **Paged by the server, not filtered by the browser.** Fifty to a page, and the
+  query, the category and the page are all requests. A page boundary lands inside
+  the join — 99 curated rows against a page size of 50 — so the arithmetic lives
+  in `mcp_listing.page` with a test on the boundary, because an off-by-one there
+  skips a server or shows it twice on a list where nobody would notice which.
+
+  **Connected** includes every accessible service with a saved organization or
+  personal account, including custom servers and catalog or registry entries on
+  other pages. Multiple accounts share one server card. Disabled accounts and
+  accounts needing attention stay visible for management. Search, category,
+  sign-in and connection-state filters apply before counting and paging the
+  results.
+
+  Saved server links reopen the account dialog even when a failed or duplicate
+  registry check hides the server from **All**. URL matching preserves the case
+  of paths and query values, so distinct endpoints remain separate. Reauthorizing
+  an account uses that account's saved URL.
+
+  Connected and registry searches prioritize exact server keys over related results, so a
+  saved link resolves even when other descriptions mention the same key. Registry entries with
+  identical names keep a stable order across pages.
+
+  If a registry entry is removed during sync, its saved catalog key still opens the existing
+  accounts. Returning from popup sign-in refreshes both server pages and bookmarked accounts.
+
+- **A category reaches the mirror too.** The registry has no categories, so each
+  listing is given one at sync from its own name and description, counting the
+  words each category is known by; a listing that names none of them is filed
+  under _other_ rather than guessed into a heading. The **Sign-in** filter asks
+  for what a server wants - OAuth, a token, nothing - which for a mirrored
+  listing is what the catalog check found.
+- **Local icons.** Curated services use bundled brand marks. Registry rows without a known logo use service or category pictograms rather than fetching a favicon for every server. Private, unclassified connections retain a monogram. Browsing the catalog works offline and does not disclose the viewed server domains to a third-party favicon service.
+- **A snapshot, not a proxy.** An install must not stop working because somebody
+  else's registry is down, and a name that resolved yesterday resolving to
+  nothing today is worse than one that was never there.
+
+  `make platform-bootstrap` loads it, so a new deployment has it without
+  anybody reading this. `agenticos cmd mcp-registry-sync` refreshes it, and
+  `--fetch` reads the live registry rather than the bundled snapshot. On a
+  deployment that predates the table the list is the curated hundred until the
+  sync runs — which is what it was before any of this, so nothing regresses
+  while somebody gets round to it.
+
+A server in neither list is still reachable: **Custom server** takes any URL and
+needs no catalog entry at all.
+
+!!! info "Four of these are gateways, and they are a different promise"
+
+    Composio, Pipedream, Activepieces and Smithery are not one product's API -
+    each is an endpoint onto hundreds or thousands of others, with the
+    credentials held on their side. So the catalog entry vouches for the
+    *gateway*, and what the agent can actually reach is decided in that
+    gateway's own console, by whoever configured it there.
+
+    Worth knowing before comparing catalog sizes with a vendor advertising
+    thousands of integrations: that number is almost always one endpoint of this
+    kind, not thousands of servers somebody reviewed. Both shapes are useful, and
+    they are not the same claim.
+
+### How the catalog is kept
+
+The promise decays. The official Postgres reference server was archived out of
+`modelcontextprotocol/servers` in 2025 and this catalog went on linking to it, so
+the one thing the entry offered a reader was a 404. In October 2026 Linear had
+moved off `/sse`, Pipedrive to a new host, and twelve curated entries had a hosted
+server nobody had written down. So every listed server is now called, the way a
+first connection calls it, by one command:
+
+```bash
+uv run agenticos cmd mcp-catalog-check --report catalog-check.md
+```
+
+It sends each server the MCP handshake without a credential and records what
+happened: it answered and listed its tools (**open**, with how many only read),
+it refused and publishes OAuth metadata (**sign in**), it refused without that
+metadata (**token**), or it did not answer as an MCP server at all
+(**unreachable**, **broken**, or **refused** for an address inside a network).
+Two registry listings at one address are one server, and the shorter name is
+kept. Nothing signs in anywhere: whether the tools work once connected is the
+connection's own test.
+
+What it found shows on the cards. A server that answered says **Checked** with
+the date, and its tool counts where it listed them. A curated server that did not
+answer says so in red and stays listed, because somebody chose it; a mirrored
+listing that did not answer, or that repeats another, is no longer offered. A
+curated entry that promises OAuth and did not publish the metadata for it is not
+marked checked, because its **Connect** is the button that would fail.
+
+The check runs before each release with `--snapshot`, which writes
+`app/core/catalog/mcp_checks.json`; `make platform-bootstrap` seeds it, so a new
+deployment starts from what the release was checked against. Run the command on
+a deployment to check again; its own results are kept over the bundled ones.
+`--source catalog` checks the curated list alone in about ten seconds; the whole
+registry takes a few minutes. The report lists every curated entry with what it
+declares, what was found and why one did not pass.
+
+`(self-hosted)` below means the entry describes the server but you supply the URL:
+either because it runs on your own infrastructure, or because the vendor issues a
+per-account endpoint.
+
+### Development
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| GitHub | token | `https://api.githubcopilot.com/mcp/` |
+| Cloudflare docs | none | `https://docs.mcp.cloudflare.com/mcp` |
+| GitLab | token | self-hosted |
+| Postman | token | `https://mcp.postman.com/mcp` |
+| Vercel | oauth | `https://mcp.vercel.com/` |
+| Netlify | oauth | `https://mcp.netlify.com/mcp` |
+| Railway | token | `https://mcp.railway.app/mcp` |
+| Replit | oauth | `https://mcp.replit.com/server/mcp` |
+| Hugging Face | token | `https://huggingface.co/mcp` |
+| Buildkite | oauth | `https://mcp.buildkite.com/mcp` |
+| Semgrep | token | `https://mcp.semgrep.ai/mcp` |
+| Clerk | oauth | `https://mcp.clerk.com/mcp` |
+| WorkOS | oauth | `https://mcp.workos.com/mcp` |
+| Render | token | `https://mcp.render.com/mcp` |
+| CircleCI | oauth | `https://mcp.circleci.com/v1/mcp` |
+
+### Project management
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| Linear | oauth | `https://mcp.linear.app/mcp` |
+| Jira & Confluence | oauth | `https://mcp.atlassian.com/v1/sse` |
+| Asana | oauth | `https://mcp.asana.com/sse` |
+| ClickUp | oauth | `https://mcp.clickup.com/mcp` |
+| Trello | oauth | `https://mcp.trello.com/v1` |
+| Todoist | oauth | `https://ai.todoist.net/mcp` |
+| monday.com | oauth | `https://mcp.monday.com/mcp` |
+
+### Data and analytics
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| PostgreSQL | token | self-hosted |
+| Supabase | token | `https://mcp.supabase.com/mcp` |
+| Elasticsearch | token | self-hosted |
+| Airtable | token | `https://mcp.airtable.com/mcp` |
+| Snowflake | token | self-hosted |
+| Databricks | token | self-hosted |
+| Google BigQuery | oauth | `https://bigquery.googleapis.com/mcp` |
+| PostHog | token | `https://mcp.posthog.com/mcp` |
+| Mixpanel | token | `https://mcp.mixpanel.com/mcp` |
+| Google Analytics 4 | token | self-hosted |
+| Neon | oauth | `https://mcp.neon.tech/mcp` |
+| Amplitude | token | `https://mcp.amplitude.com/mcp` |
+| Firecrawl | token | `https://mcp.firecrawl.dev/mcp` |
+| Exa | token | `https://mcp.exa.ai/mcp` |
+| Tavily | token | `https://mcp.tavily.com/mcp` |
+| Bright Data | token | `https://mcp.brightdata.com/mcp` |
+| Qdrant | none | `https://mcp.qdrant.tech/mcp` |
+| Statsig | token | `https://api.statsig.com/v1/mcp` |
+
+### Communication, support, knowledge
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| Slack | oauth | `https://mcp.slack.com/mcp` |
+| Microsoft Work IQ | oauth | `https://workiq.svc.cloud.microsoft/mcp` |
+| Google Workspace (self-hosted) | oauth | self-hosted |
+| Microsoft 365 (self-hosted) | oauth | self-hosted |
+| Zoom | oauth | self-hosted |
+| Intercom | oauth | `https://mcp.intercom.com/sse` |
+| Notion | oauth | `https://mcp.notion.com/mcp` |
+| GitBook | token | `https://mcp.gitbook.com/mcp` |
+| Sanity | token | `https://mcp.sanity.io/mcp` |
+| DeepWiki | none | `https://mcp.deepwiki.com/mcp` |
+| Supermemory | token | `https://mcp.supermemory.ai/mcp` |
+| Contentful | token | `https://mcp.contentful.com/mcp` |
+| Storyblok | token | `https://mcp.storyblok.com/mcp` |
+| Vapi | token | `https://mcp.vapi.ai/mcp` |
+
+### Finance, sales, commerce
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| Stripe | token | `https://mcp.stripe.com` |
+| PayPal | oauth | `https://mcp.paypal.com/sse` |
+| Xero | oauth | `https://mcp.xero.com/mcp` |
+| HubSpot | oauth | `https://mcp.hubspot.com/` |
+| Shopify | oauth | self-hosted |
+| Attio | oauth | `https://mcp.attio.com/mcp` |
+| Pipedrive | oauth | `https://mcp.pipedrive.ai/mcp` |
+| Lusha | oauth | `https://mcp.lusha.com` |
+
+### Observability
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| Sentry | oauth | `https://mcp.sentry.dev/mcp` |
+| Grafana | token | `https://mcp.grafana.com/mcp` |
+| PagerDuty | oauth | `https://mcp.pagerduty.com/mcp` |
+| Datadog | token | `https://mcp.datadoghq.com/api/unstable/mcp-server/mcp` |
+| Pydantic Logfire | token | `https://logfire-us.pydantic.dev/mcp` |
+| LangSmith | token | `https://api.smith.langchain.com/mcp` |
+| Honeycomb | token | `https://mcp.honeycomb.io/mcp` |
+| New Relic | token | `https://mcp.newrelic.com/mcp` |
+
+### Marketing and design
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| Mailchimp | oauth | `https://ai-inc.mailchimp.com/claude/mcp/v2` |
+| Resend | token | `https://mcp.resend.com/mcp` |
+| Webflow | oauth | `https://mcp.webflow.com/mcp` |
+| Wix | oauth | `https://mcp.wix.com/mcp` |
+| WordPress.com | oauth | `https://public-api.wordpress.com/wpcom/v2/mcp/v1` |
+| Semrush | oauth | `https://mcp.semrush.com/v1/mcp` |
+| Meta Ads | oauth | `https://mcp.facebook.com/ads` |
+| Google Ads | token | self-hosted |
+| Similarweb | token | `https://mcp.similarweb.com/mcp` |
+| Figma | oauth | `https://mcp.figma.com/mcp` |
+| Miro | oauth | `https://mcp.miro.com/mcp` |
+| Lucid | oauth | `https://mcp.lucid.app/mcp` |
+| Excalidraw | none | `https://mcp.excalidraw.com/mcp` |
+| Canva | oauth | `https://mcp.canva.com/mcp` |
+| Klaviyo | oauth | `https://mcp.klaviyo.com/mcp` |
+
+### Automation, storage, productivity, media
+
+| Server | Auth | URL |
+| --- | --- | --- |
+| Zapier | oauth | `https://mcp.zapier.com/api/mcp/mcp` |
+| Make | token | self-hosted |
+| n8n | token | self-hosted |
+| Box | oauth | `https://mcp.box.com/mcp` |
+| Dropbox | oauth | `https://mcp.dropbox.com/mcp` |
+| Calendly | oauth | `https://mcp.calendly.com/` |
+| Typeform | oauth | `https://api.typeform.com/mcp` |
+| SurveyMonkey | oauth | `https://mcp.surveymonkey.com/mcp` |
+| DeepL | oauth | `https://mcp.deepl.com/v1/mcp` |
+| ElevenLabs | oauth | `https://api.elevenlabs.io/v1/mcp` |
+| Fireflies | token | `https://mcp.fireflies.ai/mcp` |
+| Egnyte | oauth | `https://mcp-server.egnyte.com/mcp` |
+| Apify | token | `https://mcp.apify.com` |
+| Tally | token | `https://api.tally.so/mcp` |
+| Pipedream | oauth | `https://mcp.pipedream.net/v2` |
+| Composio | token | self-hosted |
+| Activepieces | token | `https://mcp.activepieces.com/mcp` |
+| Cal.com | token | `https://mcp.cal.com/mcp` |
+
+### Anything else
+
+**Smithery** — token — `https://mcp.smithery.ai/mcp`. A registry gateway: the
+servers reached through it are whatever that account has installed on Smithery,
+so what the agent can do is decided there rather than here.
+
+**Custom server** — any MCP server reachable by URL. Its tools are introspected on
+connect, and nothing about it needs to be in the catalog first. The catalog saves
+somebody a URL lookup; it is not a gate.
+
+Typing a custom server's address asks it whether people can sign in: the same
+discovery an OAuth flow runs (RFC 9728, then RFC 8414), registering nothing,
+through `POST /api/v1/me/mcp-connections/probe`. When it can, **OAuth** is chosen
+for you and Connect opens its sign-in; when it does not register apps itself, the
+dialog asks for a client ID and secret made at the provider; when it publishes no
+OAuth metadata, a token or no credential is left as the choice.
+
+To add an entry to the list, see
+[Add a server to the MCP catalog](https://vstorm-co.github.io/agenticos/howto/add-mcp-server/).
+
+<a id="outlook-setup"></a>
+
+### Microsoft 365 and Outlook
+
+Two catalog entries reach Microsoft 365, and they do different jobs.
+
+**Microsoft 365 (self-hosted)** is
+[`softeria/ms-365-mcp-server`](https://github.com/softeria/ms-365-mcp-server), a
+server you run with `--http` and an app registered in Microsoft Entra. It searches
+and reads Outlook mail, creates reply drafts in a thread, sends them, and manages
+calendar events. Add `--org-mode` to reach shared mailboxes and Teams. Enter its
+address, ending in `/mcp`; each connection signs in as one Microsoft account. A
+host on your own network needs `OUTBOUND_PRIVATE_ALLOWLIST` or `MCP_ALLOWED_HOSTS`,
+as above. This is the entry a workflow uses to answer mail: see
+[answer mail with an approved draft](https://vstorm-co.github.io/agenticos/howto/answer-mail-with-approved-draft/).
+
+**Microsoft Work IQ** is Microsoft's own hosted server, for asking across mail,
+meetings, chats and files in one call. It differs in what it allows:
+
+- It blocks changes - create, update, send - until a tenant administrator allows
+  them by policy.
+- It is billed in Copilot Credits and answers 25 results by default.
+- It signs people in with Microsoft Entra only, as the person who connects: register
+  an app with the Work IQ permission and this
+  console's redirect URL, which the connect dialog shows, then enter its client
+  ID when you connect. Entra registers no client on the spot, so the client ID is
+  not optional.
+
+The per-application Work IQ servers - Mail, Calendar, Teams, SharePoint, OneDrive
+and Word - are no longer in the catalog, because Microsoft keeps them only for
+compatibility. A connection already made to one keeps working, by its address. An
+agent that binds one as each person's own service is refused at its next publish:
+bind **Microsoft 365 (self-hosted)** or **Microsoft Work IQ** instead.
+
+### Gmail and Google Workspace
+
+### Official Google remote servers
+
+The catalog includes Google's hosted Workspace servers: Gmail, Calendar, Drive,
+Docs, Sheets, Slides, Chat, People, Classroom and Universal Search. These are
+Developer Preview services, separate from the self-hosted Workspace integration.
+Join Google's preview program, enable the product API and MCP service, and create
+a web OAuth client marked for an AI-powered agent. Register the exact callback
+shown in the connection dialog and enter the client ID and secret there. Chat
+also requires a configured Chat app; Classroom requires a test class and student.
+See [Google's Workspace setup guide](https://developers.google.com/workspace/guides/configure-mcp-servers).
+
+Google-hosted MCP connections open the required client setup before sign-in, including the callback URL and a link to Google’s setup guide. Both the client ID and secret are required; AgenticOS does not attempt automatic client registration at Google. Other providers that reject registration return recovery instructions instead of a generic rejection.
+
+Cloud entries include BigQuery, Cloud Storage, Cloud Run, Compute Engine, GKE,
+Firestore, Cloud SQL, Spanner, Logging, Monitoring and more. Enable each service's
+APIs and grant the account MCP Tool User plus its product-specific IAM roles.
+Consult the linked guide for availability, billing and regional restrictions.
+Secure Source Manager defaults to US Central code review, and Gemini Enterprise
+Agent Platform to its generate toolset; edit the endpoint for another documented
+region or toolset. [Google's directory](https://docs.cloud.google.com/mcp/supported-products)
+also lists services whose endpoints or authentication are not yet included here.
+
+Google OAuth requests offline access and fresh consent so the account can receive
+a refresh token. Reconnect an existing Google account if it lacks one. Public
+handshake and tool discovery do not mean tools can access account data anonymously:
+the catalog audit checks OAuth metadata too. Catalog entries appear on existing
+installations after updating and restarting; accounts are connected explicitly,
+and existing connection URLs and credentials are preserved.
+
+| Server | Official endpoint |
+| --- | --- |
+| Gmail | `https://gmailmcp.googleapis.com/mcp/v1` |
+| Google Calendar | `https://calendarmcp.googleapis.com/mcp/v1` |
+| Google Chat | `https://chatmcp.googleapis.com/mcp/v1` |
+| Google Classroom | `https://classroommcp.googleapis.com/mcp/v1` |
+| Google Docs | `https://docsmcp.googleapis.com/mcp/v1` |
+| Google Drive | `https://drivemcp.googleapis.com/mcp/v1` |
+| Google People API | `https://people.googleapis.com/mcp/v1` |
+| Google Sheets | `https://sheetsmcp.googleapis.com/mcp/v1` |
+| Google Slides | `https://slidesmcp.googleapis.com/mcp/v1` |
+| Google Workspace Universal Search | `https://workspacemcp.googleapis.com/mcp/v1` |
+| Google API keys | `https://apikeys.googleapis.com/mcp` |
+| Google Agent Registry | `https://agentregistry.googleapis.com/mcp` |
+| Google Agent Search | `https://discoveryengine.googleapis.com/mcp` |
+| Google AlloyDB for PostgreSQL | `https://alloydb.googleapis.com/mcp` |
+| Google Android Management API | `https://androidmanagement.googleapis.com/mcp` |
+| Google Apigee API hub | `https://apihub.googleapis.com/mcp` |
+| Google App Lifecycle Manager | `https://saasservicemgmt.googleapis.com/mcp` |
+| Google App Topology | `https://apptopology.googleapis.com/mcp` |
+| Google Audit Manager | `https://auditmanager.googleapis.com/mcp` |
+| Google Backup and DR Service | `https://backupdr.googleapis.com/mcp` |
+| Google BigQuery Data Transfer Service | `https://bigquerydatatransfer.googleapis.com/mcp` |
+| Google BigQuery Migration Service | `https://bigquerymigration.googleapis.com/mcp` |
+| Google Bigtable | `https://bigtableadmin.googleapis.com/mcp` |
+| Google Capacity Planner | `https://capacityplanner.googleapis.com/mcp` |
+| Google Cloud Asset Inventory | `https://cloudasset.googleapis.com/mcp` |
+| Google Cloud CLI | `https://cloudcli.googleapis.com/mcp` |
+| Google Cloud Location Finder | `https://cloudlocationfinder.googleapis.com/mcp` |
+| Google Cloud Logging | `https://logging.googleapis.com/mcp` |
+| Google Cloud Monitoring | `https://monitoring.googleapis.com/mcp` |
+| Google Cloud NetApp Volumes | `https://netapp.googleapis.com/mcp` |
+| Google Cloud Quotas | `https://cloudquotas.googleapis.com/mcp` |
+| Google Cloud Run | `https://run.googleapis.com/mcp` |
+| Google Cloud SQL | `https://sqladmin.googleapis.com/mcp` |
+| Google Cloud Storage | `https://storage.googleapis.com/storage/mcp` |
+| Google Cloud Support API | `https://cloudsupport.googleapis.com/mcp` |
+| Google Cloud Trace | `https://cloudtrace.googleapis.com/mcp` |
+| Google Compute Engine | `https://compute.googleapis.com/mcp` |
+| Google Database Center | `https://databasecenter.googleapis.com/mcp` |
+| Google Database Migration Service | `https://datamigration.googleapis.com/mcp` |
+| Google Dataform | `https://dataform.googleapis.com/mcp` |
+| Google Datastream | `https://datastream.googleapis.com/mcp` |
+| Google Developer Connect | `https://developerconnect.googleapis.com/mcp` |
+| Google Developer Knowledge API | `https://developerknowledge.googleapis.com/mcp` |
+| Google Error Reporting | `https://clouderrorreporting.googleapis.com/mcp` |
+| Google Filestore | `https://file.googleapis.com/mcp` |
+| Google Firebase SQL Connect | `https://firebasedataconnect.googleapis.com/mcp` |
+| Google Firestore | `https://firestore.googleapis.com/mcp` |
+| Google GKE | `https://container.googleapis.com/mcp` |
+| Google Gemini Cloud Assist | `https://geminicloudassist.googleapis.com/mcp` |
+| Google Gemini Enterprise Agent Platform | `https://aiplatform.googleapis.com/mcp/generate` |
+| Google Home Developer | `https://homedevelopers.googleapis.com/mcp` |
+| Google Identity and Access Management | `https://iam.googleapis.com/mcp` |
+| Google Knowledge Catalog | `https://dataplex.googleapis.com/mcp` |
+| Google Managed Service for Apache Kafka | `https://managedkafka.googleapis.com/mcp` |
+| Google Managed Service for Apache Spark | `https://dataproc.googleapis.com/mcp` |
+| Google Maps Grounding Lite | `https://mapstools.googleapis.com/mcp` |
+| Google Memorystore | `https://redis.googleapis.com/mcp` |
+| Google Network Intelligence Center | `https://networkmanagement.googleapis.com/mcp` |
+| Google Oracle Database@Google Cloud | `https://oracledatabase.googleapis.com/mcp` |
+| Google Organization Policy Service | `https://orgpolicy.googleapis.com/mcp` |
+| Google Pay and Wallet | `https://paydeveloper.googleapis.com/mcp` |
+| Google Personalized Service Health | `https://servicehealth.googleapis.com/mcp` |
+| Google Policy Assist | `https://policyassist.googleapis.com/mcp` |
+| Google Policy Troubleshooter | `https://policytroubleshooter.googleapis.com/mcp` |
+| Google Pub/Sub | `https://pubsub.googleapis.com/mcp` |
+| Google Recommender | `https://recommender.googleapis.com/mcp` |
+| Google Resource Manager | `https://cloudresourcemanager.googleapis.com/mcp` |
+| Google Secure Source Manager | `https://securesourcemanager.us-central1.rep.googleapis.com/mcp/code_review` |
+| Google Security Command Center Management | `https://securitycentermanagement.googleapis.com/mcp/manage-services` |
+| Google Service Metadata API | `https://cloud.googleapis.com/mcp` |
+| Google Spanner | `https://spanner.googleapis.com/mcp` |
+| Google Stitch | `https://stitch.googleapis.com/mcp` |
+| Google Unified Maintenance | `https://maintenance.googleapis.com/mcp` |
+
+Catalog services use bundled brand marks, including distinct Workspace application icons. Registry entries without a supplied logo use a service or category pictogram, such as a calendar for CalendarMCP. Private, unclassified connections retain a monogram. Rendering these icons does not request third-party favicons.
+
+**Google Workspace (self-hosted)** is
+[`taylorwilsdon/google_workspace_mcp`](https://github.com/taylorwilsdon/google_workspace_mcp),
+run with `--transport streamable-http` and `MCP_ENABLE_OAUTH21=true`, using your own
+Google OAuth client. It searches and reads Gmail, drafts and sends mail in a
+thread, and works with Calendar, Drive and Sheets. Enter its address, ending in
+`/mcp`; each connection signs in as one Google account. [Answer mail with an approved draft](https://vstorm-co.github.io/agenticos/howto/answer-mail-with-approved-draft/)
+shows it answering mail from a workflow.
+
+Outlook is also available through third-party MCP services. The bundled registry
+includes MintMCP entries for email and calendar:
+
+| Registry entry | Server URL |
+| --- | --- |
+| `com.mintmcp/outlook-email` | `https://outlook-email.mintmcp.com/mcp` |
+| `com.mintmcp/outlook-calendar` | `https://outlook-calendar.mintmcp.com/mcp` |
+
+Search the MCP catalog for the entry or add its URL as a custom server. Follow
+the [provider's setup instructions](https://www.mintmcp.com/servers), configure
+the account and authorization, then test the connection and select the tools
+the agent may use. Availability, permissions and any service charges depend on
+that provider. A registry listing is not an AgenticOS end-to-end test of the
+service. Review the approval modes below before enabling write tools.
+
+## AgenticOS as an MCP server
+
+Everything above is the platform calling other servers. It is also one: **`/mcp`**
+on the API's host speaks MCP over streamable HTTP, so Claude Code, Claude Desktop
+or any MCP client can operate the organization — list and create agents, run them,
+read runs and their cost, fill and search knowledge bases, invite members.
+
+The server is built on [FastMCP](https://gofastmcp.com): it serves the protocol
+and the OAuth 2.1 endpoints, and AgenticOS supplies the tools and every decision
+behind a sign-in.
+
+The client signs in through the browser: it registers itself, opens the
+console's consent page, where you choose the organization and what it may do,
+and receives a token that lasts an hour and renews itself. No key is pasted
+anywhere.
+
+Registration needs no credential, so it is limited per address like sign-in,
+and a client nobody completed sign-in with is forgotten after a day.
+
+In the console, **Settings → MCP clients** shows this server's URL and the exact command or configuration for Claude Code, Codex, Claude Desktop, Cursor and VS Code, for both ways of signing in.
+
+```bash
+claude mcp add --transport http agenticos https://<your-deployment>/mcp
+```
+
+Or connect with an [organization API key](api.md#organization-api-keys), for a
+client that cannot open a browser:
+
+```bash
+claude mcp add --transport http agenticos https://<your-deployment>/mcp \
+  --header "Authorization: Bearer $AGENTICOS_KEY"
+```
+
+The connection acts as the member who issued the key, within the key's
+permissions. Each tool is a call to the [public API](api.md) made with that key,
+so it is refused, rate limited and audited exactly as the same request over HTTP
+would be; an expected refusal returns an explicit error envelope naming the missing permission.
+
+Approving personal routines and watches requires the explicit `personal:consent` scope, selected under **Custom** when issuing a key or authorizing an MCP client. It is excluded from every preset, including **Full access**. The confirmation allows the credential to approve persistent routines and watches using your personal connections and data; ordinary `agents:run` and `runs:view` scopes do not. Existing keys and MCP authorizations gain no personal consent automatically.
+
+Connection checks update discovered tools and status. `test_my_connection` therefore requires a fresh confirmation on every call.
+
+| Tool | Needs |
+| --- | --- |
+| `whoami` | — |
+| `list_agents`, `get_agent`, `list_capabilities`, `get_capability`, `list_models`, `search_mcp_servers` | `agents:view` |
+| `create_agent_draft`, `update_agent_draft`, `test_agent_draft` | `agents:edit` |
+| `list_sandbox_connections`, `list_sandbox_runtimes`, `get_sandbox_policy` | `connections:view` |
+| `list_org_connections` | `mcp:manage` |
+| `list_mcp_connection_tools`, `get_mcp_connection_tool` | `mcp:manage` (organization); own personal connections (key: `agents:run`) |
+| `publish_agent` | `agents:publish` on that agent |
+| `discard_agent_draft` | `agents:edit`, on a draft you own that was never published |
+| `run_agent` | `agents:run` |
+| `list_routines` | `agents:view` |
+| `create_routine`, `run_routine_now` | `agents:run` on the agent |
+| `update_routine`, `delete_routine` | the routine's creator, or `agents:edit` on its agent |
+| `list_runs`, `get_run`, `read_run_transcript`, `read_run_tool_call`, `read_conversation`, `read_conversation_tool_call`, `list_conversations`, `get_spend` | `runs:view` |
+| `create_conversation` | `agents:run` |
+| `update_proactivity_settings` | `org:settings`, `budgets:manage` |
+| `list_knowledge_bases`, `search_knowledge` | `collections:view` |
+| `list_embedding_models` | — |
+| `create_knowledge_base`, `add_document` | `collections:edit` |
+| `list_skills` | `skills:view` |
+| `create_skill` | `skills:edit` |
+| `get_skill`, `list_skill_versions`, `get_skill_version` | `skills:view`; agents the caller cannot see are only counted |
+| `update_skill`, `add_skill_resource` | `skills:edit` |
+| `list_skill_improvements`, `get_skill_improvement` | `skills:view` and `runs:view` |
+| `estimate_skill_improvement`, `start_skill_improvement`, `estimate_next_skill_improvement_step`, `run_next_skill_improvement_step`, `retry_skill_improvement_step`, `accept_skill_improvement`, `end_skill_improvement` | edit access to the skill and `runs:view`; pinning the worse agents also `agents:publish` on each |
+| `change_skill_version` | edit access to the agent; going live also `agents:publish` |
+| `list_skills_behind_main` | `skills:view` |
+| `estimate_skill_update_check`, `start_skill_update_check`, `estimate_skill_catch_up`, `start_skill_catch_up` | edit access to the skill and `runs:view`; an update check also access to the agent |
+| `return_skill_fork_to_main` | edit access to each agent; going live also `agents:publish` |
+| `list_context_files`, `get_context_file` | `context:view` |
+| `create_context_file`, `update_context_file` | `context:edit` |
+| `list_projects` | `projects:view` |
+| `get_project` | access to that project |
+| `create_project` | `projects:edit` |
+| `list_members` | `members:view` |
+| `invite_member` | `members:manage` and `roles:manage` |
+| `list_my_connections`, `test_my_connection`, `set_my_language`, `set_my_profile` | — (the caller's own; a key needs `agents:run` for `test_my_connection`) |
+| `list_improvements`, `get_improvement` | read access to the agent; the session's knowledge topics also need `runs:view`, as does listing every open session without naming an agent |
+| `estimate_improvement`, `start_improvement`, `use_attempt`, `accept_improvement`, `estimate_next_improvement_step`, `run_next_improvement_step`, `estimate_improve_again`, `improve_again`, `end_improvement` | edit access to the agent and `runs:view`; starting also `datasets:run`, publishing `agents:publish` |
+| `list_datasets` | `datasets:view` |
+| `get_eval_run` | `runs:view` |
+| `estimate_knowledge_draft`, `draft_knowledge_topic` | `runs:view` and edit access to the topic's knowledge base |
+| `list_watches`, `delete_watch` | the caller’s own watches |
+| `create_watch`, `update_watch` | the person themselves - signed in, through a key or MCP token they issued, or in their private chat; `agents:run` when selecting an agent |
+
+The platform’s `read_conversation` tool omits guardrail-refused turns and quoted
+reply excerpts. `list_conversations` omits conversations containing refused turns,
+so a generated title cannot repeat their text to a model. The console keeps the
+complete transcript for its authorized reader.
+
+The Improve and eval tools call routes that are not yet part of the public API:
+they answer the in-app Architect and an MCP client signed in with OAuth, and
+refuse an organization API key as a console route does. They are the
+[Improve wizard's](authoring.md#the-improve-wizard) own actions, so its checks
+apply, and the Architect uses the ones that change something only when asked.
+An MCP client can start, accept, publish and end sessions too; there, the
+client's own approval prompt stands where the Architect's card does.
+
+Project discovery with `list_projects` returns only project ids and names.
+Read a selected project's instructions and configuration with `get_project`.
+This is a read-only operation and runs without approval under `writes`, subject
+to the caller's existing access to the project.
+
+An agent can be built end to end here: drafted, edited, tried as the unpublished
+draft with `test_agent_draft` - a test run, budgeted and recorded, refused with the
+reason when the draft would not publish - and published with `publish_agent`,
+which runs the checks the console's **Publish** button runs. A routine's
+`cron_expression` is evaluated in UTC. `set_my_language` switches the console's
+language for the caller (`en`, `pl` or `de`) on every device they sign in on, and
+`set_my_profile` saves their role and what they work on, which every agent is
+told from then on. `create_skill` saves a procedure that worked as a
+[skill](skills.md), for "make a skill of this".
+
+Deliberately absent: touching a credential, and deleting anything but an agent
+draft its caller created and never published - the undo for a draft made by
+mistake - or a routine.
+Connected applications are listed under **Settings → MCP clients**, where
+disconnecting one ends its access and every token it holds. Calls that change
+something wait for approval, as [below](#which-calls-wait-for-a-person) explains.
+
+Draft tools accept configured capability bindings as well as plain ids. For
+example, `capabilities: [{id: sandbox, config: {backend: service,
+include_execute: true}}]` gives a coding agent a shell on the organization's
+default sandbox host. `list_capabilities` returns each `config_schema`;
+`list_sandbox_connections`, `list_sandbox_runtimes` and `get_sandbox_policy`
+identify available hosts, runtime aliases and host limits before choosing settings.
+A files-only (`state`) sandbox cannot execute commands.
+
+`update_agent_draft.add_capabilities` upserts bindings: omitted fields retain
+their values, while an explicitly supplied `config` replaces that whole config.
+Read the current draft first to preserve settings you still need. Both draft
+tools accept `mcp_servers`: organization connection ids from
+`list_org_connections`, or personal catalog keys from `search_mcp_servers`.
+A personal connection id never belongs in a shared spec. The MCP binding list is
+replaced as a whole; `[]` disconnects all. Creation also accepts `skill_ids` and
+`collection_ids`. Testing and publishing retain the same validation and approval rules.
+
+### Giving it to an agent { #giving-it-to-an-agent }
+
+The same server is also an MCP binding any agent can have, so an agent can answer
+"what failed yesterday" or "which agents use this knowledge base" from the
+platform's own records. In the Builder it is the first card under **MCP servers**,
+named after this deployment; switching it on binds it as
+`mcp_servers: [{account: platform, approval: writes}]`.
+
+- **It acts as whoever the agent runs for.** A run mints a short-lived credential
+  holding that person's permissions, so a Viewer's agent can read what the Viewer
+  can read and create nothing. Nothing new is granted, and where nobody is behind
+  the run - a public widget, a schedule acting for nobody - the binding is absent.
+- **Changes use trusted platform defaults.** Drafts and ordinary records run without
+  confirmation; consequential actions and potentially new agent task work ask.
+  `set_my_language` and `set_my_preferences` are ungated. Authors can require
+  confirmation for default-free operations. See [the approval rules](#which-calls-wait-for-a-person).
+
+- **The tools can be narrowed** in the card's settings, which group them by what
+  they work on - tables, tasks, workflows, agents, knowledge bases, skills,
+  projects, automations, apps, runs, connections and the account - and mark each
+  tool that changes something with an icon that says so on hover.
+- **Each tool runs freely or asks first.** A group's control sets all of its
+  tools, and the shield beside a tool sets that one. The spec keeps a tool's own
+  setting in the binding's `tool_approval`, keyed by the tool's name; publishing
+  refuses a name the platform does not offer. Letting a change run freely is a
+  decision about that tool alone: the binding's default stays at `writes`, or
+  `all` once every read asks, so a read the platform adds later asks too.
+- **Some tools always ask.** `invite_member` and `update_proactivity_settings`
+  change who has authority in the organization, and they run with the authority
+  of the person the agent runs for, not of its author - so an agent a Builder
+  publishes cannot invite an Admin through an Owner's run unasked. Their shield
+  cannot be switched off, and publishing refuses `never` on either. Each call
+  waits for its own answer: neither **Approve all** nor a remembered decision
+  lets one run.
+
+The **AgenticOS** template binds it this way, and so does every agent created from
+scratch, so an agent can look the platform up - and set up a routine, or switch the
+console's language when asked - out of the box.
+
+### Desktop, mobile and local environments
+
+The platform MCP server explains the same app and environment distinctions as agent runs: Desktop can use an approved local folder, browser, model or HTTP MCP service selected for the conversation. Mobile does not provide desktop execution. A native grant is still required; MCP cannot choose a folder or grant access on the person's behalf.
+
+`create_project` accepts `backend` (`auto`, `state`, `service`) and an optional `sandbox_connection_id` for the shared server workspace. Its returned backend does not describe a personal Computer selection. Local folders remain separate from shared uploads, and shared chat replies may still disclose local content. Architect's guide includes the Desktop, Mobile and Sandbox pages; each run is briefed on the local resources actually selected after validation.
+
+## What MCP does not get you
+
+- **A coverage guarantee.** Catalog entries are metadata. The tools are the
+  vendor's, and they can change under you between one turn and the next.
+- **Approval that knows what a tool does.** A binding's `writes` policy trusts
+  the server to mark its read-only tools; a tool marked read-only that changes
+  something runs unasked. Use `all` for a server you do not control, and
+  narrow `allowed_tools`. See [which calls wait](#which-calls-wait-for-a-person).
+- **Cost attribution.** What a server does on its own side is not in this
+  platform's [budget](https://vstorm-co.github.io/agenticos/governance/#budgets). Only the model tokens are.
+
+## Recap
+
+- An MCP server is **a URL somebody pasted**, and its tools appear without a
+  deploy.
+- **Personal** connections reach one member's assistant; only **organization**
+  connections may be named by a published spec.
+- Every address in an OAuth flow is **checked and pinned**, including the ones the
+  remote server chose.
+- A token never follows a moved URL, a disabled connection hands out none, and
+  deleting one deregisters what it registered.
+- An unreachable server is **skipped**, not raised — the turn answers without those
+  tools.
+
+OAuth refresh owns a short, independent transaction: it locks and rechecks the account, rotates the credential and commits before returning a token. Cancellation waits for this unit to settle; a later run rollback cannot undo it. If persistence fails after the provider rotates, the request fails explicitly and the account may need authorization again. Mailbox polling holds a separate per-account advisory lock; each mailbox commits its cursor together with queued fires, and a malformed response rolls back only that mailbox’s work.
+
+Health admission uses its own indexed timestamp. Renewing OAuth credentials or polling a mailbox cannot postpone a server’s next health check. Existing servers enter the queue as never checked after the migration.
+
+## Building workflows and tables { #workflow-and-table-tools }
+
+The platform MCP server also supplies workflow and Virtual Table tools. Start with `list_workflow_definitions`, `get_workflow_definition`, `list_workflow_nodes` and `get_workflow_node`. Create and save private graphs with `create_workflow_draft` and `update_workflow_draft`, preserving `expected_revision`. `test_workflow_draft` accepts an optional `entry_node_id`; inspect `get_workflow_execution` and `get_workflow_execution_steps` before claiming success. Testing can call real APIs and write data. `publish_workflow` activates configured entries, requires the existing publication permissions, and withholds one-time signing secrets from the model. Unattended publication still requires a human session; an API key cannot retain a person's authority.
+
+Use `get_workflow_input_schema` before `run_workflow` to inspect the published
+input contract without executing it. It accepts `workflow_id` and an optional
+`version_id`, returning the same per-entry `input_schema` contracts as the
+[HTTP discovery endpoint](api.md#running-a-workflow). Select the intended
+`entry_node_id` and send matching `fields`. JSON Schema Draft 2020-12 contracts,
+legacy simple fields and untyped inputs share this discovery format; admission
+validates against the version admitted for the run.
+
+The MCP tool returns only Manual/API entries that its paired `run_workflow`
+can start. Form and Called by a workflow contracts remain available through
+HTTP discovery for their own admission surfaces.
+
+`get_workflow_input_schema` refuses responses above 32 KiB of encoded JSON,
+including all returned entries. It never returns a partial contract. Inspect
+larger contracts through the HTTP endpoint outside the model context.
+
+For operational records use `list_virtual_tables`, `get_virtual_table`, `create_virtual_table`, `update_virtual_table_schema`, `query_virtual_table`, `add_virtual_table_record` and `update_virtual_table_record`. Schema and record writes preserve revision checks. All tools use the caller's organization, permissions and resource grants; ordinary draft/record writes use the trusted defaults, while schema changes, execution and publication always ask. Architect's workflow-builder and virtual-tables skills explain choosing triggers, wrapping a documented HTTP API when the MCP gallery lacks an integration, and binding a published callable workflow to an agent. Credentials are configured in the vault UI, never embedded in graphs or model output.
+
+Workflows and Tables use the AgenticOS platform MCP server as their common tool interface. Allow only the tools an agent needs. `run_workflow` starts a published workflow and returns its admitted run; poll `get_workflow_execution` for the result. Table tools include `get_virtual_table_record`, `virtual_table_record_exists`, `upsert_virtual_table_record`, `delete_virtual_table_record` and `list_virtual_table_views`. Updates and deletions use the revision read, ordinary record writes run by default, while deletion always asks and task execution retains its conditional floor. Saved-view listing uses the same authenticated public API and table access checks. Legacy Workflows bindings remain editable. The Tables capability is removed: stored app grants migrate to `table_bindings`, and table operations require an explicit platform MCP connection.
+
+Expected API refusals return an explicit `error` envelope with HTTP status, code, message and safe field details. This is a refused operation, never a successful write. The envelope stays visible in chat history; unexpected server failures still use masked MCP errors. New workflow drafts can use `prepare_workflow_draft` to review their table and graph together. The read-only `check_workflow_draft` validates without executing actions. Refreshing an unmodified Architect also installs and binds its workflow-builder and virtual-tables skills, preserving existing bindings and refusing to overwrite pending draft changes.
+
+For existing customized Architects, run `uv run agenticos cmd refresh-assistant --org <organization-id> --workflow-support`.
+
+## Context and skill authoring { #context-and-skill-authoring }
+
+Use `get_skill` before `update_skill`; omitted fields retain their values.
+`add_skill_resource` attaches a text reference or template, not an executed script.
+Discover Context with `list_context_files`, inspect its body and mode with
+`get_context_file`, and use `create_context_file` or `update_context_file` to save
+focused standing material. Choose `inject` for every-run prompt context and `link`
+for on-demand access. Both agent draft tools accept `context_ids`; the supplied
+list replaces the complete binding list. Editing a bound Context file affects the
+next run; changing a draft binding requires publication. Normal permissions and
+write approvals remain in force.
+
+### Connected account source authority
+
+A Google account connected through an organization's OAuth client can only be used in that organization. Personal use also requires current membership. Rotating or removing that client invalidates the copied grant until the person reconnects. Organization account connections, reconnections and disconnections are audited. Personal exports include account metadata, never tokens or client secrets.
+
+Migration `0293_connected_account_sources.py` leaves unverifiable older personal grants disconnected until reconsent. Downgrading it removes personal connected-account grants because older versions cannot enforce their source tenant; ordinary MCP connections remain.
+
+Mirage approval pauses pin account identities and credential generations. Changing either while a run waits requires a new run and approval. Routine source reviews bind the same generations, and terminal writes and commands require routine effect consent even when per-mount write approvals are disabled.
+
+Removing a member permanently revokes their personal grants issued through this organization; inviting them back requires new consent.
+
+## Bounded discovery and run inspection { #bounded-discovery }
+
+Platform MCP discovery returns summaries before full contracts. `list_org_connections` and `list_my_connections` accept `q`, `limit` (1–50, default 20) and `skip`; follow `next_skip` until null. They omit cached tool schemas and agent-usage arrays. `tool_count: null` means no catalog was recorded, while zero means a recorded empty catalog. A null `allowed_tool_count` means the connection has no tool allowlist. `list_my_connections(include_tools=true)` remains available for small responses but refuses payloads over 64 KiB.
+
+Use `list_mcp_connection_tools(connection_id, account, q, limit, skip)` to find tools on one accessible connection. It returns names, bounded description excerpts, allowlist status and the server's explicit `read_only_hint`. Null means the server did not declare one; it does not prove a write. `get_mcp_connection_tool` returns one full cached contract, including its input schema. A null schema was not retained; it does not mean no arguments. Both calls read the last recorded catalog without executing tools or probing the server; check `last_checked_at` and `tools_cached`. Organization reads require `mcp:manage`; personal reads are restricted to the caller's own connections.
+
+`list_capabilities(q, limit, skip)` returns summaries; call `get_capability(capability_id)` before configuring one to read its schema, defaults and tool contracts. `list_skills` defaults to 20 items, forwards `q` to the API and omits body excerpts. `get_skill` reads the body; `include_usage=true` adds the agents using a skill. These discovery responses have a 64 KiB budget and refuse excess explicitly, with guidance to narrow the request. They do not silently discard required schema fields. Existing MCP clients reading configuration directly from listings must switch to these detail tools and follow pagination. The console's REST responses are unchanged.
+
+For diagnostics, `list_runs` accepts status, surface, frozen version and timezone-aware date filters. Historical failures alone do not establish that the current version fails. `read_conversation` remains limited to the asker's own chats. Use `read_run_transcript` for an authorized run, including a colleague's or channel run, under the existing `runs:view` policy. It omits guardrail-refused turns before pagination and excludes quoted replies.
+
+Its message indexes refer to that filtered transcript. It returns bounded text windows and tool-call metadata, not every argument and result. Follow `next_skip`, `next_offset` and `next_tool_skip`; use `limit=1` to continue a long message. `read_run_tool_call` reads a bounded window of one selected call's `args` or `result`, verifies the message id still matches the indexed page, and never executes it. An unavailable recorded result is null. No additional access to private conversations is granted.
+
+Named-agent Improve lookup checks every agent page before selecting a match or reporting ambiguity, rather than assuming the first 100 agents are the complete catalog.
+
+`read_conversation` uses the same bounded message and tool-metadata windows as run inspection, with 10 messages by default. `read_conversation_tool_call` reads a selected recorded payload, including older messages without run IDs, through the unchanged owner-scoped conversation API. Existing MCP consumers must follow the window continuations instead of expecting full tool results inline.
+
+## AI client plugin and lifecycle tools
+
+Use the [AI client guide](https://vstorm-co.github.io/agenticos/howto/operate-with-ai/) to install the plugin, configure
+dependencies, release agents through evals and environments, or install reviewed
+solution bundles. Contract-1 discovery distinguishes server features from granted
+scopes. Vault reference discovery returns IDs and metadata, never values or hints;
+credential entry stays in the console. New assistant-only operations require OAuth.
+
+## Bounded results and personal preferences
+
+MCP contract 2 keeps discovery small: search first, use pages of 10 by default,
+and follow `next_skip`. Listings return metadata; named detail tools read a single
+case, Context body, skill file, model/provider, environment, workflow node or
+execution step. `get_authoring_schema` exposes large input contracts on demand;
+the API still validates complete inputs. A metadata summary is not an editable
+workflow graph: read the complete graph and retain bindings before replacement.
+
+Successful results are bounded to 16 KiB. Large reads issue a five-minute,
+credential-bound `continuation` for `read_platform_details`. It can repeat only
+the already authorized read with its original arguments, and rechecks API access.
+Inspect pointers, request content windows, follow continuation offsets and pin
+`expected_hash` to `value_hash`. Assemble JSON fragments before parsing them.
+A changed result or expired handle requires a new authorized read. Large writes
+return identity/status receipts; read the saved resource with its own permission
+instead of repeating the write. A receipt does not prove a background job finished.
+
+For large bundles, `prepare_solution` reserves a principal-scoped review for 24
+hours; `install_solution` accepts its `plan_id`, installation key and reviewed
+manifest hash. Installation receipts remain durable after the review expires.
+
+`get_my_console_experience` reads the active organization membership's chat-home
+and setup-reminder presentation: availability, organization defaults, personal
+overrides and effective values. `set_my_console_experience(update)` changes only
+those personal overrides. Chat-home choices are `inbox`, `starters`, `greeting`
+and `feature_hints`; reminder choices are `enabled` and `snooze_days` (1, 3 or 7).
+
+Omitted fields stay unchanged; a nested `null` restores inheritance for that choice,
+and `preferences: null` or `reminders: null` resets the whole group. The setter is
+ungated like other reversible console preferences. It cannot change deployment
+ceilings, organization defaults, agent initiative, permissions or approvals, and
+leaves account theme, style and language unchanged. Both tools require the caller's
+active personal membership; they accept no user or organization selector.
+
+`get_my_preferences` reads the caller's theme, style and language.
+`set_my_preferences` changes only supplied choices: theme `light`, `dark` or
+`system`; style `standard`, `glass`, `graphite`, `midnight` or `paper`; language
+from the tool's supported enum. In-chat results apply immediately; other open
+consoles synchronize preferences within about ten seconds while visible. Settings
+writes the same account choices. Existing accounts retain device defaults until
+a choice is saved; migration `0344_user_appearance.py` adds nullable columns.
+
+A deliberate choice is saved even when the screen already uses that value; select it again to retry a failed save.
+
+Large run receipts preserve `parked`, including pending approval IDs. If pending
+calls do not fit, the response keeps up to ten approval identities, `parked_total`
+and an `approval_review_url` for the console. `approval_details_omitted` means the
+arguments are incomplete: inspect the full calls there before deciding; never
+approve from the abbreviated response.
+
+## Administration through MCP
+
+Search `list_administration_actions` by task or field, then use
+`get_administration_schema` for the selected action's path and body. The catalog
+covers installation settings, updates, diagnostics and push readiness, plus
+organization settings, retention, AI Architect, system agents, members, groups
+and invitations. Pages contain metadata; `read_administration` retrieves selected
+configuration with the same bounded detail windows as other MCP reads.
+
+Organization actions require the existing organization permissions and stay bound
+to the connected organization. `change_organization` cannot promote an organization
+administrator to installation administrator. Reading AI Architect or system-agent
+configuration creates no resources. Installing or refreshing shipped assistants is
+an explicit write; it may publish ready defaults.
+
+Installation actions require both the user's live application-admin flag and an
+explicit OAuth grant of `deployment:admin`. The consent screen offers a separate,
+initially unchecked checkbox only to application administrators. Reauthorize an
+existing connection to add this scope. It is outside organization permissions and
+presets. Internal agents, routines and ordinary API keys never inherit it;
+`change_deployment` is excluded from internal agent toolsets.
+
+Use `change_deployment` for installation writes and read back the selected action.
+Update preparation, application and cancellation are separate actions: acceptance
+does not mean an update finished. MCP authentication remains available during
+maintenance so an authorized client can reopen the installation; ordinary API
+operations remain blocked. Losing the application-admin flag blocks the next
+installation request, even if the token still lists the originally granted scope.
+
+APNs private-key entry and binary logo/favicon uploads return secure console
+handoffs. Secret values and image bytes stay out of model context. Environment-owned
+settings remain read-only. Console branding fetched through the frontend cache
+can take up to five minutes to reflect a direct MCP change.

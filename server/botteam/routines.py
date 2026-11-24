@@ -119,6 +119,17 @@ def describe(r: dict) -> str:
     return f"{label} at {r['at']}"
 
 
+def serialize_resource_changes(function):
+    from functools import wraps
+    @wraps(function)
+    async def wrapped(self, *args, **kwargs):
+        if self.resources:
+            async with self.resources.lock:
+                return await function(self, *args, **kwargs)
+        return await function(self, *args, **kwargs)
+    return wrapped
+
+
 class RoutineService:
     """Definitions, runs and the scheduler. `start` it once; `tick` is what the loop calls (and what tests call with a fake clock)."""
 
@@ -128,6 +139,7 @@ class RoutineService:
         self.tick_seconds = tick
         self._task: Optional[asyncio.Task] = None
         self.run_threads: dict[str, str] = {}  # routine run id -> its task thread, while it is running
+        self.resources = None
         self.notify = None  # notifications service (set by the app)
 
     # ---- lifecycle ------------------------------------------------------------------------------------------------
@@ -177,9 +189,27 @@ class RoutineService:
         self.bus.publish({"kind": "routine.run", "run": run})
 
     # ---- definitions ----------------------------------------------------------------------------------------------
+    async def resource_binding(self, resource_id, resource_version, require_approved):
+        if not resource_id:
+            if resource_version is not None:
+                raise ValueError("A resource version requires a resource ID")
+            return {"resource_id": None, "resource_version": None, "require_approved": False}
+        if not self.resources:
+            raise ValueError("Resources is unavailable")
+        item = await self.resources.version(resource_id, resource_version)
+        return {"resource_id": item["id"], "resource_version": item["version"], "require_approved": item["kind"] == "post" if require_approved is None else require_approved}
+
+    @serialize_resource_changes
     async def create(self, *, target_kind: str, target_id: str, name: str, prompt: str, kind: str, every_min: Optional[int] = None, at: Optional[str] = None,
                      days: Optional[list[int]] = None, run_at: Optional[int] = None, tz: Optional[str] = None, max_run_min: Optional[int] = None,
-                     created_by: str = "person", enabled: bool = True) -> dict:
+                     created_by: str = "person", enabled: bool = True, resource_id=None, resource_version=None, require_approved=None) -> dict:
+        if kind == "once" and run_at is None and at and "T" in at:
+            from datetime import datetime
+            date = datetime.fromisoformat(at.replace("Z", "+00:00"))
+            if date.tzinfo is None:
+                raise ValueError("One-time dates must include a time zone")
+            run_at, at = int(date.timestamp() * 1000), None
+        binding = await self.resource_binding(resource_id, resource_version, require_approved)
         kind = normalize_kind(kind)
         why = valid_schedule(kind, every_min, at, days, run_at, tz)
         if why:
@@ -189,14 +219,20 @@ class RoutineService:
         now = now_ms()
         nxt = next_run_after(kind, every_min, at, now, days=days, tz=tz, anchor_ms=now, run_at=run_at)
         r = await self.store.create_routine(target_kind, target_id, (name or prompt)[:60], prompt, kind, every_min, at, days if kind == "weekly" else None, run_at, tz or "UTC",
-                                            nxt, now, max_run_min, created_by, enabled=enabled)
+                                            nxt, now, max_run_min, created_by, enabled=enabled, **binding)
         await self.publish(r["id"])
         return r
 
+    @serialize_resource_changes
     async def update(self, rid: str, **f: Any) -> Optional[dict]:
         cur = await self.store.get_routine(rid)
         if not cur:
             return None
+        if {"resource_id", "resource_version", "require_approved"} & f.keys():
+            resource_id = f.get("resource_id", cur.get("resource_id"))
+            version = f.get("resource_version") if "resource_id" in f and resource_id != cur.get("resource_id") else f.get("resource_version", cur.get("resource_version"))
+            approval = f.get("require_approved") if "resource_id" in f and resource_id != cur.get("resource_id") else f.get("require_approved", cur.get("require_approved"))
+            f.update(await self.resource_binding(resource_id, version, approval))
         kind = normalize_kind(f.get("kind", cur["kind"]))
         every, at = f.get("everyMin", cur["everyMin"]), f.get("at", cur["at"])
         days, run_at, tz = f.get("days", cur["days"]), f.get("runAt", cur["runAt"]), f.get("tz", cur["tz"])
@@ -213,12 +249,18 @@ class RoutineService:
             if f["nextRun"] is None and kind == "once":
                 f["enabled"] = False
         await self.store.update_routine(rid, **f)
+        if self.resources and cur.get("resource_id") and {"resource_id", "resource_version"} & f.keys():
+            await self.resources.prune(cur["resource_id"])
         await self.publish(rid)
         return await self.store.get_routine(rid)
 
+    @serialize_resource_changes
     async def delete(self, rid: str) -> bool:
+        previous = await self.store.get_routine(rid)
         ok = await self.store.delete_routine(rid)
         if ok:
+            if self.resources and previous and previous.get("resource_id"):
+                await self.resources.prune(previous["resource_id"])
             await self.publish(rid, deleted=True)
         return ok
 
@@ -236,6 +278,7 @@ class RoutineService:
         await self._timeouts(now)
         return started
 
+    @serialize_resource_changes
     async def start_run(self, r: dict, now: Optional[int] = None, manual: bool = True) -> Optional[dict]:
         """One run: a new task on the target, or a message to the room. A routine already running gets a `skipped` record instead."""
         now = now_ms() if now is None else now
@@ -243,11 +286,41 @@ class RoutineService:
             run = await self.store.create_run(r["id"], now, "skipped", None, "the previous run is still going")
             await self.publish_run(run)
             return run
-        run = await self.store.create_run(r["id"], now, "running", None, "")
+        pinned = ""
+        if r.get("resource_id"):
+            from .resources import ResourceError, reference
+            pinned = reference(r["resource_id"], r["resource_version"])
+            try:
+                item = await self.resources.version(r["resource_id"], r["resource_version"])
+                if item["missing"]:
+                    raise ResourceError(f"resource {pinned} is missing")
+                if r.get("require_approved") and item["status"] not in {"approved", "published"}:
+                    raise ResourceError(f"resource {pinned} is not approved")
+                target = await self.store.get_bot(r["targetId"]) if r["targetKind"] == "bot" else None
+                if not target or not target.cwd:
+                    raise ResourceError("Resource routines require an agent workspace")
+                material = await self.resources.materialize(item, target.cwd)
+                post = material.get("post", {})
+                images = "\n".join(f"{image['ref']} {image['path']} alt: {image['alt']}" for image in material["images"])
+                text = post.get("text", material.get("content", material.get("alt", "")))
+                prompt = r["prompt"]
+                for key, value in {"ref": pinned, "text": text, "title": item["title"], "images": images}.items():
+                    prompt = prompt.replace("{resource." + key + "}", value)
+                block = f"Resource: {pinned}\nKind: {item['kind']}\nTitle: {item['title']}\nFile: {material['file']}\nText:\n{text}\nImages:\n{images}\n"
+                if item["kind"] == "post":
+                    block += "After successfully publishing this exact post, call set_resource_status with ref=" + pinned + " and status=published. Never publish a different version.\n"
+                r = {**r, "prompt": block + "\nTask:\n" + prompt}
+            except (ValueError, OSError) as exc:
+                reason = str(exc) if pinned in str(exc) else f"resource {pinned}: {exc}"
+                run = await self.store.create_run(r["id"], now, "skipped", None, reason)
+                await self.publish_run(run)
+                await self._notify_failure(r, run)
+                return run
+        run = await self.store.create_run(r["id"], now, "running", None, pinned)
         try:
             thread_id = await self._deliver(r, run)
         except Exception as e:  # a routine that cannot start is a failed run, not a crashed scheduler
-            run = await self.store.finish_run(run["id"], now_ms(), "failed", f"{type(e).__name__}: {e}"[:300])
+            run = await self.store.finish_run(run["id"], now_ms(), "failed", (pinned + " " + f"{type(e).__name__}: {e}"[:300]).strip())
             await self.publish_run(run)
             await self._notify_failure(r, run)
             return run
@@ -291,7 +364,7 @@ class RoutineService:
         run = await self.store.get_run(run_id)
         if not run or run["status"] != "running":
             return
-        run = await self.store.finish_run(run_id, now_ms(), "completed" if ok else "failed", detail)
+        run = await self.store.finish_run(run_id, now_ms(), "completed" if ok else "failed", (run.get("detail", "") + " " + detail).strip())
         self.run_threads.pop(run_id, None)
         await self.publish_run(run)
         if not ok:
@@ -305,7 +378,7 @@ class RoutineService:
             return None
         if run["status"] == "running":
             tid = run.get("threadId") or self.run_threads.get(run_id)
-            run = await self.store.finish_run(run_id, now_ms(), "cancelled", "stopped")
+            run = await self.store.finish_run(run_id, now_ms(), "cancelled", (run.get("detail", "") + " stopped").strip())
             self.run_threads.pop(run_id, None)
             if tid and tid in self.turns.runs:
                 bot = await self.store.get_bot(self.turns.runs[tid].bot_id)
@@ -319,7 +392,7 @@ class RoutineService:
             r = await self.store.get_routine(run["routineId"])
             if r and r["maxRunMin"] and now - run["startedAt"] > r["maxRunMin"] * 60_000:
                 tid = run.get("threadId")
-                done = await self.store.finish_run(run["id"], now, "failed", f"stopped after {r['maxRunMin']} minutes")
+                done = await self.store.finish_run(run["id"], now, "failed", (run.get("detail", "") + f" stopped after {r['maxRunMin']} minutes").strip())
                 if tid and tid in self.turns.runs:
                     bot = await self.store.get_bot(self.turns.runs[tid].bot_id)
                     if bot:
@@ -337,7 +410,7 @@ class RoutineService:
         run = self.turns.runs.get(thread_id)
         mine = [self.public(r) for r in await self.store.list_routines() if run and r["targetKind"] == "bot" and r["targetId"] == run.bot_id]
         return {"ok": True, "kinds": ["once", "weekly", "interval"], "interval_minutes": [MIN_INTERVAL, MAX_INTERVAL], "days": "0=Monday .. 6=Sunday", "timezone": "IANA name, e.g. Europe/Paris", "once": "kind=once with at=2026-11-23T17:00:00+07:00 (or run_at in epoch milliseconds)",
-                "yours": [{"id": r["id"], "name": r["name"], "schedule": r["schedule"], "enabled": r["enabled"]} for r in mine]}
+                "yours": [{"id": r["id"], "name": r["name"], "schedule": r["schedule"], "enabled": r["enabled"], "resource_id": r.get("resource_id"), "resource_version": r.get("resource_version"), "require_approved": r.get("require_approved", False)} for r in mine]}
 
     async def tool_trigger(self, thread_id: str, args: dict) -> dict:
         run = self.turns.runs.get(thread_id)
@@ -362,9 +435,9 @@ class RoutineService:
                     args = {**args, "run_at": parse_when(args.get("run_at"), args.get("timezone"))}
                 r = await self.create(target_kind="bot", target_id=run.bot_id, name=str(args.get("name") or ""), prompt=str(args.get("prompt") or ""),
                                       kind=str(args.get("kind") or "interval"), every_min=args.get("every_min"), at=args.get("at"), days=args.get("days"),
-                                      run_at=args.get("run_at"), tz=args.get("timezone"), created_by="bot", enabled=args.get("enabled") is not False)
+                                      run_at=args.get("run_at"), tz=args.get("timezone"), created_by="bot", enabled=args.get("enabled") is not False, resource_id=args.get("resource_id"), resource_version=args.get("resource_version"), require_approved=args.get("require_approved"))
                 await self._card(thread_id, run.bot_id, r)
-                return {"ok": True, "id": r["id"], "schedule": describe(r), "note": "Created. The person sees a card in this chat with Edit, Pause and Undo."}
+                return {"ok": True, "id": r["id"], "schedule": describe(r), "resource_id": r.get("resource_id"), "resource_version": r.get("resource_version"), "require_approved": r.get("require_approved", False), "note": "Created. The person sees a card in this chat with Edit, Pause and Undo."}
             rid = str(args.get("id") or "")
             cur = await self.store.get_routine(rid)
             if not cur or cur["targetKind"] != "bot" or cur["targetId"] != run.bot_id:
@@ -379,11 +452,12 @@ class RoutineService:
             elif action == "update":
                 moment = parse_when(args.get("run_at") if args.get("run_at") is not None else (args.get("at") if cur["kind"] == "once" or args.get("kind") == "once" else None), args.get("timezone") or cur.get("tz"))
                 f = {k: v for k, v in {"name": args.get("name"), "prompt": args.get("prompt"), "kind": args.get("kind"), "everyMin": args.get("every_min"),
-                                        "at": None if moment else args.get("at"), "runAt": moment, "days": args.get("days"), "tz": args.get("timezone")}.items() if v is not None}
+                                        "at": None if moment else args.get("at"), "runAt": moment, "days": args.get("days"), "tz": args.get("timezone"), "resource_id": args.get("resource_id"), "resource_version": args.get("resource_version"), "require_approved": args.get("require_approved")}.items() if v is not None}
                 await self.update(rid, **f)
             else:
                 return {"ok": False, "reason": "unknown_action", "detail": "action is create, update, pause, resume or run"}
-            return {"ok": True, "id": rid}
+            saved = await self.store.get_routine(rid)
+            return {"ok": True, "id": rid, "resource_id": saved.get("resource_id"), "resource_version": saved.get("resource_version"), "require_approved": saved.get("require_approved", False)}
         except ValueError as e:
             return {"ok": False, "reason": "invalid", "detail": str(e)}
 

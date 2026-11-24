@@ -1,7 +1,7 @@
 # Agent rules
 
-1. **Consult the reference app** running at <http://100.79.177.78:3000/> for features and behavior before designing or implementing a feature, and follow it unless there is a documented reason to differ. Its source and docs are at [agenticos](https://github.com/vstorm-co/agenticos). OpenMausBot is no longer a reference.
-2. **Take the layout, styling and interactions of every screen from the same reference app** (<http://100.79.177.78:3000/>) before building or changing any screen; `docs/phase-8-workspace-layout.md` records how it maps onto BotTeam. The old reference UI at `http://localhost:5199/` (OpenMausBot) is no longer used.
+1. **Consult the reference app** running at <http://100.111.238.91:3000/> for features and behavior before designing or implementing a feature, and follow it unless there is a documented reason to differ. Its source and docs are at [agenticos](https://github.com/vstorm-co/agenticos). OpenMausBot is no longer a reference.
+2. **Take the layout, styling and interactions of every screen from the same reference app** (<http://100.111.238.91:3000/>) before building or changing any screen; `docs/phase-8-workspace-layout.md` records how it maps onto BotTeam. The old reference UI at `http://localhost:5199/` (OpenMausBot) is no longer used.
 3. **Before pushing code to git, check `README.md`, `install.ps1` and `install.sh` and update them if the change calls for it.** That means: a new or changed feature, service, port, environment variable, command or script (`pnpm`/`start.bat`), folder layout, or a new prerequisite (a tool, runtime or dependency the install scripts must put on a new computer). If nothing needs changing, say so in the commit or the reply; do not leave them out of date.
 
 The reference app needs a login. Its email and password are in `AGENTS.local.md` (kept out of git because this repository is public); never write them into a tracked file.

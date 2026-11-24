@@ -6,10 +6,11 @@ export interface ToolboxCapability {
   description: string;
   category: string;
   recommended: boolean;
-  resource?: "memory" | "skills" | "apps" | "subagents" | "web" | "computer";
+  resource?: "memory" | "skills" | "apps" | "subagents" | "web" | "computer" | "resources";
   artId?: string;
 }
 export const TOOLBOX_CATALOG: readonly ToolboxCapability[] = [
+  { id: "resources", name: "Resources", description: "Publish versioned pages, Markdown, images and posts for people to review and routines to reuse.", category: "Knowledge and memory", recommended: true, resource: "resources", artId: "memory_files" },
   {
     "id": "code_execution",
     "name": "Calculations",

@@ -6,7 +6,7 @@ TEAM = [('master', 'Master Agent', 'Plans your requests, assigns the team and re
 
 TEMPLATE = {"id": "teams--social-media-team", "kind": "team", "industry": "teams", "name": "Social media team",
     "description": "Master, Research, Creator, Scheduler and Analytics working together.",
-    "instructions": "Master delegates to four specialists. Creator uses assigned writing skills. Scheduler requires connected publishing apps; it does not call an internal posting API."}
+    "instructions": "Master delegates to four specialists. Creator publishes versioned post Resources with images. Scheduler creates disabled draft routines pinned to exact resource versions. A person approves each version before enabling its routine."}
 
 async def install(store, turns, skills, selection):
     bots = []

@@ -41,7 +41,9 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 ## ✨ 8 Superpowers
 
 - **Agents workspace** — searchable cards, eight editor tabs with Save/Discard and unsaved-change protection, plus 28 offline agenticos templates across seven industries and BotTeam roles. Template integrations are suggestions; connect services and assign skills yourself.
+- **Resources** — a versioned library for HTML pages, Markdown reports, images and social posts. Open **Knowledge → Resources** or press **G E** to preview, edit, restore, download and approve a specific version. HTML previews run in an isolated iframe without network access. Agents have six native resource tools, controlled by **Agent → Toolbox → Resources** (enabled by default).
 - **Toolbox gallery** — illustrated capability shelves with search, horizontal navigation and a right-side settings panel, following agenticos. Memory, Skills and Connected apps use BotTeam's existing controls; capabilities awaiting integration are marked Soon.
+- **Skill library and gallery** — agenticos-style preview cards with search, category/usage filters, instruction preview, supporting files and **Add to an agent**. The offline gallery includes all 80 industry skills and 17 reference files from agenticos across seven industries. Install one, an industry, or the whole gallery; existing skills and edits are preserved. Imported skills are available for assignment, and are not automatically assigned to any agent.
 - 🤖 **Real agents, not a chat wrapper** — each bot is a Claude Code, Codex or Antigravity CLI session (or an OpenAI-compatible endpoint) with its own model, working folder and approval level.
 - 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
@@ -167,10 +169,22 @@ pnpm test              # server (pytest), web (Vitest) and the Zalo service (nod
 pnpm typecheck         # TypeScript
 pnpm test:ui           # reference and visual comparison (needs the reference app running)
 pnpm test:workspace      # the workspace menu, address and narrow-screen drawer (needs the app running)
+pnpm test:resources      # resources, version approval and pinned routines (needs the app running)
+pnpm test:skills         # gallery migration and skills UI (needs the app running; retains gallery skills)
 pnpm build:static      # static web app served by the Python server
 ```
 
 Your data lives in `~/.botteam` (change it with `BOTTEAM_DATA_DIR`). Back it up with Settings → Backup or `botteam backup <file>`. The plan, scope and risks are in [docs/README.md](docs/README.md).
+
+Skills live in `skills/<id>/SKILL.md` with metadata in `meta.json` and supporting files in their relative folders. The gallery is bundled under `server/botteam/skill_gallery`, so normal browsing and installation do not contact agenticos. Only the explicit importer needs a source checkout: `server/.venv/Scripts/python.exe scripts/import-agenticos-skills.py --source-dir _reference/agenticos` (use `server/.venv/bin/python` on macOS/Linux). It pins the upstream revision, verifies 80 skills and preserves its Apache-2.0 license. Claude receives each assigned skill and its files in the turn's skill directory; other engines receive a copy under the agent workspace's `.botteam/skills/` and the exact directory for relative references.
+
+Resources shows one card per resource. Open a card to browse its versions, then select a version to see its details in the current page. **Back to versions** returns to the version list. Direct version links from chats and routines still open that exact version.
+
+In All, images referenced by a post or HTML page are grouped under that parent card. Standalone images keep their own cards; the Images tab lists all images, including those used by posts/pages.
+
+Resource content lives in `resources/<resource_id>/v<N>/` inside that data folder; SQLite stores relative paths and metadata. Backups include these files. The library keeps the latest ten versions plus older versions referenced by posts, HTML pages or routines. Uploads support HTML (2 MB), Markdown (500 KB), PNG/JPEG/GIF/WebP images (10 MB), and posts with a caption of up to 20,000 characters and versioned image references. The server's locked dependencies include `python-multipart` for uploads; normal setup installs it automatically.
+
+The social workflow now asks Creator to save a post resource and pass its complete `res_id@vN` reference to Scheduler. Scheduler creates a disabled `[DRAFT]` routine pointing to that version. Review the post, approve that exact version, then enable the routine yourself. Creating v2 does not change a routine pinned to v1. Unapproved or missing versions are skipped with a recorded reason. Existing draft routines and custom agent instructions are preserved. See [Phase 11](docs/phase-11-resources.md) and its [verification record](docs/verification/resources.md).
 
 ---
 

@@ -1,12 +1,13 @@
 "use client";
-import { ArrowLeft, CalendarClock, Copy, Menu, Pencil, Play, Plus, Send, Trash2, X, Zap } from "lucide-react";
+import { RoutineResourceBadge } from "./RoutineResourceFields";
+import { ArrowLeft, CalendarClock, CirclePlay, Copy, History, Menu, Pause, Pencil, Play, Plus, Send, Trash2, X, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { locale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Routine, RoutineRun, Webhook, WebhookAttempt } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
-import { type Range, CalendarView } from "./AutomationsCalendar";
+import { type Range, type RoutineStatus, CalendarView, routineStatus } from "./AutomationsCalendar";
 import { AutomationForm, WebhookDialog, WhenStep } from "./RoutineWizard";
 
 const INPUT = "w-full rounded-lg bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
@@ -81,7 +82,7 @@ function RoutineAsk({ onForm, onClose }: { onForm: () => void; onClose: () => vo
 }
 
 // ---- run log ---------------------------------------------------------------------------------------------------------
-function RunLog({ routines, runs, compact }: { routines: Routine[]; runs: RoutineRun[]; compact?: boolean }) {
+function RunLog({ routines, runs, compact, onClear, only }: { routines: Routine[]; runs: RoutineRun[]; compact?: boolean; onClear?: () => void; only?: string }) {
   const t = useT();
   const [shownLog, setShownLog] = useState(!compact);
   const { state, dispatch } = useStore();
@@ -96,16 +97,17 @@ function RunLog({ routines, runs, compact }: { routines: Routine[]; runs: Routin
   };
   void state;
   return (
-    <section aria-label={t("Run log")} data-testid="run-log" className="shrink-0 border-t border-edge">
+    <section aria-label={t("Run log")} data-testid="run-log" className={cn(!compact && "mx-auto w-full max-w-[960px]", compact && "shrink-0 border-t border-edge")}>
       <div className="flex items-center gap-2 px-5 py-2.5">
         <h3 className="text-[14px] font-medium text-ink">
           {compact ? <button type="button" aria-expanded={shownLog} onClick={() => setShownLog((v) => !v)} className="hover:underline">{t("Run log")} {shownLog ? "▾" : "▸"}</button> : t("Run log")}
         </h3>
+        {only && onClear && <button type="button" data-testid="run-log-only" onClick={onClear} className="flex items-center gap-1 rounded-full bg-raised px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised-hover"><span data-no-i18n="" className="max-w-[220px] truncate">{only}</span> <X size={12} /></button>}
         <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label={t("Status")} className="ml-auto rounded-lg bg-inset px-2 py-1 text-[13px] text-ink ring-1 ring-ink/10">
           {["all", "done", "running", "failed", "skipped", "timeout", "cancelled"].map((s) => <option key={s} value={s}>{t(s === "all" ? "All statuses" : s)}</option>)}
         </select>
       </div>
-      {shownLog && <div className="max-h-[220px] overflow-y-auto px-5 pb-3">
+      {shownLog && <div className={cn("overflow-y-auto px-5 pb-3", compact && "max-h-[220px]")}>
         {shown.length === 0 && <div className="py-4 text-center text-[13px] text-ink-tertiary">{t("No runs yet.")}</div>}
         {shown.map((r) => (
           <button key={r.id} type="button" data-testid="run-row" onClick={() => open(r)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-raised/60">
@@ -156,35 +158,72 @@ function AutoCard({ testid, enabled, title, desc, meta, actions, onToggle, toggl
   );
 }
 
-function RoutineRows({ routines, onEdit }: { routines: Routine[]; onEdit: (r: Routine) => void }) {
+type Status = RoutineStatus;
+const statusOf = routineStatus;
+const STATUS_LABEL: Record<Status, string> = { active: "Active", draft: "Draft", paused: "Pause" };
+const STATUS_INK: Record<Status, string> = { active: "text-success", draft: "text-warning", paused: "text-ink-tertiary" };
+
+function Fact({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  const t = useT();
+  return <div className={cn("min-w-0", className)}><div className="text-[10.5px] font-medium uppercase tracking-wide text-ink-tertiary">{t(label)}</div><div data-no-i18n="" className="text-[12.5px] leading-[17px] text-ink">{children}</div></div>;
+}
+
+/** One routine as a card: its state, name, what it asks, when it runs, who does it, and the few things a person does with it. */
+function RoutineCard({ r, onEdit, onHistory, historyOn }: { r: Routine; onEdit: (r: Routine) => void; onHistory: (r: Routine) => void; historyOn: boolean }) {
   const { state } = useStore();
   const t = useT();
-  const nameOf = (r: Routine) => (r.targetKind === "bot" ? state.bots.find((b) => b.id === r.targetId)?.name : state.groups.find((g) => g.id === r.targetId)?.name) ?? "?";
+  const status = statusOf(r);
+  const who = (r.targetKind === "bot" ? state.bots.find((b) => b.id === r.targetId)?.name : state.groups.find((g) => g.id === r.targetId)?.name) ?? "?";
   const act = (p: Promise<unknown>) => void p.catch(() => {});
-  const when = (ms: number) => new Date(ms).toLocaleString([locale()], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  const ic = "rounded-full p-1.5 text-ink-secondary hover:bg-ink/10";
+  const when = (ms: number) => new Date(ms).toLocaleString([locale()], { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const ic = "flex size-8 items-center justify-center rounded-lg border border-edge bg-composer text-ink hover:bg-raised";
   return (
-    <div className="px-5 py-5">
-      <p className="mx-auto mb-4 max-w-[720px] text-[13px] leading-5 text-ink-secondary" data-testid="routine-explainer">{t("A task is one piece of work a bot does once. A routine starts a new task on a schedule.")}</p>
-      <AutoGroup>
-      {routines.map((r) => (
-        <AutoCard key={r.id} testid="routine-row" enabled={r.enabled} title={r.name} desc={`${r.schedule} · ${nameOf(r)}: ${r.prompt}`}
-          meta={[r.enabled ? t("On") : t("Paused"), r.lastRun ? `${t("last run")} ${when(r.lastRun)}` : "", r.enabled && r.nextRun ? `${t("next")} ${when(r.nextRun)}` : ""].filter(Boolean).join(" · ")}
-          toggleLabel={r.enabled ? t("Pause") : t("Resume")} onToggle={() => act(api(`/api/routines/${r.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !r.enabled }) }))}
-          actions={<>
-            <button type="button" title={t("Run now")} aria-label={t("Run now")} onClick={() => act(api(`/api/routines/${r.id}/run`, { method: "POST" }))} className={ic}><Play size={14} /></button>
-            <button type="button" title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(r)} className={ic}><Pencil size={14} /></button>
-            <button type="button" title={t("Delete routine")} aria-label={t("Delete routine")} onClick={() => confirm(t("Delete this routine?")) && act(api(`/api/routines/${r.id}`, { method: "DELETE" }))} className={cn(ic, "hover:bg-danger/10 hover:text-danger")}><Trash2 size={14} /></button>
-          </>} />
-      ))}
-      {state.webhooks.map((w) => (
-        <AutoCard key={w.id} testid="webhook-row-summary" enabled={w.enabled} title={w.name}
-          desc={`${t("When another app sends something")}, ${state.bots.find((b) => b.id === w.targetId)?.name ?? "?"} ${w.prompt ? w.prompt.charAt(0).toLowerCase() + w.prompt.slice(1) : ""}`.trim()}
-          meta={[w.enabled ? t("On") : t("Paused"), w.lastAt ? `${t("last call")} ${when(w.lastAt)}` : t("hasn't run yet")].join(" · ")}
-          toggleLabel={w.enabled ? t("Pause") : t("Resume")} onToggle={() => act(api(`/api/webhooks/${w.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !w.enabled }) }))}
-          actions={null} />
-      ))}
-      </AutoGroup>
+    <article data-testid="routine-row" data-status={status} className="relative flex min-w-0 flex-col rounded-2xl border border-edge bg-card p-3.5 shadow-sm">
+      <button type="button" title={t("Edit")} aria-label={`${t("Edit")} ${r.name}`} onClick={() => onEdit(r)} className={cn(ic, "absolute right-3 top-3")}><Pencil size={13} /></button>
+      <div className={cn("text-[11px] font-semibold uppercase tracking-wide", STATUS_INK[status])}>{t(STATUS_LABEL[status])}</div>
+      <h3 data-no-i18n="" className="mt-0.5 truncate pr-10 text-[13px] font-medium text-ink">{r.name}</h3>
+      <div data-no-i18n="" tabIndex={0} aria-label={t("Instructions")} className="mt-1.5 max-h-[88px] overflow-y-auto whitespace-pre-wrap break-words pr-1 text-[12px] leading-[17px] text-ink-secondary">{r.prompt}</div>
+      {r.resource_id && r.resource_version && <RoutineResourceBadge routine={r} />}
+      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
+        <Fact label="Schedule">{r.schedule}</Fact>
+        <Fact label="Timezone">{r.tz || "UTC"}</Fact>
+        <Fact label={r.targetKind === "bot" ? "Agent" : "Room"}>{who}</Fact>
+        <Fact label="Next run">{r.enabled && r.nextRun ? when(r.nextRun) : "—"}</Fact>
+        {r.lastRun ? <Fact label="Last run" className="col-span-2">{when(r.lastRun)}</Fact> : null}
+      </div>
+      <div className="mt-auto flex items-center gap-1.5 pt-3.5">
+        <button type="button" title={t(r.enabled ? "Pause" : "Resume")} aria-label={`${t(r.enabled ? "Pause" : "Resume")} ${r.name}`}
+          onClick={() => act(api(`/api/routines/${r.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !r.enabled }) }))} className={ic}>{r.enabled ? <Pause size={13} /> : <Play size={13} />}</button>
+        <button type="button" title={t("Run now")} aria-label={`${t("Run now")} ${r.name}`} onClick={() => act(api(`/api/routines/${r.id}/run`, { method: "POST" }))} className={ic}><CirclePlay size={14} /></button>
+        <button type="button" title={t("Run log")} aria-label={`${t("Run log")} ${r.name}`} aria-pressed={historyOn} onClick={() => onHistory(r)} className={cn(ic, historyOn && "bg-accent/15")}><History size={14} /></button>
+        <button type="button" title={t("Delete routine")} aria-label={`${t("Delete routine")} ${r.name}`} onClick={() => confirm(t("Delete this routine?")) && act(api(`/api/routines/${r.id}`, { method: "DELETE" }))}
+          className={cn(ic, "ml-auto text-danger hover:bg-danger/10")}><Trash2 size={14} /></button>
+      </div>
+    </article>
+  );
+}
+
+/** The routines as a board of cards under Active / Draft / Pause tabs, each with its count. */
+function RoutineRows({ routines, onEdit, historyId, onHistory }: { routines: Routine[]; onEdit: (r: Routine) => void; historyId: string | null; onHistory: (r: Routine) => void }) {
+  const t = useT();
+  const [tab, setTab] = useState<Status>("active");
+  const counts = { active: 0, draft: 0, paused: 0 } as Record<Status, number>;
+  routines.forEach((r) => { counts[statusOf(r)] += 1; });
+  const shown = routines.filter((r) => statusOf(r) === tab).sort((a, b) => (a.nextRun ?? Infinity) - (b.nextRun ?? Infinity));
+  return (
+    <div className="px-5 py-4" data-testid="routine-board">
+      <div role="tablist" aria-label={t("Routines")} className="mb-3 flex items-center gap-4">
+        {(["active", "draft", "paused"] as const).map((id) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} data-testid={`routine-tab-${id}`} onClick={() => setTab(id)}
+            className={cn("flex items-center gap-1.5 border-b-2 pb-1 text-[14px]", tab === id ? "border-ink font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink")}>
+            {t(STATUS_LABEL[id])} <span className="rounded-full bg-ink/[0.07] px-1.5 text-[11.5px] tabular-nums">{counts[id]}</span>
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 && <div className="py-12 text-center text-[13.5px] text-ink-tertiary">{t("No routines here.")}</div>}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        {shown.map((r) => <RoutineCard key={r.id} r={r} onEdit={onEdit} onHistory={onHistory} historyOn={historyId === r.id} />)}
+      </div>
     </div>
   );
 }
@@ -296,12 +335,13 @@ function WebhooksTab({ fresh }: { fresh?: { id: string; secret: string; url: str
 export function AutomationsPage() {
   const { state, dispatch } = useStore();
   const t = useT();
-  const [tab, setTab] = useState<"routines" | "webhooks">("routines");
+  const [tab, setTab] = useState<"routines" | "webhooks" | "runs">("routines");
   const [layout, setLayout] = useState<"list" | "calendar">("list");
   const [range, setRange] = useState<Range>(7);
   const [anchor, setAnchorRaw] = useState(() => Date.now());
   const setAnchor = (f: ((a: number) => number) | number) => setAnchorRaw((a) => (typeof f === "function" ? f(a) : f));
   const [botFilter, setBotFilter] = useState("all");
+  const [historyId, setHistoryId] = useState<string | null>(null);
   // a new routine goes: plain words -> when -> the form (or a webhook); a bot dropped on the calendar goes straight to the form
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
   const [step, setStep] = useState<"ask" | "when" | "form" | "webhook">("ask");
@@ -316,44 +356,44 @@ export function AutomationsPage() {
 
   return (
     <main className={cn("flex min-w-0 flex-1 flex-col bg-app", layout === "calendar" && tab === "routines" ? "fixed inset-0 z-40" : "relative h-full")} data-testid="automations-page">
-      <header className="flex min-h-[60px] shrink-0 items-center gap-3 border-b-[0.5px] border-edge px-5 max-md:flex-wrap max-md:gap-y-2 max-md:py-2 max-md:pl-14">
+      <header className="flex min-h-[60px] shrink-0 items-center gap-3 border-b-[0.5px] border-edge px-5 max-[1150px]:flex-wrap max-[1150px]:gap-y-2 max-[1150px]:py-2 max-md:pl-14">
         <button type="button" aria-label="Open bot list" onClick={() => dispatch({ type: "drawer", open: true })} className="-ml-2 rounded-md p-1.5 text-ink-secondary hover:bg-raised md:hidden"><Menu size={20} /></button>
         <button type="button" aria-label={t("Back")} title={t("Back")} onClick={() => dispatch({ type: "automations", open: false })} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10 hover:text-ink"><ArrowLeft size={18} /></button>
         <CalendarClock size={17} className="shrink-0 text-accent-text" aria-hidden />
-        <div className="min-w-0 leading-tight">
+        <div className="min-w-0 shrink-0 leading-tight">
           <h1 className="truncate text-[17px] font-semibold text-ink">{t("Automations")}</h1>
-          <p className="hidden truncate text-[12px] text-ink-tertiary xl:block">{t("Routines run on a schedule; webhooks run when something calls them.")}</p>
+          <p className="hidden truncate text-[12px] text-ink-tertiary 2xl:block">{t("Routines run on a schedule; webhooks run when something calls them.")}</p>
         </div>
-        <div role="tablist" className="ml-3 flex gap-0.5 rounded-lg bg-raised/70 p-0.5">
-          {(["routines", "webhooks"] as const).map((id) => (
+        <div role="tablist" className="ml-3 flex shrink-0 gap-0.5 rounded-lg bg-raised/70 p-0.5">
+          {(["routines", "webhooks", "runs"] as const).map((id) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-              className={cn("rounded-md px-2.5 py-1 text-[13px]", tab === id ? "bg-app text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}>{t(id === "routines" ? "Routines" : "Webhooks")}</button>
+              className={cn("whitespace-nowrap rounded-md px-2.5 py-1 text-[13px]", tab === id ? "bg-app text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}>{t(id === "routines" ? "Routines" : id === "webhooks" ? "Webhooks" : "Run log")}</button>
           ))}
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2 max-md:max-w-full">
-          <select value={botFilter} onChange={(e) => setBotFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 rounded-xl bg-raised px-3 text-[13.5px] text-ink">
+        <div className="ml-auto flex min-w-0 items-center gap-2 max-[1150px]:w-full max-[1150px]:flex-wrap max-[1150px]:justify-end">
+          <select value={botFilter} onChange={(e) => setBotFilter(e.target.value)} aria-label={t("Filter by bot")} className="h-9 w-[150px] min-w-0 rounded-xl bg-raised px-3 text-[13.5px] text-ink max-md:w-auto">
             <option value="all">{t("All bots")}</option>
             {state.bots.filter((b) => !b.hidden).map((b) => <option key={b.id} value={b.id} data-no-i18n="">{b.name}</option>)}
             {state.groups.map((g) => <option key={g.id} value={g.id} data-no-i18n="">{g.name}</option>)}
           </select>
-          <div role="group" aria-label={t("Layout")} className="flex overflow-hidden rounded-xl ring-1 ring-ink/10">
+          <div role="group" aria-label={t("Layout")} className="flex shrink-0 overflow-hidden rounded-xl ring-1 ring-ink/10">
             <button type="button" aria-pressed={layout === "list"} onClick={() => setLayout("list")} className={seg(layout === "list")}>{t("List")}</button>
             <button type="button" aria-pressed={layout === "calendar"} onClick={() => setLayout("calendar")} className={seg(layout === "calendar")}>{t("Calendar")}</button>
           </div>
-          <button type="button" aria-label={t("New routine")} onClick={create} className="flex h-9 items-center gap-1.5 rounded-xl bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("New routine")}</button>
+          <button type="button" aria-label={t("New routine")} onClick={create} className="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-accent px-4 text-[14px] font-medium text-[var(--color-accent-ink)]"><Plus size={14} /> {t("New routine")}</button>
         </div>
       </header>
       {tab === "webhooks" ? <div className="min-h-0 flex-1 overflow-y-auto"><WebhooksTab key={fresh?.id ?? "tab"} fresh={fresh} /></div>
+        : tab === "runs" ? <div className="min-h-0 flex-1 overflow-y-auto" data-testid="run-log-tab"><RunLog routines={historyId ? routines.filter((r) => r.id === historyId) : routines} runs={historyId ? runs.filter((r) => r.routineId === historyId) : runs}
+            only={historyId ? routines.find((r) => r.id === historyId)?.name : undefined} onClear={() => setHistoryId(null)} /></div>
         : layout === "calendar" ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <CalendarView routines={routines} runs={runs} anchor={anchor} setAnchor={setAnchor} range={range} setRange={setRange} onEdit={(r) => { setEditing(r); setStep("form"); }}
               onDropBot={(botId, at) => { setPrefill({ botId, at }); setEditing("new"); setStep("form"); }} />
-            <RunLog routines={routines} runs={runs} compact />
           </div>
         ) : none ? <EmptyState onNew={create} /> : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto"><RoutineRows routines={routines} onEdit={(r) => { setEditing(r); setStep("form"); }} /></div>
-            <RunLog routines={routines} runs={runs} />
+            <div className="min-h-0 flex-1 overflow-y-auto"><RoutineRows routines={routines} onEdit={(r) => { setEditing(r); setStep("form"); }} historyId={historyId} onHistory={(r) => { setHistoryId(r.id); setTab("runs"); }} /></div>
           </div>
         )}
       {editing === "new" && step === "ask" && <RoutineAsk onForm={() => setStep("when")} onClose={close} />}

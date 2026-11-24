@@ -5,14 +5,14 @@ import { DRAWN_ART } from "./art.drawn";
 
 describe("Toolbox reference catalog", () => {
   it("shows only implemented capabilities and omits empty shelves", () => {
-    expect(TOOLBOX_CATALOG).toHaveLength(36);
-    expect(new Set(TOOLBOX_CATALOG.map((entry) => entry.id)).size).toBe(36);
+    expect(TOOLBOX_CATALOG).toHaveLength(37);
+    expect(new Set(TOOLBOX_CATALOG.map((entry) => entry.id)).size).toBe(37);
     expect(toolboxShelves("").map((shelf) => shelf.category)).toEqual(["Knowledge and memory", "Thinking and planning", "The web"]);
     const visible = toolboxShelves("").flatMap((shelf) => shelf.entries);
-    expect(visible).toHaveLength(6);
+    expect(visible).toHaveLength(7);
     expect(visible.every((entry) => !!entry.resource)).toBe(true);
     expect(toolboxShelves("Charts")).toEqual([]);
-    expect(TOOLBOX_CATALOG.filter((entry) => entry.resource).map((entry) => entry.resource)).toEqual(["memory", "skills", "apps", "subagents", "computer", "web"]);
+    expect(TOOLBOX_CATALOG.filter((entry) => entry.resource).map((entry) => entry.resource)).toEqual(["resources", "memory", "skills", "apps", "subagents", "computer", "web"]);
     for (const entry of TOOLBOX_CATALOG) expect(CAPABILITY_ART[entry.artId ?? entry.id] ?? DRAWN_ART[entry.artId ?? entry.id], entry.id).toContain("<svg");
   });
   it("searches names, descriptions and translated labels without moving category order", () => {

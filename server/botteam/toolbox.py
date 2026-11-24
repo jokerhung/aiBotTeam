@@ -77,7 +77,20 @@ class Computer(Settings):
         return self
 
 
+class ResourcesSettings(Settings):
+    enabled: bool = True
+    allowHtml: bool = True
+    chatCards: bool = True
+    maxHtmlBytes: int = Field(default=2 * 1024**2, ge=1024, le=2 * 1024**2)
+    maxMarkdownBytes: int = Field(default=500 * 1024, ge=1024, le=500 * 1024)
+    maxImageBytes: int = Field(default=10 * 1024**2, ge=1024, le=10 * 1024**2)
+
+
+RESOURCE_TOOLS = {"publish_resource", "read_resource", "update_resource", "list_resources", "list_resource_versions", "set_resource_status"}
+
+
 class Toolbox(Settings):
+    resources: ResourcesSettings = Field(default_factory=ResourcesSettings)
     subagents: Subagents = Field(default_factory=Subagents)
     web: Web = Field(default_factory=Web)
     computer: Computer = Field(default_factory=Computer)
@@ -101,6 +114,8 @@ def tools_for(bot, names: list[str], *, depth_remaining: int | None = None) -> l
             allowed.add("sheet_rows")
         return [name for name in names if name in allowed]
     allowed = set(names) - DELEGATION_TOOLS
+    if not settings(bot).resources.enabled:
+        allowed -= RESOURCE_TOOLS
     if config.enabled and not bot.inline and not bot.ephemeral and (depth_remaining is None or depth_remaining > 0):
         allowed |= {"list_bots", "task"}
         if config.mode != "sync" or any(d.handBack == "async" for d in config.delegates) or any(s.handBack == "async" for s in config.inline):

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { Routine, Webhook } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
+import { RoutineResourceFields } from "./RoutineResourceFields";
 import { Mascot } from "./Mascot";
 
 const INPUT = "rounded-xl bg-inset px-3 text-[14px] text-ink outline-none ring-1 ring-inset ring-ink/[0.07] placeholder:text-ink-tertiary focus:ring-ink/25";
@@ -69,6 +70,9 @@ export function AutomationForm({ routine, prefill, onClose }: { routine: Routine
   ], [state.bots, state.groups]);
   const localTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
   const start = useMemo(() => new Date(routine?.runAt ?? prefill?.at ?? nextHour().getTime()), [routine, prefill]);
+  const [resourceId, setResourceId] = useState(routine?.resource_id ?? "");
+  const [resourceVersion, setResourceVersion] = useState<number | null>(routine?.resource_version ?? null);
+  const [requireApproved, setRequireApproved] = useState(routine?.require_approved ?? true);
   const [title, setTitle] = useState(routine?.name ?? "");
   const [prompt, setPrompt] = useState(routine?.prompt ?? "");
   const [target, setTarget] = useState(routine ? `${routine.targetKind}:${routine.targetId}` : prefill?.botId ? `bot:${prefill.botId}` : targets[0] ? `${targets[0].kind}:${targets[0].id}` : "");
@@ -88,7 +92,7 @@ export function AutomationForm({ routine, prefill, onClose }: { routine: Routine
   const interval = every.trim() !== "";
   const save = async () => {
     const [targetKind, ...rest] = target.split(":");
-    const body: Record<string, unknown> = { name: title.trim() || prompt.trim().slice(0, 40), prompt: prompt.trim(), tz, maxRunMin: maxRun };
+    const body: Record<string, unknown> = { resource_id: resourceId || null, resource_version: resourceId ? resourceVersion : null, require_approved: resourceId ? requireApproved : false, name: title.trim() || prompt.trim().slice(0, 40), prompt: prompt.trim(), tz, maxRunMin: maxRun };
     if (!routine) { body.targetKind = targetKind; body.targetId = rest.join(":"); }
     if (interval) { body.kind = "interval"; body.everyMin = Number(every); }
     else if (chip === "once") { body.kind = "once"; body.runAt = new Date(`${date}T${time}`).getTime(); }
@@ -115,6 +119,7 @@ export function AutomationForm({ routine, prefill, onClose }: { routine: Routine
           <button type="button" aria-label="Close" onClick={onClose} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><X size={15} /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto py-2">
+          <div className="px-8 py-3"><RoutineResourceFields id={resourceId} version={resourceVersion} requireApproved={requireApproved} onChange={(id, version, requireApproved) => { setResourceId(id); setResourceVersion(version); setRequireApproved(requireApproved); }} /></div>
           <div className="flex items-center gap-3 px-8 pb-2 pt-4">
             <span className="size-4 shrink-0 rounded-[4px] bg-accent" />
             <input data-no-i18n="" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} aria-label={t("Title")} placeholder={t("What should happen?")}

@@ -75,6 +75,28 @@ function CacheMinutes({ name, value, onChange }: { name: string; value: number; 
   );
 }
 
+type Access = { scope: "read" | "write"; outbound: "ask" | "allow"; cacheMinutes?: number; allowTools?: string[] };
+
+/** What one enabled server or app may do for a bot: read or write, ask before sending, which tools, how long to cache. */
+export function ServerAccessControls({ name, acc, setAccess }: { name: string; acc: Access; setAccess: (patch: Partial<Access>) => void }) {
+  return (
+    <>
+      <div className="mt-1.5 flex gap-2 pl-6 text-[12.5px]">
+        <select value={acc.scope} onChange={(e) => setAccess({ scope: e.target.value as "read" | "write" })} aria-label={`${name} access`} className="rounded-md bg-raised px-2 py-1 text-ink">
+          <option value="read">Read</option><option value="write">Write</option>
+        </select>
+        {acc.scope === "write" && (
+          <select value={acc.outbound} onChange={(e) => setAccess({ outbound: e.target.value as "ask" | "allow" })} aria-label={`${name} sending out`} className="rounded-md bg-raised px-2 py-1 text-ink">
+            <option value="ask">Ask before sending</option><option value="allow">Send without asking</option>
+          </select>
+        )}
+      </div>
+      <ToolAllowlist name={name} value={acc.allowTools ?? []} onChange={(allowTools) => setAccess({ allowTools })} />
+      <CacheMinutes name={name} value={acc.cacheMinutes ?? 0} onChange={(n) => setAccess({ cacheMinutes: n })} />
+    </>
+  );
+}
+
 export function AppsField({ bot, onChange }: { bot: Bot; onChange?: (patch: Partial<Bot>) => void }) {
   const applyPatch = (body: Partial<Bot>) => onChange ? onChange(body) : void queuePatch(bot.id, body);
   const { state } = useStore();
@@ -98,20 +120,7 @@ export function AppsField({ bot, onChange }: { bot: Bot; onChange?: (patch: Part
                 <input type="checkbox" checked={on} onChange={(e) => setUsed(s.id, e.target.checked)} role="switch" aria-checked={on} aria-label={`Use ${s.name}`} />
                 <span data-no-i18n="" className="min-w-0 flex-1 truncate">{s.name}</span>
               </label>
-              {on && (
-                <div className="mt-1.5 flex gap-2 pl-6 text-[12.5px]">
-                  <select value={acc.scope} onChange={(e) => setAccess(s.id, { scope: e.target.value as "read" | "write" })} aria-label={`${s.name} access`} className="rounded-md bg-raised px-2 py-1 text-ink">
-                    <option value="read">Read</option><option value="write">Write</option>
-                  </select>
-                  {acc.scope === "write" && (
-                    <select value={acc.outbound} onChange={(e) => setAccess(s.id, { outbound: e.target.value as "ask" | "allow" })} aria-label={`${s.name} sending out`} className="rounded-md bg-raised px-2 py-1 text-ink">
-                      <option value="ask">Ask before sending</option><option value="allow">Send without asking</option>
-                    </select>
-                  )}
-                </div>
-              )}
-              {on && <ToolAllowlist name={s.name} value={acc.allowTools ?? []} onChange={(allowTools) => setAccess(s.id, { allowTools })} />}
-              {on && <CacheMinutes name={s.name} value={acc.cacheMinutes ?? 0} onChange={(n) => setAccess(s.id, { cacheMinutes: n })} />}
+              {on && <ServerAccessControls name={s.name} acc={acc} setAccess={(patch) => setAccess(s.id, patch)} />}
             </div>
           );
         })}

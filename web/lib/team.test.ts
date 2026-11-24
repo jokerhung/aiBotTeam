@@ -29,6 +29,7 @@ describe("occurrences", () => {
   });
   it("shows nothing for a paused routine and one occurrence for a one-off", () => {
     expect(occurrences({ ...base, enabled: false, nextRun: 1 }, 0, DAY)).toEqual([]);
+    expect(occurrences({ ...base, enabled: false, kind: "once", runAt: 5, nextRun: 5 }, 0, DAY, true)).toEqual([5]);
     expect(occurrences({ ...base, kind: "once", runAt: 5, nextRun: 5 }, 0, DAY)).toEqual([5]);
   });
   it("keeps to the chosen weekdays", () => {

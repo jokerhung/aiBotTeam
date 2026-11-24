@@ -1,13 +1,13 @@
-import { BookOpen, Bot, CalendarClock, FileText, Folders, Inbox, LayoutDashboard, MessagesSquare, Plug, RadioTower, Sparkles, Workflow, type LucideIcon } from "lucide-react";
+import { Package, BookOpen, Bot, CalendarClock, FileText, Folders, Inbox, LayoutDashboard, MessagesSquare, Plug, RadioTower, Sparkles, Workflow, type LucideIcon } from "lucide-react";
 
 /** Every page of the workspace layout. `chat` and `project` keep the chat list beside them; the others use the whole width. */
 export type View =
   | "chat" | "dashboard" | "inbox" | "project" | "section" | "projects"
   | "agents" | "agent" | "workflows" | "routines"
-  | "bases" | "documents" | "skills"
+  | "bases" | "documents" | "skills" | "resources"
   | "apps" | "input" | "team-map";
 
-export const VIEWS: readonly View[] = ["chat", "dashboard", "inbox", "project", "section", "projects", "agents", "agent", "workflows", "routines", "bases", "documents", "skills", "apps", "input", "team-map"];
+export const VIEWS: readonly View[] = ["chat", "dashboard", "inbox", "project", "section", "projects", "agents", "agent", "workflows", "routines", "bases", "documents", "skills", "resources", "apps", "input", "team-map"];
 export const isView = (v: unknown): v is View => typeof v === "string" && (VIEWS as readonly string[]).includes(v);
 /** The views that show the chat list as a second column (a project shows the same list, only with its own bots). */
 export const hasChatList = (v: View) => v === "chat" || v === "project" || v === "section";
@@ -39,18 +39,19 @@ export const NAV: NavGroup[] = [
   { label: "Knowledge", items: [
     { view: "bases", label: "Knowledge bases", icon: BookOpen, placeholder: true, testid: "nav-bases" },
     { view: "documents", label: "Documents", icon: FileText, placeholder: true, testid: "nav-documents" },
+    { view: "resources", label: "Resources", icon: Package, testid: "nav-resources" },
     { view: "skills", label: "Skills", icon: Sparkles, testid: "nav-skills" },
   ] },
   { label: "Connect", items: [
     { view: "apps", label: "Apps", icon: Plug, testid: "nav-apps" },
-    { view: "input", label: "Input", icon: RadioTower, testid: "nav-input" },
+    { view: "input", label: "Channels", icon: RadioTower, testid: "nav-input" },
   ] },
 ];
 
 /** `g` then a letter opens a page (like Gmail's go-to keys). */
 export const GO_KEYS: Record<string, View> = {
   d: "dashboard", c: "chat", i: "inbox", p: "projects", a: "agents", w: "workflows", r: "routines",
-  b: "bases", o: "documents", s: "skills", n: "apps", u: "input",
+  e: "resources", b: "bases", o: "documents", s: "skills", n: "apps", u: "input",
 };
 
 export const PROJECTS_ITEM: NavItem = { view: "projects", label: "All projects", icon: Folders, testid: "nav-projects" };
@@ -60,12 +61,21 @@ export const itemOf = (view: View): NavItem | undefined => [...NAV.flatMap((g) =
 /** `#/chat/<bot id>`, `#/project/<room id>`, `#/section/<section id>`, `#/agents` … The app is one static page, so the route lives in the hash. */
 export const AGENT_TABS = ["build", "toolbox", "mcp", "limits", "availability", "evals", "knowledge-gaps", "history"] as const;
 export type AgentTab = typeof AGENT_TABS[number];
-export function toHash(view: View, id?: string, tab: AgentTab = "build"): string {
+export function toHash(view: View, id?: string, tab: AgentTab = "build", version?: number | null): string {
+  if (view === "resources" && id) return `#/resources/${encodeURIComponent(id)}${version ? `/v/${version}` : ""}`;
   if (view === "agent" && id) return `#/agents/${encodeURIComponent(id ?? "")}/${tab}`;
   return `#/${view}${id && (view === "chat" || view === "project" || view === "section") ? `/${encodeURIComponent(id)}` : ""}`;
 }
 
-export function parseHash(hash: string): { view: View; id?: string; tab?: AgentTab } | null {
+export function parseHash(hash: string): { view: View; id?: string; tab?: AgentTab; version?: number } | null {
+  const resource = /^#\/resources\/([^/?#]+)(?:\/v\/([1-9][0-9]*))?\/?$/.exec(hash);
+  if (resource) {
+    try {
+      const version = resource[2] ? Number(resource[2]) : undefined;
+      if (version !== undefined && !Number.isSafeInteger(version)) return null;
+      return { view: "resources", id: decodeURIComponent(resource[1]), version };
+    } catch { return { view: "resources" }; }
+  }
   const agent = /^#\/agents\/([^/?#]+)(?:\/([^/?#]+))?\/?$/.exec(hash);
   if (agent) {
     try { return { view: "agent", id: decodeURIComponent(agent[1]), tab: AGENT_TABS.includes(agent[2] as AgentTab) ? agent[2] as AgentTab : "build" }; }

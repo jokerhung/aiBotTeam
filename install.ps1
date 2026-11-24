@@ -204,6 +204,8 @@ Say "Installing the web dependencies (pnpm install)"
 Run "pnpm install --frozen-lockfile" { pnpm install --frozen-lockfile }
 
 Say "Installing the server dependencies (uv sync)"
+# Locked server dependencies include python-multipart for Resources uploads; no additional service is needed.
+# The 80-skill gallery and supporting files ship in the server package and work offline.
 if ($Computer) {
   Run "uv sync --project server --python 3.12 --extra computer" { uv sync --project server --python 3.12 --extra computer }
 } else {

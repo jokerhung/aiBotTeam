@@ -1,4 +1,5 @@
 "use client";
+import { ResourceChatCard } from "./ResourcesPage";
 import { InlineLiveViews } from "./InlineLiveView";
 /* eslint-disable react-hooks/set-state-in-effect -- the draft is read from localStorage when the room changes */
 import { ArrowUp, Menu, Square, Hash } from "lucide-react";
@@ -10,6 +11,7 @@ import type { Bot, Group, Message } from "@/lib/wire";
 import { api } from "@/state/api";
 import { useStore } from "@/state/store";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { Linkify } from "./Linkify";
 import { GroupAvatar } from "./GroupAvatar";
 import { TaskMenu } from "./TaskMenu";
 import { mentionParts } from "@/lib/team";
@@ -56,6 +58,7 @@ function RoomMessage({ group, list, i }: { group: Group; list: Message[]; i: num
     return author ? <RequestCard m={m} thread={group.threadId} active={lastOpen?.id === m.id} bot={author} /> : null;
   }
   if (m.kind === "routine" && m.routine) return <RoutineCard m={m} />;
+  if (m.resource) return <ResourceChatCard resource={m.resource} />;
   if (m.threadRef) return <><ThreadRefCard m={m} /><DelegatedRun m={m} /></>;
   if (m.kind === "stopped" || m.kind === "notice") return <div className="text-center text-[13px] text-ink-tertiary">{m.text}</div>;
   if (m.kind === "error") return <div role="alert" className="rounded-xl bg-danger/10 px-3 py-2 text-[13.5px] text-danger">{m.text}</div>;
@@ -77,7 +80,7 @@ function RoomMessage({ group, list, i }: { group: Group; list: Message[]; i: num
             <div className="chat-text whitespace-pre-wrap break-words">
               {mentionParts(m.text, members).map((p, k) => p.member
                 ? <span key={k} className="mention-highlight">{p.text}</span>
-                : <span key={k}>{p.text}</span>)}
+                : <span key={k}><Linkify text={p.text} /></span>)}
             </div>
           ) : (
             <>

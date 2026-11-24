@@ -12,6 +12,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export interface AppState {
+  resourceId: string;
+  resourceVersion: number | null;
   selectedAgentId: string;
   agentTab: AgentTab;
   /** The page on screen in the workspace layout (the classic layout keeps using the flags below). */
@@ -88,6 +90,7 @@ export interface AppState {
 
 export type Action =
   | { type: "openAgent"; id: string; tab?: AgentTab }
+  | { type: "openResource"; id: string; version?: number }
   | { type: "view"; view: View }
   | { type: "openSection"; id: string }
   | { type: "rail"; open: boolean }
@@ -134,6 +137,7 @@ export type Action =
 export const initialState: AppState = {
   selectedAgentId: "", agentTab: "build",
   panelView: "overview", panelVersion: 0,
+  resourceId: "", resourceVersion: null,
   bots: [], messages: {}, hasMore: {}, loaded: {}, reload: {}, instances: [], selectedId: "", connected: false,
   hydrated: false, drawerOpen: false, newBotOpen: false, settingsOpen: false, dividerAt: {},
   groups: [], selectedGroupId: "", groupPanelId: null, newGroupOpen: false, automationsOpen: false, teamMapOpen: false, notifOpen: false, notifPinned: false, inboxOpen: false, appsOpen: false, pairOpen: false, appsTab: "apps", whatsNewOpen: false, usageOpen: false, shareSection: null, importOpen: false, importBotOpen: false, mcpTick: 0, channelTick: 0,
@@ -183,8 +187,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, groupPanelId: action.id };
     case "newGroup":
       return { ...state, newGroupOpen: action.open };
+    case "openResource":
+      return { ...state, view: "resources", resourceId: action.id, resourceVersion: action.version ?? null, railOpen: false };
     case "view":
-      return { ...state, view: action.view, railOpen: false, drawerOpen: false, automationsOpen: false, teamMapOpen: false, usageOpen: false, appsOpen: false, inboxOpen: false };
+      return { ...state, view: action.view, resourceId: "", resourceVersion: null, railOpen: false, drawerOpen: false, automationsOpen: false, teamMapOpen: false, usageOpen: false, appsOpen: false, inboxOpen: false };
     case "openSection":
       return { ...state, view: "section", selectedSectionId: action.id, railOpen: false, drawerOpen: false, automationsOpen: false, teamMapOpen: false, usageOpen: false, appsOpen: false, inboxOpen: false };
     case "rail":
@@ -395,7 +401,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
       es.onmessage = (e) => {
         try {
-          const frame = JSON.parse(e.data) as ServerFrame;
+          const raw = JSON.parse(e.data);
+          if (raw.kind === "skills.changed") { window.dispatchEvent(new Event("skills-changed")); return; }
+          if (raw.kind === "resource" || raw.kind === "resource.deleted") { window.dispatchEvent(new Event("resources-changed")); return; }
+          const frame = raw as ServerFrame;
           if (onComputerFrame(frame)) return;
           if (frame.kind === "instances") api<{ instances: InstanceInfo[] }>("/api/instances").then((r) => dispatch({ type: "instances", instances: r.instances })).catch(() => {});
           dispatch({ type: "frame", frame });

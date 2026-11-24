@@ -6,7 +6,7 @@ import { initialState, reducer, type AppState } from "../state/store";
 describe("menu table", () => {
   it("lists every page of the plan once, and the empty ones are marked", () => {
     const views = NAV.flatMap((g) => g.items.map((i) => i.view));
-    expect(views).toEqual(["dashboard", "chat", "inbox", "agents", "workflows", "routines", "bases", "documents", "skills", "apps", "input"]);
+    expect(views).toEqual(["dashboard", "chat", "inbox", "agents", "workflows", "routines", "bases", "documents", "resources", "skills", "apps", "input"]);
     expect(new Set(views).size).toBe(views.length);
     expect(NAV.flatMap((g) => g.items).filter((i) => i.placeholder).map((i) => i.view)).toEqual(["workflows", "bases", "documents"]);
     expect(PROJECTS_ITEM.view).toBe("projects");
@@ -34,6 +34,15 @@ describe("go-to keys", () => {
 });
 
 describe("hash route", () => {
+  it("preserves explicit resource versions and safely handles malformed links", () => {
+    expect(toHash("resources", "res_123", "build", 2)).toBe("#/resources/res_123/v/2");
+    expect(parseHash("#/resources/res_123/v/2")).toEqual({ view: "resources", id: "res_123", version: 2 });
+    expect(parseHash("#/resources/res_123")).toEqual({ view: "resources", id: "res_123", version: undefined });
+    expect(parseHash("#/resources/%E0%A4%A/v/2")).toEqual({ view: "resources" });
+    expect(parseHash("#/resources/res_123/v/999999999999999999999")).toBeNull();
+    expect(parseHash("#/resources/res_123/v/0")).toBeNull();
+    expect(reducer(initialState, { type: "openResource", id: "res_123", version: 2 })).toMatchObject({ view: "resources", resourceId: "res_123", resourceVersion: 2 });
+  });
   it("writes and reads a page, with the id only for chat and project", () => {
     expect(toHash("dashboard", "ignored")).toBe("#/dashboard");
     expect(toHash("chat", "bot 1")).toBe("#/chat/bot%201");

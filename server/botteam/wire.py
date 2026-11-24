@@ -125,7 +125,7 @@ class ErrorInfo(BaseModel):
 class WireMessage(BaseModel):
     id: str
     role: Literal["bot", "user"]
-    kind: Literal["text", "activity", "error", "stopped", "notice", "request", "routine"] = "text"
+    kind: Literal["text", "activity", "error", "stopped", "notice", "request", "routine", "resource"] = "text"
     text: str = ""
     at: int
     sendId: Optional[str] = None
@@ -136,6 +136,7 @@ class WireMessage(BaseModel):
     tool: Optional[ToolInfo] = None
     error: Optional[ErrorInfo] = None
     request: Optional[RequestInfo] = None
+    resource: Optional[dict[str, Any]] = None
     threadRef: Optional[dict[str, Any]] = None  # a hand-off: the teammate and the thread the work went to
     channelBatchId: Optional[str] = None  # the receiving/running batch shown across this bot's conversations
     routine: Optional[dict[str, Any]] = None  # a routine a bot just made: the live card shows Edit, Pause, Undo
@@ -271,6 +272,9 @@ class NoteBody(BaseModel):
 
 
 class RoutineBody(BaseModel):
+    resource_id: Optional[str] = None
+    resource_version: Optional[int] = Field(default=None, ge=1)
+    require_approved: Optional[bool] = None
     """A routine as the API takes it. `title` / `text` / `kind: daily` are the Phase 3 names and still work."""
     name: Optional[str] = Field(default=None, max_length=120)
     title: Optional[str] = Field(default=None, max_length=120)

@@ -4,7 +4,7 @@
 
 **Trạng thái:** kế hoạch, chưa có mã. Đã chốt năm quyết định của người dùng (mục 8): gọi là **Agent** như agenticos, có nút **Save**, **Agent templates là thư viện mẫu chuyển từ agenticos**, bấm Settings trong panel chat chuyển sang trang sửa đầy đủ, Evals và Knowledge gaps là trang trống.
 
-**Nguồn tham chiếu.** Ứng dụng tham chiếu `http://100.79.177.78:3000/agents` (agenticos 1.89.1) đã được đăng nhập và đối chiếu bằng mắt (danh sách, hộp thoại New agent, trang sửa và cả tám tab); ghi chú chi tiết ở `docs/verification/agents-reference.md`. Mã nguồn công khai của agenticos dùng để hiểu hành vi:
+**Nguồn tham chiếu.** Ứng dụng tham chiếu `http://100.111.238.91:3000/agents` (agenticos 1.89.1) đã được đăng nhập và đối chiếu bằng mắt (danh sách, hộp thoại New agent, trang sửa và cả tám tab); ghi chú chi tiết ở `docs/verification/agents-reference.md`. Mã nguồn công khai của agenticos dùng để hiểu hành vi:
 
 - Danh sách: `frontend/src/app/[locale]/(dashboard)/agents/page.tsx`, `components/agents/agent-card.tsx`.
 - Thêm: `components/agents/create-agent-dialog.tsx`.

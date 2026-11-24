@@ -21,6 +21,8 @@
     "test:noflash": "node scripts/noflash.mjs",
     "test:instant": "node scripts/instant.mjs",
     "test:workspace": "node web/e2e/workspace.mjs",
+    "test:resources": "node web/e2e/resources.mjs",
+    "test:skills": "node web/e2e/skills.mjs",
     "test:ui": "node scripts/routines.mjs && node scripts/reference.mjs && node scripts/reference-shots.mjs && node scripts/reference-cards.mjs && node scripts/noflash.mjs && node scripts/instant.mjs && node scripts/visual.mjs",
     "test:cards": "node scripts/reference-cards.mjs",
     "build:static": "node scripts/build-static.mjs",

@@ -8,6 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi",
+  "python-multipart>=0.0.20",
   "uvicorn[standard]",
   "aiosqlite",
   "httpx",
@@ -26,7 +27,7 @@ botteam = "botteam.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["botteam"]
-artifacts = ["botteam/webui/**", "botteam/templates/**"]
+artifacts = ["botteam/webui/**", "botteam/templates/**", "botteam/skill_gallery/**"]
 
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio", "asgi-lifespan"]

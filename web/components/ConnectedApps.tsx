@@ -111,7 +111,7 @@ export function ConnectedApps({ tabs }: { tabs?: Tab[] } = {}) {
           
         </div>
         {shownTabs.length > 1 && <div role="tablist" aria-label={t("Connected apps")} className="mx-5 mb-3 flex h-9 shrink-0 items-center rounded-full bg-raised p-[3px]" data-testid="apps-tabs">
-          {([["apps", "Connected apps", "tab-apps"], ["mcp", "Custom MCP servers", "open-mcp"], ["input", "Input", "tab-input"]] as const).filter(([id]) => shownTabs.includes(id)).map(([id, label, testid]) => (
+          {([["apps", "Connected apps", "tab-apps"], ["mcp", "Custom MCP servers", "open-mcp"], ["input", "Channels", "tab-input"]] as const).filter(([id]) => shownTabs.includes(id)).map(([id, label, testid]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} data-testid={testid} onClick={() => setTab(id)}
               className={cn("h-[30px] min-w-0 flex-1 truncate rounded-full px-2.5 text-[13px] font-medium", tab === id ? "bg-composer text-ink shadow-sm ring-[0.5px] ring-ink/10" : "text-ink-secondary hover:text-ink")}>{t(label)}</button>
           ))}

@@ -1,23 +1,70 @@
 "use client";
-import { Folders, Hash, Inbox as InboxIcon, LayoutDashboard, Pencil, Plug, Plus, RadioTower, Sparkles, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ArrowRight, Folders, Hash, Inbox as InboxIcon, LayoutDashboard, Pencil, Plug, Plus, RadioTower } from "lucide-react";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import type { Skill } from "@/lib/wire";
-import { api } from "@/state/api";
+import type { Bot, Group, Section } from "@/lib/wire";
 import { useStore } from "@/state/store";
 import { ConnectedApps } from "../ConnectedApps";
 import { InputChannels } from "../InputChannels";
 import { GroupActionsButton } from "../BotContextMenu";
 import { InboxPanel } from "../NotificationsPanel";
 import { UsagePage } from "../Observe";
-import { SkillEditor } from "../SkillsSection";
 import { PageFrame } from "./PageFrame";
 
 const PRIMARY = "flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[13.5px] font-medium text-[var(--color-accent-ink)]";
 
+const CARD = "flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 text-left ring-1 ring-ink/[0.06] hover:bg-raised";
+const Badge = () => <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-panel text-ink-secondary"><Hash size={17} /></span>;
+
+function SectionCard({ section, bots }: { section: Section; bots: Bot[] }) {
+  const { dispatch } = useStore();
+  return (
+    <button type="button" data-testid="section-card" onClick={() => dispatch({ type: "openSection", id: section.id })} className={CARD}>
+      <Badge />
+      <span className="min-w-0 flex-1">
+        <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{section.name}</span>
+        <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{bots.map((b) => b.name).join(", ") || "—"}</span>
+      </span>
+      <span className="text-[12px] tabular-nums text-ink-tertiary">{bots.length}</span>
+    </button>
+  );
+}
+
+function RoomCard({ group: g }: { group: Group }) {
+  const { dispatch } = useStore();
+  const t = useT();
+  return (
+    <article data-testid="project-card" className="group relative flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 ring-1 ring-ink/[0.06] hover:bg-raised">
+      <button type="button" aria-label={`${t("Open")}: ${g.name}`} onClick={() => dispatch({ type: "selectGroup", id: g.id })} className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-accent" />
+      <Badge />
+      <span className="pointer-events-none min-w-0 flex-1">
+        <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{g.name}</span>
+        <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{g.memberInfo.map((m) => m.name).join(", ") || "—"}</span>
+      </span>
+      {g.unread && <span aria-label={t("Unread")} className="pointer-events-none size-2 shrink-0 rounded-full bg-accent" />}
+      <span className="relative flex shrink-0 items-center gap-1">
+        <button type="button" data-testid="edit-team" title={t("Edit team")} aria-label={`${t("Edit team")}: ${g.name}`}
+          onClick={() => { dispatch({ type: "selectGroup", id: g.id }); dispatch({ type: "groupPanel", id: g.id }); }}
+          className="flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink"><Pencil size={14} /></button>
+        <GroupActionsButton group={g} />
+      </span>
+    </article>
+  );
+}
+
+/** The projects (rooms and groups of bots) that moved most recently, newest first. */
+function recentProjects(groups: Group[], bots: Bot[], sections: Section[], count: number) {
+  const items = [
+    ...groups.filter((g) => !g.hidden).map((g) => ({ at: g.lastAt ?? 0, node: <RoomCard key={`g-${g.id}`} group={g} /> })),
+    ...sections.map((x) => {
+      const members = bots.filter((b) => !b.hidden && b.section === x.id);
+      return { at: Math.max(0, ...members.map((b) => b.lastAt ?? 0)), node: <SectionCard key={`s-${x.id}`} section={x} bots={members} /> };
+    }),
+  ];
+  return items.sort((p, q) => q.at - p.at).slice(0, count).map((i) => i.node);
+}
+
 export function DashboardPage() {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const t = useT();
   const bots = state.bots.filter((b) => !b.hidden);
   const tiles: [string, number][] = [
@@ -32,6 +79,13 @@ export function DashboardPage() {
         {tiles.map(([label, n]) => (
           <div key={label} className="rounded-xl bg-raised/60 px-3.5 py-3"><div className="text-[12px] text-ink-tertiary">{t(label)}</div><div className="text-[22px] font-semibold tabular-nums">{n}</div></div>
         ))}
+      </div>
+      <div className="mt-5" data-testid="dashboard-projects">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-[12px] font-medium text-ink-tertiary">{t("Recent projects")}</h2>
+          <button type="button" data-testid="all-projects" onClick={() => dispatch({ type: "view", view: "projects" })} className="flex h-8 items-center gap-1 rounded-full px-3 text-[13px] text-ink-secondary hover:bg-ink/10">{t("All projects")} <ArrowRight size={13} /></button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">{recentProjects(state.groups, state.bots, state.sections, 3)}</div>
       </div>
       <div className="mt-5"><UsagePage /></div>
     </PageFrame>
@@ -51,8 +105,6 @@ export function ProjectsPage() {
   const t = useT();
   const groups = state.groups.filter((g) => !g.hidden);
   const sections = state.sections.map((x) => ({ ...x, bots: state.bots.filter((b) => !b.hidden && b.section === x.id) }));
-  const card = "flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 text-left ring-1 ring-ink/[0.06] hover:bg-raised";
-  const badge = () => <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-panel text-ink-secondary"><Hash size={17} /></span>;
   return (
     <PageFrame title="All projects" icon={Folders} description="Your groups of bots, and the rooms where several bots work together." testid="page-projects"
       actions={<button type="button" data-testid="projects-new" onClick={() => dispatch({ type: "newGroup", open: true })} className={PRIMARY}><Plus size={14} /> {t("New room")}</button>}>
@@ -61,16 +113,7 @@ export function ProjectsPage() {
         <>
           <h2 className="mb-2 text-[12px] font-medium text-ink-tertiary">{t("Groups of bots")}</h2>
           <div className="mb-5 grid gap-2 md:grid-cols-2" data-testid="sections-list">
-            {sections.map((x) => (
-              <button key={x.id} type="button" data-testid="section-card" onClick={() => dispatch({ type: "openSection", id: x.id })} className={card}>
-                {badge()}
-                <span className="min-w-0 flex-1">
-                  <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{x.name}</span>
-                  <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{x.bots.map((b) => b.name).join(", ") || "—"}</span>
-                </span>
-                <span className="text-[12px] tabular-nums text-ink-tertiary">{x.bots.length}</span>
-              </button>
-            ))}
+            {sections.map((x) => <SectionCard key={x.id} section={x} bots={x.bots} />)}
           </div>
         </>
       )}
@@ -78,23 +121,7 @@ export function ProjectsPage() {
         <>
           <h2 className="mb-2 text-[12px] font-medium text-ink-tertiary">{t("Rooms")}</h2>
           <div className="grid gap-2 md:grid-cols-2" data-testid="projects-list">
-            {groups.map((g) => (
-              <article key={g.id} data-testid="project-card" className="group relative flex items-center gap-3 rounded-xl bg-raised/50 px-4 py-3 ring-1 ring-ink/[0.06] hover:bg-raised">
-                <button type="button" aria-label={`${t("Open")}: ${g.name}`} onClick={() => dispatch({ type: "selectGroup", id: g.id })} className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-accent" />
-                {badge()}
-                <span className="pointer-events-none min-w-0 flex-1">
-                  <span data-no-i18n="" className="block truncate text-[14.5px] font-medium text-ink">{g.name}</span>
-                  <span data-no-i18n="" className="block truncate text-[12.5px] text-ink-tertiary">{g.memberInfo.map((m) => m.name).join(", ") || "—"}</span>
-                </span>
-                {g.unread && <span aria-label={t("Unread")} className="pointer-events-none size-2 shrink-0 rounded-full bg-accent" />}
-                <span className="relative flex shrink-0 items-center gap-1">
-                  <button type="button" data-testid="edit-team" title={t("Edit team")} aria-label={`${t("Edit team")}: ${g.name}`}
-                    onClick={() => { dispatch({ type: "selectGroup", id: g.id }); dispatch({ type: "groupPanel", id: g.id }); }}
-                    className="flex size-7 items-center justify-center rounded-full text-ink-secondary hover:bg-ink/10 hover:text-ink"><Pencil size={14} /></button>
-                  <GroupActionsButton group={g} />
-                </span>
-              </article>
-            ))}
+            {groups.map((g) => <RoomCard key={g.id} group={g} />)}
           </div>
         </>
       )}
@@ -102,35 +129,7 @@ export function ProjectsPage() {
   );
 }
 
-export function SkillsPage() {
-  const t = useT();
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [editing, setEditing] = useState<Skill | "new" | null>(null);
-  const load = useCallback(() => api<{ skills: Skill[] }>("/api/skills").then((r) => setSkills(r.skills)).catch(() => {}), []);
-  useEffect(() => { void load(); }, [load]);
-  return (
-    <PageFrame title="Skills" icon={Sparkles} description="Instructions a bot follows when they fit the task. Give them to a bot in its settings." testid="page-skills"
-      actions={<button type="button" data-testid="new-skill" onClick={() => setEditing("new")} className={PRIMARY}><Plus size={14} /> {t("New skill")}</button>}>
-      {skills.length === 0 && <div className="py-16 text-center text-[13.5px] text-ink-tertiary">{t("No skills yet. A skill is a set of instructions the bot follows when it fits the task.")}</div>}
-      <div className="flex flex-col gap-1.5" data-testid="skills-list">
-        {skills.map((s) => (
-          <div key={s.id} data-testid="skill-row" className="rounded-xl bg-raised/50 px-4 py-2.5 ring-1 ring-ink/[0.06]">
-            <div className="flex items-center gap-2">
-              <span data-no-i18n="" className={cn("min-w-0 flex-1 truncate text-[14.5px] font-medium", !s.enabled && "opacity-50")}>{s.name}</span>
-              <button type="button" role="switch" aria-checked={s.enabled} aria-label={`${s.name} ${s.enabled ? "on" : "off"}`}
-                onClick={async () => { await api(`/api/skills/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }); void load(); }}
-                className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", s.enabled ? "bg-accent" : "bg-ink/20")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-all", s.enabled ? "left-[18px]" : "left-0.5")} /></button>
-              <button type="button" title={t("Edit")} aria-label={t("Edit")} onClick={() => setEditing(s)} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Pencil size={14} /></button>
-              <button type="button" title={t("Delete")} aria-label={t("Delete")} onClick={async () => { if (confirm(t("Delete this skill?"))) { await api(`/api/skills/${s.id}`, { method: "DELETE" }); void load(); } }} className="rounded-full p-1.5 text-ink-secondary hover:bg-ink/10"><Trash2 size={14} /></button>
-            </div>
-            {s.description && <div data-no-i18n="" className="mt-0.5 truncate text-[12.5px] text-ink-tertiary">{s.description}</div>}
-          </div>
-        ))}
-      </div>
-      {editing && <SkillEditor key={editing === "new" ? "new" : editing.id} skill={editing === "new" ? null : editing} onClose={() => { setEditing(null); void load(); }} />}
-    </PageFrame>
-  );
-}
+export { SkillsPage } from "../SkillsPage";
 
 export function AppsPage() {
   return (
@@ -142,7 +141,7 @@ export function AppsPage() {
 
 export function InputPage() {
   return (
-    <PageFrame title="Input" icon={RadioTower} description="Telegram and Zalo: where people write to your bots." testid="page-input">
+    <PageFrame title="Channels" icon={RadioTower} description="Connect the Telegram and Zalo accounts where people write. Each agent decides there which accounts it answers on." testid="page-input">
       <div className="flex min-h-[70vh] flex-col"><InputChannels /></div>
     </PageFrame>
   );
