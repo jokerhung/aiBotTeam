@@ -4,7 +4,7 @@ BotTeam is a local chat app where every contact in the sidebar is a real AI agen
 
 It is built with a Next.js web app and a Python (FastAPI) server, and was originally inspired by [OpenMausBot](https://github.com/milind-soni/OpenMausBot). The workspace and Agents screens follow [agenticos](https://github.com/vstorm-co/agenticos).
 
-**English** | [Tiếng Việt](docs/user-guide.md)
+**English** | [Tiếng Việt](README_VI.md)
 
 ---
 
