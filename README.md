@@ -40,19 +40,14 @@ The script installs Git, Node.js, Python and uv when they are missing, clones th
 
 ## ✨ 8 Superpowers
 
-- **Agents workspace** — searchable cards, eight editor tabs with Save/Discard and unsaved-change protection, plus 28 offline agenticos templates across seven industries and BotTeam roles. Template integrations are suggestions; connect services and assign skills yourself.
-- **Resources** — a versioned library for HTML pages, Markdown reports, images and social posts. Open **Knowledge → Resources** or press **G E** to preview, edit, restore, download and approve a specific version. HTML previews run in an isolated iframe without network access. Agents have six native resource tools, controlled by **Agent → Toolbox → Resources** (enabled by default).
-- **Toolbox gallery** — illustrated capability shelves with search, horizontal navigation and a right-side settings panel, following agenticos. Memory, Skills and Connected apps use BotTeam's existing controls; capabilities awaiting integration are marked Soon.
-- **Skill library and gallery** — agenticos-style preview cards with search, category/usage filters, instruction preview, supporting files and **Add to an agent**. The offline gallery includes all 80 industry skills and 17 reference files from agenticos across seven industries. Install one, an industry, or the whole gallery; existing skills and edits are preserved. Imported skills are available for assignment, and are not automatically assigned to any agent.
+- 🗂️ **Agents workspace, Resources and skills** — searchable agent cards with a Save/Discard editor and 28 offline templates, a Toolbox gallery, a skill library with 80 industry skills, versioned Resources (HTML, Markdown, images, posts), plus memory and one-file export/import of a bot or team.
 - 🤖 **Real agents, not a chat wrapper** — each bot is a Claude Code, Codex or Antigravity CLI session (or an OpenAI-compatible endpoint) with its own model, working folder and approval level.
 - 👥 **Teams and channels** — put several bots in one channel, `@mention` them, and let a bot hand work to another one.
 - ✋ **Approval cards** — before a bot runs a command, edits a file or sends something out, you decide in the chat: Ask, Edits, Auto or Full.
 - 🔌 **Connected apps** — connect Gmail, Google Sheets, Slack, GitHub and more through Composio, or add your own MCP servers.
 - 💬 **Telegram and Zalo input** (Telegram bot, Zalo bot, or your own Zalo account through a Node.js service) — a bot answers every message, or collects photos and files and runs by itself after 30 quiet seconds (or when someone presses *Check*). How a bot receives messages is written in an `intake.md` in its working folder, which you can edit in Agents ? Availability: progress messages while photos arrive, saving them into folders such as `<machine>/<date>/Truoc|Sau` read from the caption (identical files are not saved twice), and a short reply with or without running a bot. Each batch of photos gets its own conversation in the app that also shows everything sent to the chat, and `run.command` can run a script of the working folder afterwards (for example to download PDFs), retrying until it succeeds.
-- 🧭 **Workspace layout** — one left menu: Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Knowledge bases, Documents, Skills) and Connect (Apps, Input), in the style of [agenticos](https://github.com/vstorm-co/agenticos). Pages that do not exist yet are empty pages.
 - 🖥️ **Built-in browser (Computer)** — a bot browses in its own window; you can take control for a login or CAPTCHA and give it back.
 - ⏰ **Automations** — schedules (routines) and webhooks start a bot without you, with a calendar page to see them.
-- 🧠 **Memory, skills and sharing** — notes that last between tasks, `SKILL.md` skills, and one-file export and import of a bot or a team.
 
 ---
 

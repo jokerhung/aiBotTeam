@@ -4,4 +4,6 @@
 2. **Take the layout, styling and interactions of every screen from the same reference app** (<http://100.111.238.91:3000/>) before building or changing any screen; `docs/phase-8-workspace-layout.md` records how it maps onto BotTeam. The old reference UI at `http://localhost:5199/` (OpenMausBot) is no longer used.
 3. **Before pushing code to git, check `README.md`, `install.ps1` and `install.sh` and update them if the change calls for it.** That means: a new or changed feature, service, port, environment variable, command or script (`pnpm`/`start.bat`), folder layout, or a new prerequisite (a tool, runtime or dependency the install scripts must put on a new computer). If nothing needs changing, say so in the commit or the reply; do not leave them out of date.
 
+4. **The "8 Superpowers" section of `README.md` (and "8 điểm mạnh" in `README_VI.md`) lists exactly 8 highlights, no more.** When a new feature deserves a mention, merge it into one of the 8 bullets or replace the weakest one; never add a 9th. Keep both README files in step.
+
 The reference app needs a login. Its email and password are in `AGENTS.local.md` (kept out of git because this repository is public); never write them into a tracked file.

@@ -40,19 +40,14 @@ Script cài đặt Git, Node.js, Python và uv nếu còn thiếu, tải mã ngu
 
 ## ✨ 8 điểm mạnh
 
-- **Workspace Agents** — thẻ có thể tìm kiếm, tám tab trong trình sửa với nút Save/Discard và bảo vệ thay đổi chưa lưu, cùng 28 mẫu agenticos dùng ngoại tuyến cho bảy ngành và các vai trò của BotTeam. Các tích hợp trong mẫu chỉ là gợi ý; bạn tự kết nối dịch vụ và gán kỹ năng.
-- **Resources** — thư viện có quản lý phiên bản cho trang HTML, báo cáo Markdown, ảnh và bài đăng mạng xã hội. Mở **Knowledge → Resources** hoặc nhấn **G E** để xem trước, sửa, khôi phục, tải xuống và duyệt một phiên bản cụ thể. Bản xem trước HTML chạy trong iframe cách ly, không có truy cập mạng. Agent có sáu công cụ resource sẵn có, điều khiển bằng **Agent → Toolbox → Resources** (mặc định bật).
-- **Thư viện Toolbox** — các kệ khả năng có minh họa, kèm tìm kiếm, điều hướng ngang và bảng cài đặt bên phải, theo agenticos. Memory, Skills và Connected apps dùng các điều khiển sẵn có của BotTeam; những khả năng đang chờ tích hợp được đánh dấu Soon.
-- **Thư viện và gallery kỹ năng** — thẻ xem trước kiểu agenticos với tìm kiếm, lọc theo danh mục/mức dùng, xem trước hướng dẫn, tệp đi kèm và **Add to an agent**. Gallery ngoại tuyến gồm đủ 80 kỹ năng ngành và 17 tệp tham chiếu từ agenticos cho bảy ngành. Cài một kỹ năng, một ngành, hoặc cả gallery; kỹ năng và chỉnh sửa hiện có được giữ nguyên. Kỹ năng nhập vào có thể gán cho agent, nhưng không tự động gán cho agent nào.
+- 🗂️ **Workspace Agents, Resources và kỹ năng** — thẻ agent có tìm kiếm với trình sửa Save/Discard và 28 mẫu ngoại tuyến, thư viện Toolbox, thư viện kỹ năng với 80 kỹ năng ngành, Resources có quản lý phiên bản (HTML, Markdown, ảnh, bài đăng), cùng bộ nhớ và xuất/nhập một bot hoặc một nhóm bằng một tệp.
 - 🤖 **Agent thật, không phải lớp bọc chat** — mỗi bot là một phiên Claude Code, Codex hoặc Antigravity CLI (hoặc endpoint tương thích OpenAI) với mô hình, thư mục làm việc và mức phê duyệt riêng.
 - 👥 **Nhóm và kênh** — đưa nhiều bot vào một kênh, `@mention` chúng, và để một bot giao việc cho bot khác.
 - ✋ **Thẻ phê duyệt** — trước khi bot chạy lệnh, sửa tệp hoặc gửi thứ gì ra ngoài, bạn quyết định ngay trong chat: Ask, Edits, Auto hoặc Full.
 - 🔌 **Ứng dụng kết nối** — kết nối Gmail, Google Sheets, Slack, GitHub và nhiều hơn nữa qua Composio, hoặc thêm máy chủ MCP của riêng bạn.
 - 💬 **Đầu vào Telegram và Zalo** (bot Telegram, bot Zalo, hoặc tài khoản Zalo riêng của bạn qua một dịch vụ Node.js) — bot trả lời mọi tin nhắn, hoặc gom ảnh và tệp rồi tự chạy sau 30 giây im lặng (hoặc khi có người bấm *Check*). Cách bot nhận tin nhắn được viết trong tệp `intake.md` ở thư mục làm việc của nó, bạn có thể sửa ở Agents → Availability: tin nhắn tiến độ trong lúc ảnh đến, lưu ảnh vào các thư mục như `<máy>/<ngày>/Truoc|Sau` đọc từ chú thích (tệp giống hệt nhau không lưu hai lần), và một phản hồi ngắn, có hoặc không chạy một bot. Mỗi lô ảnh có một cuộc trò chuyện riêng trong ứng dụng, hiển thị cả mọi thứ đã gửi vào chat, và `run.command` có thể chạy một script trong thư mục làm việc sau đó (ví dụ để tải PDF), thử lại cho tới khi thành công.
-- 🧭 **Bố cục workspace** — một menu trái duy nhất: Dashboard, Chat, Inbox, Projects, Build (Agents, Workflows, Routines), Knowledge (Knowledge bases, Documents, Skills) và Connect (Apps, Input), theo phong cách [agenticos](https://github.com/vstorm-co/agenticos). Những trang chưa có là các trang trống.
 - 🖥️ **Trình duyệt tích hợp (Computer)** — bot duyệt web trong cửa sổ riêng của nó; bạn có thể tiếp quản để đăng nhập hoặc giải CAPTCHA rồi trả lại.
 - ⏰ **Tự động hóa** — lịch chạy (routine) và webhook khởi chạy bot mà không cần bạn, kèm trang lịch để xem chúng.
-- 🧠 **Bộ nhớ, kỹ năng và chia sẻ** — ghi chú còn lại giữa các tác vụ, kỹ năng `SKILL.md`, và xuất/nhập một bot hoặc một nhóm bằng một tệp.
 
 ---
 
